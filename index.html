@@ -57,8 +57,8 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>📒 Udhar Book</h1>
-  <div class="substatus">💾 Saved on this device</div>
+  <h1 id="appTitle">📒 Udhar Book</h1>
+  <div class="substatus" id="appSub">💾 Saved on this device</div>
 
   <!-- AUTH -->
   <div id="authView" class="card">
@@ -84,11 +84,38 @@
     <p class="hint" id="authDriveStatus">Not connected</p>
   </div>
 
+  <!-- CUSTOMER PAY PAGE (opens when someone taps a pay link) -->
+  <div id="payView" class="hidden">
+    <div class="card" style="text-align:center;">
+      <div style="color:var(--muted); font-size:0.9rem;" id="pay-for"></div>
+      <div style="font-size:2.8rem; font-weight:800; margin:6px 0;" id="pay-amt">₹0</div>
+      <div style="color:var(--muted); font-size:0.85rem; margin-bottom:16px;" id="pay-to"></div>
+      <a href="#" id="pay-main" class="btnlink" style="background:#5a3ea1;">📲 Pay with UPI app</a>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+        <a href="#" id="pay-gpay" class="btnlink" style="background:#1a73e8; margin:0; padding:12px 4px; font-size:0.85rem;">GPay</a>
+        <a href="#" id="pay-phonepe" class="btnlink" style="background:#5f259f; margin:0; padding:12px 4px; font-size:0.85rem;">PhonePe</a>
+        <a href="#" id="pay-paytm" class="btnlink" style="background:#00b9f1; margin:0; padding:12px 4px; font-size:0.85rem;">Paytm</a>
+      </div>
+      <p class="hint" style="margin-top:14px;">After paying, please send the payment screenshot to the shop so your balance is updated.</p>
+    </div>
+    <div class="card">
+      <div style="font-size:0.85rem; color:var(--muted);">App didn't open? Pay manually — open any UPI app and send to:</div>
+      <div style="font-size:1.1rem; font-weight:700; margin:6px 0;" id="pay-upiid"></div>
+      <button class="ghost" style="width:auto; margin-top:0;" onclick="copyPayUpiId()">📋 Copy UPI ID</button>
+      <div id="pay-qr" style="text-align:center; background:white; border-radius:12px; padding:12px; margin-top:14px;"></div>
+      <p class="hint">Or scan this QR from another phone</p>
+    </div>
+  </div>
+
   <!-- DASHBOARD -->
   <div id="dashView" class="hidden">
     <div class="toprow">
       <span id="whoami"></span>
       <button class="ghost" style="width:auto;" onclick="logout()">Log out</button>
+    </div>
+    <div class="card" style="padding:12px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+      <span id="dashDriveStatus" style="font-size:0.8rem; color:var(--muted);">☁️ Drive not connected — data is on this phone only</span>
+      <button class="ghost" style="width:auto; margin:0; padding:8px 12px;" onclick="syncNow()">🔄 Sync Now</button>
     </div>
     <div class="totalbox">
       <div class="amt" id="totalOut">₹0</div>
@@ -175,8 +202,9 @@
     <div class="card" style="background:#f0edfb; padding:14px; margin-bottom:12px;">
       <div style="font-size:0.8rem; color:var(--muted);">Pay via UPI to</div>
       <div style="font-size:1.1rem; font-weight:700;" id="cd-upiIdText">—</div>
-      <div style="display:flex; gap:8px; margin-top:8px;">
-        <button class="ghost" style="width:auto;" onclick="copyUpiId()">📋 Copy UPI ID</button>
+      <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+        <button class="ghost" style="width:auto; margin-top:0;" onclick="copyUpiId()">📋 Copy UPI ID</button>
+        <button class="ghost" style="width:auto; margin-top:0;" onclick="copyPayLink()">🔗 Copy Pay Link</button>
         <a href="#" id="cd-openUpi" class="btnlink" style="width:auto; background:#5a3ea1; margin:0; padding:10px 14px;" onclick="return openUpiApp(event)">📲 Open UPI App</a>
       </div>
     </div>
@@ -247,11 +275,26 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
 
-function connectGoogleDrive(statusElId){
-  statusElId = statusElId || 'driveStatus';
+function setDriveStatus(msg){
+  ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.textContent = msg;
+  });
+}
+
+function handleDriveAuthError(res){
+  if(res && (res.status===401 || res.status===403)){
+    gDriveToken = null;
+    setDriveStatus('⚠️ Drive session expired — tap Sync Now to reconnect');
+    return true;
+  }
+  return false;
+}
+
+function connectGoogleDrive(){
   const typed = (document.getElementById('s-gClientId') && document.getElementById('s-gClientId').value.trim()) || '';
   const clientId = BAKED_CLIENT_ID || typed || localStorage.getItem('udhar_gdrive_clientid') || '';
-  if(!clientId){ showBanner('Paste your Google Client ID first (Settings, or ask the shop owner to bake it into the file)'); return; }
+  if(!clientId){ showBanner('Google Client ID missing'); return; }
   if(!window.google || !google.accounts){ showBanner('Google sign-in still loading, try again in a moment'); return; }
   localStorage.setItem('udhar_gdrive_clientid', clientId);
   const tokenClient = google.accounts.oauth2.initTokenClient({
@@ -260,13 +303,9 @@ function connectGoogleDrive(statusElId){
     callback: async (resp)=>{
       if(resp && resp.access_token){
         gDriveToken = resp.access_token;
-        const statusEl = document.getElementById(statusElId);
-        if(statusEl) statusEl.textContent = '🔄 Loading shared data…';
-        showBanner('✅ Google Drive connected — loading shop data…');
-        const pulled = await pullFromDrive();
-        if(statusEl) statusEl.textContent = pulled ? '✅ Data loaded from Drive' : '✅ Connected (no existing data yet)';
-        if(pulled) showBanner('✅ Shop data loaded — you can log in now');
-        await syncToDrive();
+        showBanner('✅ Google Drive connected');
+        const ok = await syncToDrive();
+        if(ok) showBanner('✅ Shared data loaded & synced');
       } else {
         showBanner('⚠️ Google sign-in failed or was cancelled');
       }
@@ -275,26 +314,37 @@ function connectGoogleDrive(statusElId){
   tokenClient.requestAccessToken();
 }
 
+// Reads ALL copies of the shared file (in case duplicates exist), merges them into this phone.
+// Returns 'ok', 'none' (no file yet) or 'error'.
 async function pullFromDrive(){
-  if(!gDriveToken) return false;
+  if(!gDriveToken) return 'error';
   try{
-    if(!gDriveFileId){
-      const q = encodeURIComponent("name='udhar-book-data.json' and trashed=false");
-      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
-      const searchData = await searchRes.json();
-      if(searchData.files && searchData.files.length){
-        gDriveFileId = searchData.files[0].id;
-        localStorage.setItem('udhar_gdrive_fileid', gDriveFileId);
-      } else {
-        return false;
+    const q = encodeURIComponent("name='udhar-book-data.json' and trashed=false");
+    const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime&fields=files(id,createdTime)`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
+    if(!listRes.ok){
+      if(!handleDriveAuthError(listRes)) setDriveStatus('⚠️ Could not read Drive (code '+listRes.status+')');
+      return 'error';
+    }
+    const listData = await listRes.json();
+    const files = listData.files || [];
+    if(!files.length){
+      gDriveFileId = null;
+      localStorage.removeItem('udhar_gdrive_fileid');
+      return 'none';
+    }
+    gDriveFileId = files[0].id; // oldest file = the one everyone uses
+    localStorage.setItem('udhar_gdrive_fileid', gDriveFileId);
+    for(const f of files){
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
+      if(res.ok){
+        try{ mergeRemoteData(await res.json()); }catch(e){}
       }
     }
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${gDriveFileId}?alt=media`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
-    if(!res.ok) return false;
-    const remote = await res.json();
-    mergeRemoteData(remote);
-    return true;
-  }catch(e){ return false; }
+    return 'ok';
+  }catch(e){
+    setDriveStatus('⚠️ No internet or Drive unreachable');
+    return 'error';
+  }
 }
 
 function mergeRemoteData(remote){
@@ -312,22 +362,18 @@ function mergeRemoteData(remote){
   saveTxns(Object.values(txnMap));
 }
 
+// Pull others' changes first, then push the merged result — so phones never overwrite each other.
 async function syncToDrive(){
-  if(!gDriveToken) return;
+  if(!gDriveToken) return false;
+  setDriveStatus('🔄 Syncing…');
+  const pulled = await pullFromDrive();
+  if(pulled==='error') return false;
   const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns() };
   const content = JSON.stringify(payload, null, 2);
   try{
-    if(!gDriveFileId){
-      const q = encodeURIComponent("name='udhar-book-data.json' and trashed=false");
-      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
-      const searchData = await searchRes.json();
-      if(searchData.files && searchData.files.length){
-        gDriveFileId = searchData.files[0].id;
-        localStorage.setItem('udhar_gdrive_fileid', gDriveFileId);
-      }
-    }
+    let res;
     if(gDriveFileId){
-      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${gDriveFileId}?uploadType=media`, {
+      res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${gDriveFileId}?uploadType=media`, {
         method:'PATCH',
         headers:{ 'Authorization':'Bearer '+gDriveToken, 'Content-Type':'application/json' },
         body: content
@@ -336,390 +382,4 @@ async function syncToDrive(){
       const boundary = 'udharbookboundary';
       const body = `--${boundary}\r\nContent-Type: application/json\r\n\r\n`+
         JSON.stringify({name:'udhar-book-data.json', mimeType:'application/json'})+
-        `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n`+content+`\r\n--${boundary}--`;
-      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-        method:'POST',
-        headers:{ 'Authorization':'Bearer '+gDriveToken, 'Content-Type':'multipart/related; boundary='+boundary },
-        body
-      });
-      const data = await res.json();
-      if(data.id){ gDriveFileId = data.id; localStorage.setItem('udhar_gdrive_fileid', gDriveFileId); }
-    }
-    const el = document.getElementById('driveStatus');
-    if(el) el.textContent = '✅ Synced ' + new Date().toLocaleTimeString();
-  }catch(e){
-    const el = document.getElementById('driveStatus');
-    if(el) el.textContent = '⚠️ Sync failed — reconnect and try again';
-  }
-}
-
-claude.use('downloads').then(d=>{ downloadsCap = d; }).catch(()=>{ downloadsCap = null; });
-
-/* ---------- auth ---------- */
-function showRegister(){ document.getElementById('loginForm').classList.add('hidden'); document.getElementById('registerForm').classList.remove('hidden'); }
-function showLogin(){ document.getElementById('registerForm').classList.add('hidden'); document.getElementById('loginForm').classList.remove('hidden'); }
-function setErr(id,msg){ const el=document.getElementById(id); el.textContent=msg; el.classList.toggle('hidden', !msg); }
-
-function doRegister(){
-  setErr('regError','');
-  const raw = document.getElementById('regUser').value.trim();
-  const pass = document.getElementById('regPass').value;
-  const user = normUser(raw);
-  if(!user || !pass || pass.length<4){ setErr('regError','Enter a Login ID and password (min 4 chars)'); return; }
-  const users = loadUsers();
-  if(users[user]){ setErr('regError','That Login ID is already taken.'); return; }
-  users[user] = { displayName: raw, password: pass, createdAt: Date.now() };
-  saveUsers(users);
-  currentUser = user; currentDisplayName = raw;
-  localStorage.setItem('udhar_current', user);
-  localStorage.setItem('udhar_current_display', raw);
-  enterApp();
-  syncToDrive();
-}
-
-function doLogin(){
-  setErr('loginError','');
-  const raw = document.getElementById('loginUser').value.trim();
-  const pass = document.getElementById('loginPass').value;
-  const user = normUser(raw);
-  if(!user || !pass){ setErr('loginError','Enter Login ID and password'); return; }
-  const users = loadUsers();
-  const rec = users[user];
-  if(!rec){ setErr('loginError','No account found. Register first.'); return; }
-  if(rec.password !== pass){ setErr('loginError','Wrong password.'); return; }
-  currentUser = user; currentDisplayName = rec.displayName || raw;
-  localStorage.setItem('udhar_current', user);
-  localStorage.setItem('udhar_current_display', currentDisplayName);
-  enterApp();
-}
-
-function logout(){
-  currentUser = null;
-  localStorage.removeItem('udhar_current');
-  localStorage.removeItem('udhar_current_display');
-  ['dashView','addCustView','custDetailView','settingsView'].forEach(id=>document.getElementById(id).classList.add('hidden'));
-  document.getElementById('authView').classList.remove('hidden');
-  showLogin();
-}
-
-function enterApp(){
-  document.getElementById('authView').classList.add('hidden');
-  document.getElementById('whoami').textContent = '👤 ' + (currentDisplayName||currentUser);
-  showDashboard();
-}
-
-/* ---------- balances ---------- */
-function balanceFor(custId){
-  const txns = loadTxns().filter(t=>t.customerId===custId);
-  let bal = 0;
-  txns.forEach(t=> bal += (t.type==='credit' ? t.amount : -t.amount));
-  return bal;
-}
-
-/* ---------- dashboard ---------- */
-function showDashboard(){
-  document.getElementById('addCustView').classList.add('hidden');
-  document.getElementById('custDetailView').classList.add('hidden');
-  document.getElementById('settingsView').classList.add('hidden');
-  document.getElementById('dashView').classList.remove('hidden');
-  renderCustomers();
-  renderTodayPaid();
-}
-
-function renderTodayPaid(){
-  const txns = loadTxns().filter(t=>t.type==='payment' && isToday(t.date));
-  const customers = loadCustomers();
-  const wrap = document.getElementById('todayPaidList');
-  if(!txns.length){ wrap.innerHTML = '<p style="color:var(--muted); margin:4px 0;">No payments received today yet</p>'; return; }
-  let total = 0;
-  wrap.innerHTML = '';
-  txns.slice().reverse().forEach(t=>{
-    const c = customers.find(x=>x.id===t.customerId);
-    total += t.amount;
-    const row = document.createElement('div');
-    row.className = 'paidRow';
-    row.innerHTML = `<span>${c?c.name:'Unknown'}</span><span style="color:var(--paid); font-weight:600;">₹${t.amount}</span>`;
-    wrap.appendChild(row);
-  });
-  const totalRow = document.createElement('div');
-  totalRow.className = 'paidRow';
-  totalRow.style.fontWeight = '700';
-  totalRow.innerHTML = `<span>Total collected today</span><span style="color:var(--paid);">₹${total}</span>`;
-  wrap.appendChild(totalRow);
-}
-
-function renderCustomers(){
-  const q = (document.getElementById('searchBox').value||'').toLowerCase();
-  const customers = loadCustomers();
-  let total = 0;
-  const rows = customers.map(c=>({...c, bal: balanceFor(c.id)}))
-    .filter(c=> c.name.toLowerCase().includes(q))
-    .sort((a,b)=> b.bal - a.bal);
-  customers.forEach(c=> total += balanceFor(c.id));
-  document.getElementById('totalOut').textContent = '₹' + total;
-
-  const wrap = document.getElementById('custListCard');
-  if(!rows.length){ wrap.innerHTML = '<p style="color:var(--muted); padding:14px 0;">No customers yet</p>'; return; }
-  wrap.innerHTML = '';
-  rows.forEach(c=>{
-    const div = document.createElement('div');
-    div.className = 'custrow';
-    div.onclick = ()=> openCustomer(c.id);
-    div.innerHTML = `<div><div class="name">${c.name}</div><div class="phone">${c.phone||''}</div></div>
-      <div class="bal ${c.bal>0?'owe':'clear'}">${c.bal>0 ? '₹'+c.bal : 'Clear'}</div>`;
-    wrap.appendChild(div);
-  });
-}
-
-/* ---------- add customer ---------- */
-function showAddCustomer(){
-  document.getElementById('dashView').classList.add('hidden');
-  document.getElementById('addCustView').classList.remove('hidden');
-  document.getElementById('newCustName').value='';
-  document.getElementById('newCustPhone').value='';
-}
-
-function addCustomer(){
-  const name = document.getElementById('newCustName').value.trim();
-  const phone = normPhone(document.getElementById('newCustPhone').value);
-  if(!name){ showBanner('Enter a customer name'); return; }
-  const customers = loadCustomers();
-  customers.push({ id: Date.now(), name, phone, createdAt: Date.now() });
-  saveCustomers(customers);
-  showBanner('✅ Customer added');
-  showDashboard();
-  syncToDrive();
-}
-
-/* ---------- settings: UPI + backup ---------- */
-function showSettings(){
-  document.getElementById('dashView').classList.add('hidden');
-  document.getElementById('settingsView').classList.remove('hidden');
-  const upi = loadUpi();
-  document.getElementById('s-upiId').value = upi.upiId || '';
-  document.getElementById('s-shopName').value = upi.shopName || '';
-  renderQrPreview();
-  document.getElementById('s-gClientId').value = localStorage.getItem('udhar_gdrive_clientid') || '';
-  document.getElementById('driveStatus').textContent = gDriveToken ? '✅ Connected this session' : (localStorage.getItem('udhar_gdrive_clientid') ? 'Saved — tap Connect to sign in' : 'Not connected');
-}
-
-function renderQrPreview(){
-  const img = localStorage.getItem('udhar_upi_qr_img');
-  const box = document.getElementById('qrPreviewBox');
-  box.innerHTML = img
-    ? `<img src="${img}" style="max-width:180px; border-radius:10px; margin-top:8px;"><br><button class="ghost" style="width:auto; margin-top:8px;" onclick="removeQrImage()">Remove QR</button>`
-    : '';
-}
-
-function uploadQrImage(e){
-  const file = e.target.files && e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev){
-    localStorage.setItem('udhar_upi_qr_img', ev.target.result);
-    renderQrPreview();
-    showBanner('✅ QR code saved');
-  };
-  reader.readAsDataURL(file);
-}
-
-function removeQrImage(){
-  localStorage.removeItem('udhar_upi_qr_img');
-  renderQrPreview();
-  showBanner('QR code removed');
-}
-
-function saveUpiSettings(){
-  const upiId = document.getElementById('s-upiId').value.trim();
-  const shopName = document.getElementById('s-shopName').value.trim();
-  saveUpi({ upiId, shopName });
-  showBanner('✅ UPI details saved');
-}
-
-async function backupData(){
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    customers: loadCustomers(),
-    transactions: loadTxns()
-  };
-  const json = JSON.stringify(payload, null, 2);
-  const filename = 'udhar-backup-' + todayStr() + '.json';
-  if(!downloadsCap){
-    try{ downloadsCap = await claude.use('downloads'); }catch(e){ downloadsCap = null; }
-  }
-  if(downloadsCap){
-    try{
-      await downloadsCap.save({ filename, data: json });
-      showBanner('✅ Backup saved — choose Google Drive if prompted');
-    }catch(e){
-      showBanner('Backup was not saved (cancelled or unavailable)');
-    }
-  } else {
-    showBanner('⚠️ File saving not available in this view');
-  }
-}
-
-/* ---------- customer detail ---------- */
-function openCustomer(id){
-  activeCustomerId = id;
-  const c = loadCustomers().find(x=>x.id===id);
-  if(!c) return;
-  document.getElementById('dashView').classList.add('hidden');
-  document.getElementById('custDetailView').classList.remove('hidden');
-  document.getElementById('cd-name').textContent = c.name;
-  document.getElementById('cd-phone').textContent = c.phone || 'No phone number';
-  document.getElementById('waLink').classList.add('hidden');
-  document.getElementById('waBtn').classList.remove('hidden');
-  const upi = loadUpi();
-  document.getElementById('cd-upiIdText').textContent = upi.upiId || 'Not set — add in Settings';
-  renderCustomerDetail();
-}
-
-function renderCustomerDetail(){
-  const bal = balanceFor(activeCustomerId);
-  const balEl = document.getElementById('cd-balance');
-  balEl.textContent = '₹' + Math.abs(bal);
-  balEl.className = 'balbig ' + (bal>0?'owe':'');
-  document.getElementById('cd-status').textContent = bal>0 ? 'Outstanding (they owe you)' : (bal<0 ? 'You owe them (overpaid)' : 'All clear');
-  document.getElementById('cd-payAmt').value = bal>0 ? bal : '';
-
-  const hist = document.getElementById('cd-history');
-  const fromVal = document.getElementById('cd-fromDate').value;
-  const toVal = document.getElementById('cd-toDate').value;
-  const fromTs = fromVal ? new Date(fromVal+'T00:00:00').getTime() : -Infinity;
-  const toTs = toVal ? new Date(toVal+'T23:59:59').getTime() : Infinity;
-
-  let txns = loadTxns().filter(t=>t.customerId===activeCustomerId);
-  txns = txns.filter(t=> t.date>=fromTs && t.date<=toTs).sort((a,b)=>a.date-b.date);
-  if(!txns.length){ hist.innerHTML = '<p style="color:var(--muted);">No transactions in this range</p>'; return; }
-  hist.innerHTML = '';
-  let running = 0;
-  txns.forEach(t=>{
-    running += (t.type==='credit'? t.amount : -t.amount);
-    const row = document.createElement('div');
-    row.className = 'txnrow';
-    const d = new Date(t.date);
-    row.innerHTML = `<span>${d.toLocaleDateString()} ${t.note?('· '+t.note):''}</span>
-      <span class="${t.type}">${t.type==='credit'?'+':'-'}₹${t.amount} <span style="color:var(--muted); font-weight:400;">(bal ₹${running})</span></span>`;
-    hist.appendChild(row);
-  });
-}
-
-function addTxn(type){
-  const amt = Number(document.getElementById(type==='credit'?'cd-creditAmt':'cd-payAmt').value)||0;
-  const note = document.getElementById(type==='credit'?'cd-creditNote':'cd-payNote').value.trim();
-  if(amt<=0){ showBanner('Enter a valid amount'); return; }
-  const txns = loadTxns();
-  txns.push({ id: Date.now(), customerId: activeCustomerId, type, amount: amt, note, date: Date.now() });
-  saveTxns(txns);
-  document.getElementById(type==='credit'?'cd-creditAmt':'cd-payAmt').value='';
-  document.getElementById(type==='credit'?'cd-creditNote':'cd-payNote').value='';
-  renderCustomerDetail();
-  showBanner(type==='credit' ? '➕ Credit added' : '✅ Payment recorded — balance updated');
-  syncToDrive();
-}
-
-/* ---------- UPI ---------- */
-function buildUpiLink(amount, customerName){
-  const upi = loadUpi();
-  if(!upi.upiId){ return null; }
-  const params = new URLSearchParams({
-    pa: upi.upiId,
-    pn: upi.shopName || 'Shop',
-    am: amount,
-    cu: 'INR',
-    tn: 'Payment for ' + customerName
-  });
-  return 'upi://pay?' + params.toString();
-}
-
-function openUpiApp(e){
-  const upi = loadUpi();
-  if(!upi.upiId){ e.preventDefault(); showBanner('⚠️ Set your UPI ID in Settings first'); return false; }
-  const amt = Number(document.getElementById('cd-payAmt').value) || balanceFor(activeCustomerId);
-  const c = loadCustomers().find(x=>x.id===activeCustomerId);
-  const link = buildUpiLink(amt>0?amt:0, c?c.name:'Customer');
-  document.getElementById('cd-openUpi').href = link;
-  return true; // real href, browser/OS handles it — may or may not be allowed by the UPI app
-}
-
-function clearDateFilter(){
-  document.getElementById('cd-fromDate').value = '';
-  document.getElementById('cd-toDate').value = '';
-  renderCustomerDetail();
-}
-
-function shareStatement(){
-  const c = loadCustomers().find(x=>x.id===activeCustomerId);
-  const fromVal = document.getElementById('cd-fromDate').value;
-  const toVal = document.getElementById('cd-toDate').value;
-  const fromTs = fromVal ? new Date(fromVal+'T00:00:00').getTime() : -Infinity;
-  const toTs = toVal ? new Date(toVal+'T23:59:59').getTime() : Infinity;
-  let txns = loadTxns().filter(t=>t.customerId===activeCustomerId && t.date>=fromTs && t.date<=toTs).sort((a,b)=>a.date-b.date);
-
-  let text = `Statement — ${c.name}\n${fromVal||'Start'} to ${toVal||'Today'}\n\n`;
-  let running = 0;
-  txns.forEach(t=>{
-    running += (t.type==='credit'? t.amount : -t.amount);
-    const d = new Date(t.date).toLocaleDateString();
-    text += `${d}: ${t.type==='credit'?'+':'-'}₹${t.amount}${t.note?' ('+t.note+')':''} — bal ₹${running}\n`;
-  });
-  text += `\nCurrent total balance: ₹${balanceFor(activeCustomerId)}`;
-
-  if(navigator.share){
-    navigator.share({title:'Statement - '+c.name, text}).catch(()=>{});
-  } else if(navigator.clipboard){
-    navigator.clipboard.writeText(text).then(()=>showBanner('📋 Statement copied')).catch(()=>showBanner('Could not copy'));
-  } else {
-    showBanner('Sharing not supported on this device');
-  }
-}
-
-function copyUpiId(){
-  const upi = loadUpi();
-  if(!upi.upiId){ showBanner('⚠️ Set your UPI ID in Settings first'); return; }
-  if(navigator.clipboard){
-    navigator.clipboard.writeText(upi.upiId).then(()=>showBanner('📋 UPI ID copied')).catch(()=>showBanner('Could not copy'));
-  } else {
-    showBanner('Copy not supported — select the text manually');
-  }
-}
-
-/* ---------- WhatsApp ---------- */
-function prepWhatsApp(){
-  const c = loadCustomers().find(x=>x.id===activeCustomerId);
-  if(!c) return;
-  const bal = balanceFor(activeCustomerId);
-  const upi = loadUpi();
-  let msg = bal>0
-    ? `Hi ${c.name}, your outstanding balance is ₹${bal}. Please clear it when convenient.`
-    : `Hi ${c.name}, your account is fully clear. Thank you!`;
-  if(bal>0 && upi.upiId){
-    msg += `\n\nYou can pay via UPI to: ${upi.upiId}`;
-  }
-  const phoneDigits = normPhone(c.phone);
-  const url = phoneDigits
-    ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(msg)}`
-    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-  const a = document.getElementById('waLink');
-  a.href = url;
-  a.classList.remove('hidden');
-  document.getElementById('waBtn').classList.add('hidden');
-  showBanner(phoneDigits ? '👉 Now tap "Tap to Open WhatsApp" below' : '⚠️ No phone saved — add one to send directly');
-}
-
-function showBanner(msg){
-  const b = document.getElementById('banner');
-  b.textContent = msg;
-  b.style.display = 'block';
-  clearTimeout(window._bannerTimer);
-  window._bannerTimer = setTimeout(()=>{ b.style.display='none'; }, 3500);
-}
-
-/* ---------- init ---------- */
-(function(){
-  if(currentUser){ enterApp(); }
-})();
-</script>
-</body>
-</html>
+        `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n`+content+`\r\n--$
