@@ -100,7 +100,8 @@ window.addEventListener('error', function(e){
       <div style="color:var(--muted); font-size:0.9rem;" id="pay-for"></div>
       <div style="font-size:2.8rem; font-weight:800; margin:6px 0;" id="pay-amt">₹0</div>
       <div style="color:var(--muted); font-size:0.85rem; margin-bottom:16px;" id="pay-to"></div>
-      <a href="#" id="pay-main" class="btnlink" style="background:#5a3ea1;">📲 Pay with UPI app</a>
+      <a href="#" id="pay-main" class="btnlink" style="background:#5a3ea1;">📲 1) Pay with UPI app (amount filled)</a>
+      <div class="muted" style="font-size:0.8rem; margin:14px 0 8px;">If it says "blocked", open your app without an amount and type <b id="pay-amt2"></b> yourself:</div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
         <a href="#" id="pay-gpay" class="btnlink" style="background:#1a73e8; margin:0; padding:12px 4px; font-size:0.85rem;">GPay</a>
         <a href="#" id="pay-phonepe" class="btnlink" style="background:#5f259f; margin:0; padding:12px 4px; font-size:0.85rem;">PhonePe</a>
@@ -112,6 +113,11 @@ window.addEventListener('error', function(e){
       <div style="font-size:0.85rem; color:var(--muted);">App didn't open? Pay manually — open any UPI app and send to:</div>
       <div style="font-size:1.1rem; font-weight:700; margin:6px 0;" id="pay-upiid"></div>
       <button class="ghost" style="width:auto; margin-top:0;" onclick="copyPayUpiId()">📋 Copy UPI ID</button>
+      <div class="muted" style="font-size:0.8rem; margin-top:10px;">Always works: open GPay / PhonePe / Paytm → <b>Pay to UPI ID</b> → paste this ID → enter the amount.</div>
+      <div style="text-align:center;">
+        <img id="pay-qrimg" src="qr.png" alt="" style="display:none; max-width:230px; border-radius:10px; margin-top:14px;" onload="this.style.display='inline-block'; document.getElementById('pay-qrimg-note').style.display='block';">
+        <p id="pay-qrimg-note" class="hint" style="display:none;">Shop's own QR — screenshot it, then in your UPI app tap Scan → choose from gallery.</p>
+      </div>
       <div id="pay-qr" style="text-align:center; background:white; border-radius:12px; padding:12px; margin-top:14px;"></div>
       <p class="hint">Or scan this QR from another phone</p>
     </div>
@@ -718,6 +724,10 @@ function upiQuery(pa, pn, am, tn){
   return q;
 }
 
+function upiQueryBasic(pa, pn){
+  return 'pa=' + encodeURIComponent(pa).replace(/%40/g,'@') + '&pn=' + encodeURIComponent(pn || 'Shop') + '&cu=INR';
+}
+
 function buildUpiLink(amount, customerName){
   const upi = loadUpi();
   if(!upi.upiId){ return null; }
@@ -772,9 +782,11 @@ function renderPayPage(p){
   document.getElementById('pay-amt').textContent = '₹' + am;
   document.getElementById('pay-to').textContent = 'Pay to ' + pn;
   document.getElementById('pay-main').href = main;
-  document.getElementById('pay-gpay').href = 'gpay://upi/pay?' + q;
-  document.getElementById('pay-phonepe').href = 'phonepe://pay?' + q;
-  document.getElementById('pay-paytm').href = 'paytmmp://pay?' + q;
+  const basic = upiQueryBasic(pa, pn);
+  document.getElementById('pay-amt2').textContent = '₹' + am;
+  document.getElementById('pay-gpay').href = 'gpay://upi/pay?' + basic;
+  document.getElementById('pay-phonepe').href = 'phonepe://pay?' + basic;
+  document.getElementById('pay-paytm').href = 'paytmmp://pay?' + basic;
   document.getElementById('pay-upiid').textContent = pa;
   const qr = document.getElementById('pay-qr');
   qr.innerHTML = '';
