@@ -34,6 +34,9 @@ window.addEventListener('error', function(e){
   .substatus{text-align:center; font-size:0.78rem; margin:0 0 16px; color:var(--muted);}
   .card{background:var(--card); border-radius:18px; padding:20px; margin-bottom:16px; box-shadow:0 2px 10px rgba(0,0,0,0.08);}
   input{width:100%; padding:13px; font-size:1rem; border-radius:12px; border:1px solid #ccd2db; margin-bottom:12px; background:transparent; color:var(--text);}
+  input[type="date"]{ background:var(--card); color-scheme: light; min-height:46px; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) input[type="date"]{ color-scheme: dark; } }
+  :root[data-theme="dark"] input[type="date"]{ color-scheme: dark; }
   label{font-size:0.8rem; color:var(--muted); display:block; margin:-6px 0 4px 2px;}
   button{border:none; border-radius:14px; padding:14px; font-size:1rem; font-weight:600; width:100%; cursor:pointer; color:white; background:#555;}
   a.btnlink{display:block; text-align:center; text-decoration:none; border-radius:14px; padding:14px; font-size:1rem; font-weight:600; width:100%; color:white; box-sizing:border-box; margin-bottom:10px;}
@@ -88,6 +91,8 @@ window.addEventListener('error', function(e){
     </div>
   </div>
 
+  <p class="hint" style="text-align:center; opacity:0.6;" id="versionStamp"></p>
+
   <div class="card" id="authDriveCard">
     <p class="hint" style="margin-bottom:8px;">New phone? Load the shop's shared data first:</p>
     <button style="background:#4285F4;" onclick="connectGoogleDrive('authDriveStatus')">🔗 Connect Google Drive</button>
@@ -129,6 +134,7 @@ window.addEventListener('error', function(e){
       <span id="whoami"></span>
       <button class="ghost" style="width:auto;" onclick="logout()">Log out</button>
     </div>
+    <p class="hint" style="text-align:right; opacity:0.5; margin:-10px 0 10px;" id="versionStamp2"></p>
     <div class="card" style="padding:12px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
       <span id="dashDriveStatus" style="font-size:0.8rem; color:var(--muted);">☁️ Drive not connected — data is on this phone only</span>
       <button class="ghost" style="width:auto; margin:0; padding:8px 12px;" onclick="syncNow()">🔄 Sync Now</button>
@@ -350,6 +356,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
+const APP_VERSION = '2026-10-02-v8-expense-edit-fix';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1102,6 +1109,7 @@ function showBanner(msg){
 
 /* ---------- init ---------- */
 (function(){
+  ['versionStamp','versionStamp2'].forEach(id=>{ const v=document.getElementById(id); if(v) v.textContent = 'v: ' + APP_VERSION; });
   const p = new URLSearchParams(location.search);
   if(p.get('pa') && p.get('am')){ renderPayPage(p); return; }
   if(currentUser){ enterApp(); }
