@@ -154,15 +154,10 @@ window.addEventListener('error', function(e){
 
       <div class="card">
         <h3 id="expFormTitle" style="margin-top:0;">Add Expense</h3>
-        <div class="loadgrid" style="grid-template-columns:repeat(4,1fr);">
-          <div class="loadbtn exp-cat" data-cat="Milk" style="background:#4FC3F7;" onclick="selectExpCat('Milk')">🥛 Milk</div>
-          <div class="loadbtn exp-cat" data-cat="Cigarette" style="background:#616161;" onclick="selectExpCat('Cigarette')">🚬 Cigarette</div>
-          <div class="loadbtn exp-cat" data-cat="Sugar" style="background:#F06292;" onclick="selectExpCat('Sugar')">🍬 Sugar</div>
-          <div class="loadbtn exp-cat" data-cat="Bags/Cups" style="background:#8D6E63;" onclick="selectExpCat('Bags/Cups')">🥤 Bags/Cups</div>
-          <div class="loadbtn exp-cat" data-cat="Juice" style="background:#FFA726;" onclick="selectExpCat('Juice')">🧃 Juice</div>
-          <div class="loadbtn exp-cat" data-cat="Biscuits" style="background:#C8914C;" onclick="selectExpCat('Biscuits')">🍪 Biscuits</div>
-          <div class="loadbtn exp-cat" data-cat="Snacks" style="background:#EF5350;" onclick="selectExpCat('Snacks')">🍟 Snacks</div>
-          <div class="loadbtn exp-cat" data-cat="Other" style="background:#78909C;" onclick="selectExpCat('Other')">📦 Other</div>
+        <div class="loadgrid" id="expCatGrid" style="grid-template-columns:repeat(4,1fr);"></div>
+        <div style="display:flex; gap:8px; margin-top:10px;">
+          <input id="newCatName" placeholder="New category name" style="margin-bottom:0;">
+          <button style="width:auto; margin:0; padding:10px 16px; background:var(--brand);" onclick="addCustomCategory()">+ Add</button>
         </div>
         <div style="margin-top:14px;">
           <label>Category</label>
@@ -316,6 +311,7 @@ const CUST_KEY = 'udhar_customers_v1';
 const TXN_KEY = 'udhar_txns_v1';
 const EXP_KEY = 'udhar_expenses_v1';
 const EXP_DELETED_KEY = 'udhar_expenses_deleted_v1';
+const CATS_KEY = 'udhar_custom_categories_v1';
 const UPI_KEY = 'udhar_upi_v1';
 
 function loadUsers(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'{}'); }catch(e){ return {}; } }
@@ -328,6 +324,8 @@ function loadExpenses(){ try{ return JSON.parse(localStorage.getItem(EXP_KEY)||'
 function saveExpenses(a){ localStorage.setItem(EXP_KEY, JSON.stringify(a)); }
 function loadDeletedExpenseIds(){ try{ return JSON.parse(localStorage.getItem(EXP_DELETED_KEY)||'{}'); }catch(e){ return {}; } }
 function saveDeletedExpenseIds(o){ localStorage.setItem(EXP_DELETED_KEY, JSON.stringify(o)); }
+function loadCustomCats(){ try{ return JSON.parse(localStorage.getItem(CATS_KEY)||'[]'); }catch(e){ return []; } }
+function saveCustomCats(a){ localStorage.setItem(CATS_KEY, JSON.stringify(a)); }
 function loadUpi(){ try{ return JSON.parse(localStorage.getItem(UPI_KEY)||'{}'); }catch(e){ return {}; } }
 function saveUpi(o){ localStorage.setItem(UPI_KEY, JSON.stringify(o)); }
 
@@ -359,7 +357,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-02-v10-sync-conflict-fix';
+const APP_VERSION = '2026-10-02-v11-custom-categories';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -452,6 +450,12 @@ function mergeRemoteData(remote){
   const mergedDeleted = Object.assign({}, loadDeletedExpenseIds(), remote.deletedExpenseIds || {});
   saveDeletedExpenseIds(mergedDeleted);
 
+  const catMap = {};
+  loadCustomCats().forEach(c=>{ catMap[c.name.toLowerCase()] = c; });
+  (remote.customCategories||[]).forEach(c=>{ if(!catMap[c.name.toLowerCase()]) catMap[c.name.toLowerCase()] = c; });
+  saveCustomCats(Object.values(catMap));
+  renderCategoryButtons();
+
   const expMap = {};
   const stampOf = r => (r && (r.updatedAt || r.createdAt)) || 0;
   loadExpenses().forEach(e=>{ expMap[e.id] = e; });
@@ -471,7 +475,7 @@ async function syncToDrive(){
   setDriveStatus('🔄 Syncing…');
   const pulled = await pullFromDrive();
   if(pulled==='error') return false;
-  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds() };
+  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats() };
   const content = JSON.stringify(payload, null, 2);
   try{
     let res;
@@ -619,6 +623,7 @@ function showExpensesTab(){
   document.getElementById('tab-expenses-btn').classList.remove('ghost');
   document.getElementById('tab-customers-btn').classList.add('ghost');
   document.getElementById('tab-customers-btn').style.background = 'transparent';
+  renderCategoryButtons();
   if(!editingExpenseId) selectExpCat(selectedExpCat);
   renderExpenses();
 }
@@ -635,6 +640,64 @@ function showCustomersTab(){
 }
 
 /* ---------- shop expenses ---------- */
+const BUILTIN_CATS = [
+  {name:'Milk', emoji:'🥛', color:'#4FC3F7'},
+  {name:'Cigarette', emoji:'🚬', color:'#616161'},
+  {name:'Sugar', emoji:'🍬', color:'#F06292'},
+  {name:'Bags/Cups', emoji:'🥤', color:'#8D6E63'},
+  {name:'Juice', emoji:'🧃', color:'#FFA726'},
+  {name:'Biscuits', emoji:'🍪', color:'#C8914C'},
+  {name:'Snacks', emoji:'🍟', color:'#EF5350'},
+  {name:'Other', emoji:'📦', color:'#78909C'}
+];
+const CAT_COLOR_PALETTE = ['#26A69A','#AB47BC','#5C6BC0','#7CB342','#EC407A','#FFCA28','#29B6F6','#66BB6A','#FF7043','#5E35B1','#00ACC1','#D4E157','#FF8A65','#789262','#42A5F5','#BDBDBD'];
+
+function allCategories(){
+  return BUILTIN_CATS.concat(loadCustomCats().map(c=>({name:c.name, emoji:'🏷️', color:c.color})));
+}
+
+function pickNewCatColor(){
+  const used = allCategories().map(c=>c.color);
+  const free = CAT_COLOR_PALETTE.find(c=>!used.includes(c));
+  return free || CAT_COLOR_PALETTE[Math.floor(Math.random()*CAT_COLOR_PALETTE.length)];
+}
+
+function addCustomCategory(){
+  const name = document.getElementById('newCatName').value.trim();
+  if(!name){ showBanner('Enter a category name'); return; }
+  const existing = allCategories().find(c=>c.name.toLowerCase()===name.toLowerCase());
+  if(existing){
+    showBanner('That category already exists');
+    document.getElementById('newCatName').value = '';
+    selectExpCat(existing.name);
+    return;
+  }
+  const cats = loadCustomCats();
+  cats.push({ name, color: pickNewCatColor(), createdAt: Date.now() });
+  saveCustomCats(cats);
+  document.getElementById('newCatName').value = '';
+  renderCategoryButtons();
+  selectExpCat(name);
+  showBanner('✅ Category "' + name + '" added');
+  afterDataChange();
+}
+
+function renderCategoryButtons(){
+  const grid = document.getElementById('expCatGrid');
+  if(!grid) return;
+  grid.innerHTML = '';
+  allCategories().forEach(c=>{
+    const div = document.createElement('div');
+    div.className = 'loadbtn exp-cat';
+    div.setAttribute('data-cat', c.name);
+    div.style.background = c.color;
+    div.style.opacity = (c.name===selectedExpCat) ? '1' : '0.55';
+    div.textContent = c.emoji + ' ' + c.name;
+    div.onclick = function(){ selectExpCat(c.name); };
+    grid.appendChild(div);
+  });
+}
+
 let selectedExpCat = 'Milk';
 let editingExpenseId = null;
 
