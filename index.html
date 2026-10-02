@@ -710,14 +710,15 @@ function renderExpenses(){
     listEl.innerHTML = '';
     dayExpenses.slice().reverse().forEach(e=>{
       const row = document.createElement('div');
-      row.className = 'paidRow';
-      row.style.alignItems = 'center';
-      row.innerHTML = `<span>${e.category}${e.note?(' · '+e.note):''}</span>
-        <span style="display:flex; align-items:center; gap:8px;">
-          <span style="font-weight:600;">₹${e.amount}</span>
-          <button class="ghost" style="width:auto; margin:0; padding:4px 8px; font-size:0.75rem;" onclick="editExpense('${e.id}')">✏️</button>
-          <button class="ghost" style="width:auto; margin:0; padding:4px 8px; font-size:0.75rem;" onclick="deleteExpense('${e.id}')">🗑️</button>
-        </span>`;
+      row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
+      row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <span>${e.category}${e.note?(' · '+e.note):''}</span>
+          <span style="font-weight:700; white-space:nowrap;">₹${e.amount}</span>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editExpense('${e.id}')">✏️ Edit</button>
+          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deleteExpense('${e.id}')">🗑️ Delete</button>
+        </div>`;
       listEl.appendChild(row);
     });
   }
