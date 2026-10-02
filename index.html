@@ -356,7 +356,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-02-v8-expense-edit-fix';
+const APP_VERSION = '2026-10-02-v9-id-type-fix';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -649,7 +649,7 @@ function addExpense(){
   const expenses = loadExpenses();
 
   if(editingExpenseId){
-    const idx = expenses.findIndex(e=>e.id===editingExpenseId);
+    const idx = expenses.findIndex(e=>String(e.id)===String(editingExpenseId));
     if(idx>-1){
       expenses[idx] = Object.assign({}, expenses[idx], { category: selectedExpCat, amount: amt, note, date });
       saveExpenses(expenses);
@@ -670,7 +670,7 @@ function addExpense(){
 }
 
 function editExpense(id){
-  const e = loadExpenses().find(x=>x.id===id);
+  const e = loadExpenses().find(x=>String(x.id)===String(id));
   if(!e) return;
   editingExpenseId = id;
   selectExpCat(e.category);
@@ -693,9 +693,9 @@ function cancelEditExpense(){
 }
 
 function deleteExpense(id){
-  const expenses = loadExpenses().filter(e=>e.id!==id);
+  const expenses = loadExpenses().filter(e=>String(e.id)!==String(id));
   saveExpenses(expenses);
-  if(editingExpenseId===id) cancelEditExpense();
+  if(String(editingExpenseId)===String(id)) cancelEditExpense();
   showBanner('🗑️ Expense deleted');
   renderExpenses();
   afterDataChange();
