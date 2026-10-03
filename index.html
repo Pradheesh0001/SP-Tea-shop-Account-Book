@@ -206,6 +206,8 @@ window.addEventListener('error', function(e){
         <input id="ds-cash" type="number" min="0">
         <label>Online / UPI Sales (₹) — optional</label>
         <input id="ds-online" type="number" min="0">
+        <label>Your own money added to cover expenses (₹) — optional</label>
+        <input id="ds-ownmoney" type="number" min="0">
         <label>Actual Closing Cash counted (₹) — optional</label>
         <input id="ds-closing" type="number" min="0">
         <button style="background:var(--brand);" onclick="saveDailySales()">💾 Save Day</button>
@@ -406,7 +408,7 @@ function loadDailySalesAll(){ try{ return JSON.parse(localStorage.getItem(DAILY_
 function saveDailySalesAll(o){ localStorage.setItem(DAILY_KEY, JSON.stringify(o)); }
 function getDailySales(date){
   const all = loadDailySalesAll();
-  return all[date] || { openingCash:0, cashSales:0, onlineSales:0, closingCashActual:null, updatedAt:0 };
+  return all[date] || { openingCash:0, cashSales:0, onlineSales:0, ownMoneyAdded:0, closingCashActual:null, updatedAt:0 };
 }
 function upsertDailySales(date, data){
   const all = loadDailySalesAll();
@@ -416,7 +418,7 @@ function upsertDailySales(date, data){
 }
 function hasDailyRecord(date){
   const d = getDailySales(date);
-  return !!(d.openingCash || d.cashSales || d.onlineSales || d.closingCashActual!==null);
+  return !!(d.openingCash || d.cashSales || d.onlineSales || d.ownMoneyAdded || d.closingCashActual!==null);
 }
 function loadUpi(){ try{ return JSON.parse(localStorage.getItem(UPI_KEY)||'{}'); }catch(e){ return {}; } }
 function saveUpi(o){ localStorage.setItem(UPI_KEY, JSON.stringify(o)); }
@@ -449,7 +451,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v13-sales-input-fix';
+const APP_VERSION = '2026-10-03-v14-profit-formula-final';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1365,15 +1367,19 @@ function computeDayMetrics(date){
   const staffSalary = sumExpensesInRange(date, date, true);
   const custCash = sumCustomerPaymentsInRange(date, date, 'cash');
   const custOnline = sumCustomerPaymentsInRange(date, date, 'online');
+  // Profit = actual sales performance, regardless of cash vs online.
   const estimatedProfit = totalSales - expenses - staffSalary;
   const openingCash = Number(ds.openingCash)||0;
+  // Expected Closing Cash uses sales-cash only — owner's personal top-up is tracked separately
+  // below (ownMoneyAdded) so a shortfall always shows honestly in Cash Difference.
   const expectedClosingCash = openingCash + cashSales + custCash - expenses - staffSalary;
+  const ownMoneyAdded = Number(ds.ownMoneyAdded)||0;
   const closingCashActual = (ds.closingCashActual===null || ds.closingCashActual===undefined || ds.closingCashActual==='') ? null : Number(ds.closingCashActual);
   const cashDifference = (closingCashActual===null) ? null : (closingCashActual - expectedClosingCash);
   return {
     date, cashSales, onlineSales, totalSales, expenses, staffSalary,
     custCash, custOnline, estimatedProfit, openingCash, expectedClosingCash,
-    closingCashActual, cashDifference,
+    closingCashActual, cashDifference, ownMoneyAdded,
     needsReview: cashDifference!==null && cashDifference<0,
     recorded: hasDailyRecord(date)
   };
@@ -1390,6 +1396,7 @@ function computeRangeMetrics(fromDate, toDate){
     totalSales, cashSales:sum('cashSales'), onlineSales:sum('onlineSales'),
     totalExpenses: sum('expenses'), totalStaffSalary: sum('staffSalary'),
     totalCustCash: sum('custCash'), totalCustOnline: sum('custOnline'),
+    totalOwnMoneyAdded: sum('ownMoneyAdded'),
     totalProfit,
     daysRecorded, daysNeedingReview,
     avgDailySales: daysRecorded ? totalSales/daysRecorded : 0,
@@ -1469,14 +1476,21 @@ function renderDashboard(){
   document.getElementById('dr-periodLabel').textContent = label;
 
   document.getElementById('db-profit').textContent = fmtMoney(m.totalProfit);
-  document.getElementById('db-profitLabel').textContent = 'Estimated Profit';
+  document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
 
   let html = '';
   html += metricRow('Total Sales', fmtMoney(m.totalSales));
+  html += metricRow('— Cash Sales', fmtMoney(m.cashSales));
+  html += metricRow('— Online Sales', fmtMoney(m.onlineSales));
   html += metricRow('Expenses/Purchases', fmtMoney(m.totalExpenses));
   html += metricRow('Staff Salary', fmtMoney(m.totalStaffSalary));
+  html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Customer A/c collections (already-recorded sales, not added again)</div>';
   html += metricRow('Customer A/c Cash Collection', fmtMoney(m.totalCustCash));
   html += metricRow('Customer A/c Online Collection', fmtMoney(m.totalCustOnline));
+  if(m.totalOwnMoneyAdded>0){
+    html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Your own money (tracked only, not counted in profit)</div>';
+    html += metricRow('Own Money Added', fmtMoney(m.totalOwnMoneyAdded));
+  }
 
   if(dashRangeType==='daily'){
     const d = m.days[0];
@@ -1508,6 +1522,7 @@ function loadDailySalesForm(){
   document.getElementById('ds-opening').value = d.openingCash || '';
   document.getElementById('ds-cash').value = d.cashSales || '';
   document.getElementById('ds-online').value = d.onlineSales || '';
+  document.getElementById('ds-ownmoney').value = d.ownMoneyAdded || '';
   document.getElementById('ds-closing').value = (d.closingCashActual===null||d.closingCashActual===undefined) ? '' : d.closingCashActual;
   renderDailySummary(dateEl.value);
 }
@@ -1515,12 +1530,19 @@ function loadDailySalesForm(){
 function renderDailySummary(date){
   const m = computeDayMetrics(date);
   let html = '<h3 style="margin-top:0;">Summary for '+date+'</h3>';
+  html += metricRow('Estimated Profit', fmtMoney(m.estimatedProfit));
   html += metricRow('Total Sales', fmtMoney(m.totalSales));
+  html += metricRow('— Cash Sales', fmtMoney(m.cashSales));
+  html += metricRow('— Online Sales', fmtMoney(m.onlineSales));
   html += metricRow('Expenses/Purchases', fmtMoney(m.expenses));
   html += metricRow('Staff Salary', fmtMoney(m.staffSalary));
-  html += metricRow('Estimated Profit', fmtMoney(m.estimatedProfit));
+  html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Customer A/c collections (already-recorded sales, not added again)</div>';
   html += metricRow('Customer A/c Cash Collection', fmtMoney(m.custCash));
   html += metricRow('Customer A/c Online Collection', fmtMoney(m.custOnline));
+  if(m.ownMoneyAdded>0){
+    html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Your own money (tracked only, not counted in profit)</div>';
+    html += metricRow('Own Money Added', fmtMoney(m.ownMoneyAdded));
+  }
   html += metricRow('Expected Closing Cash', fmtMoney(m.expectedClosingCash));
   if(m.cashDifference!==null){
     html += metricRow('Cash Difference', (m.cashDifference<0?'⚠️ ':'')+fmtMoney(m.cashDifference));
@@ -1535,11 +1557,13 @@ function saveDailySales(){
   const opening = numOrNull(document.getElementById('ds-opening').value);
   const cash = numOrNull(document.getElementById('ds-cash').value);
   const online = numOrNull(document.getElementById('ds-online').value);
+  const ownMoney = numOrNull(document.getElementById('ds-ownmoney').value);
   const closing = numOrNull(document.getElementById('ds-closing').value);
   upsertDailySales(date, {
     openingCash: opening||0,
     cashSales: cash||0,
     onlineSales: online||0,
+    ownMoneyAdded: ownMoney||0,
     closingCashActual: closing
   });
 
@@ -1580,6 +1604,7 @@ function buildSummaryRows(m){
     ['Expenses/Purchases', m.totalExpenses],
     ['Staff Salary', m.totalStaffSalary],
     ['Estimated Profit', m.totalProfit],
+    ['Own Money Added (not in profit)', m.totalOwnMoneyAdded],
     ['Average Daily Sales', Math.round(m.avgDailySales)],
     ['Average Daily Profit', Math.round(m.avgDailyProfit)],
     ['Recorded Days', m.daysRecorded],
@@ -1599,6 +1624,7 @@ function buildDailyDetailRows(m){
     'Total Sales': d.totalSales,
     'Estimated Profit': d.estimatedProfit,
     'Opening Cash': d.openingCash,
+    'Own Money Added': d.ownMoneyAdded,
     'Closing Cash (actual)': d.closingCashActual===null?'':d.closingCashActual,
     'Expected Closing Cash': d.expectedClosingCash,
     'Cash Difference': d.cashDifference===null?'':d.cashDifference,
