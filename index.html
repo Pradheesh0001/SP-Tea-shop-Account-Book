@@ -15,6 +15,8 @@ window.addEventListener('error', function(e){
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
@@ -140,13 +142,79 @@ window.addEventListener('error', function(e){
       <button class="ghost" style="width:auto; margin:0; padding:8px 12px;" onclick="syncNow()">🔄 Sync Now</button>
     </div>
 
-    <div style="display:flex; gap:8px; margin-bottom:16px;">
-      <button id="tab-expenses-btn" onclick="showExpensesTab()" style="background:var(--brand);">💸 Shop Expenses</button>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px;">
+      <button id="tab-dashboard-btn" onclick="showDashboardTab()" style="background:var(--brand);">📊 Dashboard</button>
+      <button id="tab-sales-btn" onclick="showSalesTab()" class="ghost" style="margin-top:0;">💵 Daily Sales</button>
+      <button id="tab-expenses-btn" onclick="showExpensesTab()" class="ghost" style="margin-top:0;">💸 Shop Expenses</button>
       <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Customer Accounts</button>
     </div>
 
+    <!-- PROFIT DASHBOARD TAB -->
+    <div id="dashboardTab" class="hidden">
+      <div class="card">
+        <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+          <button id="dr-daily-btn" onclick="setDashRange('daily')" style="width:auto; flex:1; padding:10px; font-size:0.85rem;">Daily</button>
+          <button id="dr-weekly-btn" onclick="setDashRange('weekly')" class="ghost" style="width:auto; flex:1; margin:0; padding:10px; font-size:0.85rem;">Weekly</button>
+          <button id="dr-monthly-btn" onclick="setDashRange('monthly')" class="ghost" style="width:auto; flex:1; margin:0; padding:10px; font-size:0.85rem;">Monthly</button>
+          <button id="dr-custom-btn" onclick="setDashRange('custom')" class="ghost" style="width:auto; flex:1; margin:0; padding:10px; font-size:0.85rem;">Custom</button>
+        </div>
+
+        <div id="dr-nav" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <button class="ghost" style="width:auto; margin:0; padding:8px 14px;" onclick="shiftDashPeriod(-1)">◀</button>
+          <span id="dr-periodLabel" style="font-weight:600;"></span>
+          <button class="ghost" style="width:auto; margin:0; padding:8px 14px;" onclick="shiftDashPeriod(1)">▶</button>
+        </div>
+        <div id="dr-customRange" class="twocol hidden">
+          <div><label>From</label><input id="dr-fromDate" type="date" onchange="renderDashboard()"></div>
+          <div><label>To</label><input id="dr-toDate" type="date" onchange="renderDashboard()"></div>
+        </div>
+      </div>
+
+      <div class="totalbox">
+        <div class="amt" id="db-profit">₹0</div>
+        <div class="sub" id="db-profitLabel">Estimated Profit</div>
+      </div>
+
+      <div class="card">
+        <div id="db-metrics"></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;" id="db-chartTitle">Sales &amp; Profit</h3>
+        <div id="db-chart" style="overflow-x:auto;"></div>
+      </div>
+
+      <button style="background:var(--brand);" onclick="openReportModal()">⬇️ Download Report</button>
+
+      <div id="reportModal" class="hidden card">
+        <h3 style="margin-top:0;">Choose report format</h3>
+        <button style="background:var(--owe);" onclick="downloadReport('pdf')">📄 PDF</button>
+        <button style="background:var(--paid);" onclick="downloadReport('excel')">📊 Excel</button>
+        <button class="ghost" onclick="closeReportModal()">Cancel</button>
+      </div>
+    </div>
+
+    <!-- DAILY SALES TAB -->
+    <div id="salesTab" class="hidden">
+      <div class="card">
+        <h3 style="margin-top:0;">Daily Sales / Cash</h3>
+        <label>Date</label>
+        <input id="ds-date" type="date" onchange="loadDailySalesForm()">
+        <label>Opening Cash (₹) — optional</label>
+        <input id="ds-opening" type="number" min="0">
+        <label>Cash Sales (₹) — optional</label>
+        <input id="ds-cash" type="number" min="0">
+        <label>Online / UPI Sales (₹) — optional</label>
+        <input id="ds-online" type="number" min="0">
+        <label>Actual Closing Cash counted (₹) — optional</label>
+        <input id="ds-closing" type="number" min="0">
+        <button style="background:var(--brand);" onclick="saveDailySales()">💾 Save Day</button>
+      </div>
+      <div class="card" id="ds-summaryCard"></div>
+    </div>
+
     <!-- SHOP EXPENSES TAB -->
-    <div id="expensesTab">
+    <div id="expensesTab" class="hidden">
       <div class="totalbox" style="background:var(--owe);">
         <div class="amt" id="expTotalToday">₹0</div>
         <div class="sub" id="expTotalLabel">Total shop expenses today</div>
@@ -271,6 +339,11 @@ window.addEventListener('error', function(e){
         <input id="cd-payNote" placeholder="e.g. cash">
       </div>
     </div>
+    <label>Payment method</label>
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button type="button" id="cd-method-cash" style="width:auto; flex:1; padding:10px; margin:0; background:var(--paid);" onclick="setPayMethod('cash')">💵 Cash</button>
+      <button type="button" id="cd-method-online" class="ghost" style="width:auto; flex:1; margin:0; padding:10px;" onclick="setPayMethod('online')">📲 Online/UPI</button>
+    </div>
     <div class="card" style="background:#f0edfb; padding:14px; margin-bottom:12px;">
       <div style="font-size:0.8rem; color:var(--muted);">Pay via UPI to</div>
       <div style="font-size:1.1rem; font-weight:700;" id="cd-upiIdText">—</div>
@@ -312,6 +385,7 @@ const TXN_KEY = 'udhar_txns_v1';
 const EXP_KEY = 'udhar_expenses_v1';
 const EXP_DELETED_KEY = 'udhar_expenses_deleted_v1';
 const CATS_KEY = 'udhar_custom_categories_v1';
+const DAILY_KEY = 'udhar_daily_sales_v1';
 const UPI_KEY = 'udhar_upi_v1';
 
 function loadUsers(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'{}'); }catch(e){ return {}; } }
@@ -326,6 +400,24 @@ function loadDeletedExpenseIds(){ try{ return JSON.parse(localStorage.getItem(EX
 function saveDeletedExpenseIds(o){ localStorage.setItem(EXP_DELETED_KEY, JSON.stringify(o)); }
 function loadCustomCats(){ try{ return JSON.parse(localStorage.getItem(CATS_KEY)||'[]'); }catch(e){ return []; } }
 function saveCustomCats(a){ localStorage.setItem(CATS_KEY, JSON.stringify(a)); }
+
+// Daily Sales: one record per date, stored as {date: {openingCash, cashSales, onlineSales, closingCashActual, updatedAt}}
+function loadDailySalesAll(){ try{ return JSON.parse(localStorage.getItem(DAILY_KEY)||'{}'); }catch(e){ return {}; } }
+function saveDailySalesAll(o){ localStorage.setItem(DAILY_KEY, JSON.stringify(o)); }
+function getDailySales(date){
+  const all = loadDailySalesAll();
+  return all[date] || { openingCash:0, cashSales:0, onlineSales:0, closingCashActual:null, updatedAt:0 };
+}
+function upsertDailySales(date, data){
+  const all = loadDailySalesAll();
+  const existing = all[date] || {};
+  all[date] = Object.assign({}, existing, data, { updatedAt: Date.now() });
+  saveDailySalesAll(all);
+}
+function hasDailyRecord(date){
+  const d = getDailySales(date);
+  return !!(d.openingCash || d.cashSales || d.onlineSales || d.closingCashActual!==null);
+}
 function loadUpi(){ try{ return JSON.parse(localStorage.getItem(UPI_KEY)||'{}'); }catch(e){ return {}; } }
 function saveUpi(o){ localStorage.setItem(UPI_KEY, JSON.stringify(o)); }
 
@@ -357,7 +449,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-02-v11-custom-categories';
+const APP_VERSION = '2026-10-03-v12-profit-dashboard';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -467,6 +559,15 @@ function mergeRemoteData(remote){
     if(expMap[id] && mergedDeleted[id] >= stampOf(expMap[id])) delete expMap[id];
   });
   saveExpenses(Object.values(expMap));
+
+  const localDaily = loadDailySalesAll();
+  const remoteDaily = remote.dailySales || {};
+  const mergedDaily = Object.assign({}, localDaily);
+  Object.keys(remoteDaily).forEach(date=>{
+    const existing = mergedDaily[date];
+    if(!existing || stampOf(remoteDaily[date]) > stampOf(existing)) mergedDaily[date] = remoteDaily[date];
+  });
+  saveDailySalesAll(mergedDaily);
 }
 
 // Pull others' changes first, then push the merged result — so phones never overwrite each other.
@@ -475,7 +576,7 @@ async function syncToDrive(){
   setDriveStatus('🔄 Syncing…');
   const pulled = await pullFromDrive();
   if(pulled==='error') return false;
-  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats() };
+  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll() };
   const content = JSON.stringify(payload, null, 2);
   try{
     let res;
@@ -515,11 +616,10 @@ async function syncToDrive(){
 
 function refreshCurrentView(){
   if(document.getElementById('dashView').classList.contains('hidden')) return;
-  if(!document.getElementById('customersTab').classList.contains('hidden')){
-    renderCustomers(); renderTodayPaid();
-  } else {
-    renderExpenses();
-  }
+  if(!document.getElementById('customersTab').classList.contains('hidden')){ renderCustomers(); renderTodayPaid(); }
+  else if(!document.getElementById('expensesTab').classList.contains('hidden')){ renderExpenses(); }
+  else if(!document.getElementById('salesTab').classList.contains('hidden')){ loadDailySalesForm(); }
+  else if(!document.getElementById('dashboardTab').classList.contains('hidden')){ renderDashboard(); }
 }
 
 async function syncNow(){
@@ -613,28 +713,39 @@ function showDashboard(){
   document.getElementById('custDetailView').classList.add('hidden');
   document.getElementById('settingsView').classList.add('hidden');
   document.getElementById('dashView').classList.remove('hidden');
-  showExpensesTab();
+  showDashboardTab();
 }
 
+const TABS = ['dashboard','sales','expenses','customers'];
+function activateTab(name){
+  TABS.forEach(t=>{
+    const panel = document.getElementById(t+'Tab');
+    const btn = document.getElementById('tab-'+t+'-btn');
+    if(t===name){
+      panel.classList.remove('hidden');
+      btn.style.background = 'var(--brand)';
+      btn.classList.remove('ghost');
+    } else {
+      panel.classList.add('hidden');
+      btn.classList.add('ghost');
+      btn.style.background = 'transparent';
+    }
+  });
+}
+
+function showDashboardTab(){ activateTab('dashboard'); renderDashboard(); }
+
+function showSalesTab(){ activateTab('sales'); loadDailySalesForm(); }
+
 function showExpensesTab(){
-  document.getElementById('expensesTab').classList.remove('hidden');
-  document.getElementById('customersTab').classList.add('hidden');
-  document.getElementById('tab-expenses-btn').style.background = 'var(--brand)';
-  document.getElementById('tab-expenses-btn').classList.remove('ghost');
-  document.getElementById('tab-customers-btn').classList.add('ghost');
-  document.getElementById('tab-customers-btn').style.background = 'transparent';
+  activateTab('expenses');
   renderCategoryButtons();
   if(!editingExpenseId) selectExpCat(selectedExpCat);
   renderExpenses();
 }
 
 function showCustomersTab(){
-  document.getElementById('customersTab').classList.remove('hidden');
-  document.getElementById('expensesTab').classList.add('hidden');
-  document.getElementById('tab-customers-btn').style.background = 'var(--brand)';
-  document.getElementById('tab-customers-btn').classList.remove('ghost');
-  document.getElementById('tab-expenses-btn').classList.add('ghost');
-  document.getElementById('tab-expenses-btn').style.background = 'transparent';
+  activateTab('customers');
   renderCustomers();
   renderTodayPaid();
 }
@@ -648,8 +759,10 @@ const BUILTIN_CATS = [
   {name:'Juice', emoji:'🧃', color:'#FFA726'},
   {name:'Biscuits', emoji:'🍪', color:'#C8914C'},
   {name:'Snacks', emoji:'🍟', color:'#EF5350'},
+  {name:'Staff Salary', emoji:'🧑\u200d💼', color:'#3949AB'},
   {name:'Other', emoji:'📦', color:'#78909C'}
 ];
+const STAFF_SALARY_CAT = 'Staff Salary';
 const CAT_COLOR_PALETTE = ['#26A69A','#AB47BC','#5C6BC0','#7CB342','#EC407A','#FFCA28','#29B6F6','#66BB6A','#FF7043','#5E35B1','#00ACC1','#D4E157','#FF8A65','#789262','#42A5F5','#BDBDBD'];
 
 function allCategories(){
@@ -975,6 +1088,7 @@ function openCustomer(id){
   document.getElementById('waBtn').classList.remove('hidden');
   const upi = loadUpi();
   document.getElementById('cd-upiIdText').textContent = upi.upiId || 'Not set — add in Settings';
+  setPayMethod('cash');
   renderCustomerDetail();
 }
 
@@ -1008,15 +1122,32 @@ function renderCustomerDetail(){
   });
 }
 
+let selectedPayMethod = 'cash';
+function setPayMethod(m){
+  selectedPayMethod = m;
+  const cashBtn = document.getElementById('cd-method-cash');
+  const onlineBtn = document.getElementById('cd-method-online');
+  if(m==='cash'){
+    cashBtn.style.background = 'var(--paid)'; cashBtn.classList.remove('ghost');
+    onlineBtn.style.background = 'transparent'; onlineBtn.classList.add('ghost');
+  } else {
+    onlineBtn.style.background = 'var(--brand)'; onlineBtn.classList.remove('ghost');
+    cashBtn.style.background = 'transparent'; cashBtn.classList.add('ghost');
+  }
+}
+
 function addTxn(type){
   const amt = Number(document.getElementById(type==='credit'?'cd-creditAmt':'cd-payAmt').value)||0;
   const note = document.getElementById(type==='credit'?'cd-creditNote':'cd-payNote').value.trim();
   if(amt<=0){ showBanner('Enter a valid amount'); return; }
   const txns = loadTxns();
-  txns.push({ id: Date.now(), customerId: activeCustomerId, type, amount: amt, note, date: Date.now() });
+  const rec = { id: uid(), customerId: activeCustomerId, type, amount: amt, note, date: Date.now(), updatedAt: Date.now() };
+  if(type==='payment') rec.method = selectedPayMethod;
+  txns.push(rec);
   saveTxns(txns);
   document.getElementById(type==='credit'?'cd-creditAmt':'cd-payAmt').value='';
   document.getElementById(type==='credit'?'cd-creditNote':'cd-payNote').value='';
+  if(type==='payment') setPayMethod('cash');
   renderCustomerDetail();
   showBanner(type==='credit' ? '➕ Credit added' : '✅ Payment recorded — balance updated');
   afterDataChange();
@@ -1184,6 +1315,343 @@ function showBanner(msg){
   b.style.display = 'block';
   clearTimeout(window._bannerTimer);
   window._bannerTimer = setTimeout(()=>{ b.style.display='none'; }, 3500);
+}
+
+/* ---------- date range helpers ---------- */
+function toISODate(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function parseISODate(s){ const [y,m,d]=s.split('-').map(Number); return new Date(y, m-1, d); }
+function addDays(dateStr, n){ const d=parseISODate(dateStr); d.setDate(d.getDate()+n); return toISODate(d); }
+function addMonths(dateStr, n){ const d=parseISODate(dateStr); d.setMonth(d.getMonth()+n); return toISODate(d); }
+function dateRangeArray(fromDate, toDate){
+  const out=[]; let cur=fromDate; let guard=0;
+  while(cur<=toDate && guard<3700){ out.push(cur); cur=addDays(cur,1); guard++; }
+  return out;
+}
+function getWeekRange(anchorDate){
+  const d = parseISODate(anchorDate);
+  const dow = d.getDay(); // 0=Sun..6=Sat
+  const mondayOffset = (dow===0) ? -6 : (1-dow);
+  const start = addDays(anchorDate, mondayOffset);
+  const end = addDays(start, 6);
+  return [start, end];
+}
+function getMonthRange(anchorDate){
+  const d = parseISODate(anchorDate);
+  const start = toISODate(new Date(d.getFullYear(), d.getMonth(), 1));
+  const end = toISODate(new Date(d.getFullYear(), d.getMonth()+1, 0));
+  return [start, end];
+}
+
+/* ---------- profit calculation engine ---------- */
+function sumExpensesInRange(fromDate, toDate, isSalary){
+  return loadExpenses()
+    .filter(e=>e.date>=fromDate && e.date<=toDate)
+    .filter(e=> isSalary ? e.category===STAFF_SALARY_CAT : e.category!==STAFF_SALARY_CAT)
+    .reduce((s,e)=>s+(Number(e.amount)||0),0);
+}
+function sumCustomerPaymentsInRange(fromDate, toDate, method){
+  return loadTxns()
+    .filter(t=>t.type==='payment')
+    .filter(t=>{ const d=toISODate(new Date(t.date)); return d>=fromDate && d<=toDate; })
+    .filter(t=> (t.method||'cash')===method)
+    .reduce((s,t)=>s+(Number(t.amount)||0),0);
+}
+function computeDayMetrics(date){
+  const ds = getDailySales(date);
+  const cashSales = Number(ds.cashSales)||0;
+  const onlineSales = Number(ds.onlineSales)||0;
+  const totalSales = cashSales + onlineSales;
+  const expenses = sumExpensesInRange(date, date, false);
+  const staffSalary = sumExpensesInRange(date, date, true);
+  const custCash = sumCustomerPaymentsInRange(date, date, 'cash');
+  const custOnline = sumCustomerPaymentsInRange(date, date, 'online');
+  const estimatedProfit = totalSales - expenses - staffSalary;
+  const openingCash = Number(ds.openingCash)||0;
+  const expectedClosingCash = openingCash + cashSales + custCash - expenses - staffSalary;
+  const closingCashActual = (ds.closingCashActual===null || ds.closingCashActual===undefined || ds.closingCashActual==='') ? null : Number(ds.closingCashActual);
+  const cashDifference = (closingCashActual===null) ? null : (closingCashActual - expectedClosingCash);
+  return {
+    date, cashSales, onlineSales, totalSales, expenses, staffSalary,
+    custCash, custOnline, estimatedProfit, openingCash, expectedClosingCash,
+    closingCashActual, cashDifference,
+    needsReview: cashDifference!==null && cashDifference<0,
+    recorded: hasDailyRecord(date)
+  };
+}
+function computeRangeMetrics(fromDate, toDate){
+  const days = dateRangeArray(fromDate, toDate).map(computeDayMetrics);
+  const sum = k => days.reduce((s,d)=>s+d[k],0);
+  const daysRecorded = days.filter(d=>d.recorded).length;
+  const daysNeedingReview = days.filter(d=>d.needsReview).length;
+  const totalSales = sum('totalSales');
+  const totalProfit = sum('estimatedProfit');
+  return {
+    fromDate, toDate, days,
+    totalSales, cashSales:sum('cashSales'), onlineSales:sum('onlineSales'),
+    totalExpenses: sum('expenses'), totalStaffSalary: sum('staffSalary'),
+    totalCustCash: sum('custCash'), totalCustOnline: sum('custOnline'),
+    totalProfit,
+    daysRecorded, daysNeedingReview,
+    avgDailySales: daysRecorded ? totalSales/daysRecorded : 0,
+    avgDailyProfit: daysRecorded ? totalProfit/daysRecorded : 0
+  };
+}
+
+/* ---------- dashboard UI ---------- */
+let dashRangeType = 'daily';
+let dashAnchorDate = null;
+
+function fmtMoney(n){ return '₹' + Math.round(n).toLocaleString('en-IN'); }
+
+function setDashRange(type){
+  dashRangeType = type;
+  ['daily','weekly','monthly','custom'].forEach(t=>{
+    const btn = document.getElementById('dr-'+t+'-btn');
+    if(t===type){ btn.style.background='var(--brand)'; btn.classList.remove('ghost'); }
+    else { btn.classList.add('ghost'); btn.style.background='transparent'; }
+  });
+  document.getElementById('dr-nav').classList.toggle('hidden', type==='custom');
+  document.getElementById('dr-customRange').classList.toggle('hidden', type!=='custom');
+  if(type==='custom'){
+    if(!document.getElementById('dr-fromDate').value) document.getElementById('dr-fromDate').value = todayStr();
+    if(!document.getElementById('dr-toDate').value) document.getElementById('dr-toDate').value = todayStr();
+  }
+  renderDashboard();
+}
+
+function shiftDashPeriod(dir){
+  if(dashRangeType==='daily') dashAnchorDate = addDays(dashAnchorDate, dir);
+  else if(dashRangeType==='weekly') dashAnchorDate = addDays(dashAnchorDate, dir*7);
+  else if(dashRangeType==='monthly') dashAnchorDate = addMonths(dashAnchorDate, dir);
+  renderDashboard();
+}
+
+function currentDashRange(){
+  if(dashRangeType==='daily') return [dashAnchorDate, dashAnchorDate];
+  if(dashRangeType==='weekly') return getWeekRange(dashAnchorDate);
+  if(dashRangeType==='monthly') return getMonthRange(dashAnchorDate);
+  const f = document.getElementById('dr-fromDate').value || todayStr();
+  const t = document.getElementById('dr-toDate').value || todayStr();
+  return f<=t ? [f,t] : [t,f];
+}
+
+function buildBarChart(days){
+  const w = Math.max(360, days.length*44);
+  const h = 160;
+  const maxVal = Math.max(1, ...days.map(d=>Math.max(d.totalSales, d.estimatedProfit, 0)));
+  const barW = 14;
+  let bars = '';
+  days.forEach((d,i)=>{
+    const x = i*44 + 10;
+    const sH = (d.totalSales/maxVal)*120;
+    const pH = (Math.max(d.estimatedProfit,0)/maxVal)*120;
+    bars += `<rect x="${x}" y="${130-sH}" width="${barW}" height="${sH}" fill="#1f6feb"></rect>`;
+    bars += `<rect x="${x+barW+2}" y="${130-pH}" width="${barW}" height="${pH}" fill="${d.estimatedProfit<0?'#c0392b':'#2e7d32'}"></rect>`;
+    bars += `<text x="${x+barW}" y="148" font-size="9" text-anchor="middle" fill="currentColor">${d.date.slice(5)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${w} 160" width="${w}" height="160" style="color:var(--muted);">${bars}</svg>
+    <div style="font-size:0.75rem; margin-top:4px;"><span style="color:#1f6feb;">■</span> Sales &nbsp; <span style="color:#2e7d32;">■</span> Profit</div>`;
+}
+
+function metricRow(label, value){
+  return `<div class="paidRow"><span>${label}</span><span style="font-weight:600;">${value}</span></div>`;
+}
+
+function renderDashboard(){
+  if(!dashAnchorDate) dashAnchorDate = todayStr();
+  const [from, to] = currentDashRange();
+  const m = computeRangeMetrics(from, to);
+
+  const label = dashRangeType==='daily' ? from
+    : dashRangeType==='weekly' ? (from+' to '+to)
+    : dashRangeType==='monthly' ? parseISODate(from).toLocaleDateString('en-IN',{month:'long', year:'numeric'})
+    : (from+' to '+to);
+  document.getElementById('dr-periodLabel').textContent = label;
+
+  document.getElementById('db-profit').textContent = fmtMoney(m.totalProfit);
+  document.getElementById('db-profitLabel').textContent = 'Estimated Profit';
+
+  let html = '';
+  html += metricRow('Total Sales', fmtMoney(m.totalSales));
+  html += metricRow('Expenses/Purchases', fmtMoney(m.totalExpenses));
+  html += metricRow('Staff Salary', fmtMoney(m.totalStaffSalary));
+  html += metricRow('Customer A/c Cash Collection', fmtMoney(m.totalCustCash));
+  html += metricRow('Customer A/c Online Collection', fmtMoney(m.totalCustOnline));
+
+  if(dashRangeType==='daily'){
+    const d = m.days[0];
+    html += metricRow('Closing Cash (entered)', d.closingCashActual===null?'—':fmtMoney(d.closingCashActual));
+    html += metricRow('Expected Closing Cash', fmtMoney(d.expectedClosingCash));
+    if(d.cashDifference!==null){
+      html += metricRow('Cash Difference', (d.cashDifference<0?'⚠️ ':'')+fmtMoney(d.cashDifference));
+      html += metricRow('Status', d.needsReview ? '⚠️ Needs Review' : '✅ OK');
+    } else {
+      html += metricRow('Status', 'Closing cash not entered yet');
+    }
+  } else {
+    html += metricRow('Average Daily Sales', fmtMoney(m.avgDailySales));
+    html += metricRow('Average Daily Profit', fmtMoney(m.avgDailyProfit));
+    html += metricRow('Recorded Days', m.daysRecorded);
+    html += metricRow('Days Needing Review', (m.daysNeedingReview>0?'⚠️ ':'')+m.daysNeedingReview);
+  }
+  document.getElementById('db-metrics').innerHTML = html;
+  document.getElementById('db-chartTitle').textContent = 'Sales & Profit — ' + label;
+  document.getElementById('db-chart').innerHTML = buildBarChart(m.days);
+  window.__lastDashMetrics = m; // used by report export
+}
+
+/* ---------- daily sales entry ---------- */
+function loadDailySalesForm(){
+  const dateEl = document.getElementById('ds-date');
+  if(!dateEl.value) dateEl.value = todayStr();
+  const d = getDailySales(dateEl.value);
+  document.getElementById('ds-opening').value = d.openingCash || '';
+  document.getElementById('ds-cash').value = d.cashSales || '';
+  document.getElementById('ds-online').value = d.onlineSales || '';
+  document.getElementById('ds-closing').value = (d.closingCashActual===null||d.closingCashActual===undefined) ? '' : d.closingCashActual;
+  renderDailySummary(dateEl.value);
+}
+
+function renderDailySummary(date){
+  const m = computeDayMetrics(date);
+  let html = '<h3 style="margin-top:0;">Summary for '+date+'</h3>';
+  html += metricRow('Total Sales', fmtMoney(m.totalSales));
+  html += metricRow('Expenses/Purchases', fmtMoney(m.expenses));
+  html += metricRow('Staff Salary', fmtMoney(m.staffSalary));
+  html += metricRow('Estimated Profit', fmtMoney(m.estimatedProfit));
+  html += metricRow('Customer A/c Cash Collection', fmtMoney(m.custCash));
+  html += metricRow('Customer A/c Online Collection', fmtMoney(m.custOnline));
+  html += metricRow('Expected Closing Cash', fmtMoney(m.expectedClosingCash));
+  if(m.cashDifference!==null){
+    html += metricRow('Cash Difference', (m.cashDifference<0?'⚠️ ':'')+fmtMoney(m.cashDifference));
+    html += metricRow('Status', m.needsReview ? '⚠️ Needs Review' : '✅ OK');
+  }
+  document.getElementById('ds-summaryCard').innerHTML = html;
+}
+
+function saveDailySales(){
+  const date = document.getElementById('ds-date').value || todayStr();
+  const numOrNull = v => (v===''||v===null||v===undefined) ? null : Number(v);
+  const opening = numOrNull(document.getElementById('ds-opening').value);
+  const cash = numOrNull(document.getElementById('ds-cash').value);
+  const online = numOrNull(document.getElementById('ds-online').value);
+  const closing = numOrNull(document.getElementById('ds-closing').value);
+  upsertDailySales(date, {
+    openingCash: opening||0,
+    cashSales: cash||0,
+    onlineSales: online||0,
+    closingCashActual: closing
+  });
+  showBanner('✅ Day saved');
+  renderDailySummary(date);
+  afterDataChange();
+}
+
+/* ---------- report export ---------- */
+function openReportModal(){ document.getElementById('reportModal').classList.remove('hidden'); }
+function closeReportModal(){ document.getElementById('reportModal').classList.add('hidden'); }
+
+function reportPeriodLabel(m){
+  if(dashRangeType==='daily') return m.fromDate;
+  if(dashRangeType==='monthly') return parseISODate(m.fromDate).toLocaleDateString('en-IN',{month:'long', year:'numeric'});
+  return m.fromDate + ' to ' + m.toDate;
+}
+
+function buildSummaryRows(m){
+  return [
+    ['Period', reportPeriodLabel(m)],
+    ['Total Sales', m.totalSales],
+    ['Cash Sales', m.cashSales],
+    ['Online Sales', m.onlineSales],
+    ['Customer A/c Cash Collection', m.totalCustCash],
+    ['Customer A/c Online Collection', m.totalCustOnline],
+    ['Expenses/Purchases', m.totalExpenses],
+    ['Staff Salary', m.totalStaffSalary],
+    ['Estimated Profit', m.totalProfit],
+    ['Average Daily Sales', Math.round(m.avgDailySales)],
+    ['Average Daily Profit', Math.round(m.avgDailyProfit)],
+    ['Recorded Days', m.daysRecorded],
+    ['Days Needing Review', m.daysNeedingReview]
+  ];
+}
+
+function buildDailyDetailRows(m){
+  return m.days.map(d=>({
+    Date: d.date,
+    'Cash Sales': d.cashSales,
+    'Online Sales': d.onlineSales,
+    'Customer Cash Collection': d.custCash,
+    'Customer Online Collection': d.custOnline,
+    'Expenses/Purchases': d.expenses,
+    'Staff Salary': d.staffSalary,
+    'Total Sales': d.totalSales,
+    'Estimated Profit': d.estimatedProfit,
+    'Opening Cash': d.openingCash,
+    'Closing Cash (actual)': d.closingCashActual===null?'':d.closingCashActual,
+    'Expected Closing Cash': d.expectedClosingCash,
+    'Cash Difference': d.cashDifference===null?'':d.cashDifference,
+    'Status': d.cashDifference===null ? '' : (d.needsReview ? 'Needs Review' : 'OK')
+  }));
+}
+
+function downloadReport(format){
+  const m = window.__lastDashMetrics;
+  if(!m){ showBanner('Open the dashboard first'); return; }
+  closeReportModal();
+  if(format==='pdf') generatePdfReport(m);
+  else generateExcelReport(m);
+}
+
+function generatePdfReport(m){
+  if(!(window.jspdf && window.jspdf.jsPDF)){ showBanner('⚠️ PDF library not loaded — check your internet connection'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const upi = loadUpi();
+  let y = 16;
+  doc.setFontSize(16); doc.text((upi.shopName||'SP Tea Shop'), 14, y); y+=8;
+  doc.setFontSize(11); doc.text('Report period: '+reportPeriodLabel(m), 14, y); y+=10;
+
+  doc.setFontSize(12); doc.text('Summary', 14, y); y+=6;
+  doc.setFontSize(10);
+  buildSummaryRows(m).forEach(row=>{
+    const val = typeof row[1]==='number' ? ('Rs. '+Math.round(row[1]).toLocaleString('en-IN')) : String(row[1]);
+    doc.text(String(row[0]), 14, y);
+    doc.text(val, 120, y);
+    y += 6;
+    if(y>270){ doc.addPage(); y=16; }
+  });
+
+  y += 6;
+  if(y>230){ doc.addPage(); y=16; }
+  doc.setFontSize(12); doc.text('Sales & Profit Chart', 14, y); y+=8;
+  const maxVal = Math.max(1, ...m.days.map(d=>Math.max(d.totalSales, d.estimatedProfit, 0)));
+  const chartX = 14, chartW = 180, chartH = 50;
+  const bw = Math.max(2, Math.min(10, chartW / Math.max(1,m.days.length) / 2.3));
+  m.days.forEach((d,i)=>{
+    const x = chartX + i*(bw*2+2);
+    if(x > chartX+chartW-bw) return; // avoid overflowing page width for very long ranges
+    const sH = (d.totalSales/maxVal)*chartH;
+    const pH = (Math.max(d.estimatedProfit,0)/maxVal)*chartH;
+    doc.setFillColor(31,111,235); doc.rect(x, y+chartH-sH, bw, sH, 'F');
+    doc.setFillColor(d.estimatedProfit<0?192:46, d.estimatedProfit<0?57:125, d.estimatedProfit<0?43:50); doc.rect(x+bw+1, y+chartH-pH, bw, pH, 'F');
+  });
+  y += chartH + 10;
+  doc.setFontSize(9); doc.setTextColor(100);
+  doc.text('Blue = Sales, Green/Red = Profit (red = loss day)', 14, y);
+
+  const safePeriod = reportPeriodLabel(m).replace(/[^a-zA-Z0-9]+/g,'_');
+  doc.save('SP-Tea-Shop-Report-'+safePeriod+'.pdf');
+}
+
+function generateExcelReport(m){
+  if(!window.XLSX){ showBanner('⚠️ Excel library not loaded — check your internet connection'); return; }
+  const summaryRows = buildSummaryRows(m).map(r=>({Field:r[0], Value:r[1]}));
+  const dailyRows = buildDailyDetailRows(m);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dailyRows), 'Daily Details');
+  const safePeriod = reportPeriodLabel(m).replace(/[^a-zA-Z0-9]+/g,'_');
+  XLSX.writeFile(wb, 'SP-Tea-Shop-Report-'+safePeriod+'.xlsx');
 }
 
 /* ---------- init ---------- */
