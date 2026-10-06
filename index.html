@@ -184,6 +184,20 @@ window.addEventListener('error', function(e){
         <div id="db-chart" style="overflow-x:auto;"></div>
       </div>
 
+      <div class="card">
+        <h3 style="margin-top:0;">📋 Detailed Daily Breakdown</h3>
+        <div style="overflow-x:auto;">
+          <table id="db-dailyTable" style="min-width:680px; font-size:0.78rem;"><tbody></tbody></table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">🧾 Expense Items (with notes)</h3>
+        <div style="overflow-x:auto;">
+          <table id="db-expenseTable" style="min-width:560px; font-size:0.78rem;"><tbody></tbody></table>
+        </div>
+      </div>
+
       <button style="background:var(--brand);" onclick="openReportModal()">⬇️ Download Report</button>
 
       <div id="reportModal" class="hidden card">
@@ -456,7 +470,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v15-cash-online-expense-split';
+const APP_VERSION = '2026-10-03-v16-detailed-reports';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1567,6 +1581,52 @@ function renderDashboard(){
   document.getElementById('db-chartTitle').textContent = 'Sales & Profit — ' + label;
   document.getElementById('db-chart').innerHTML = buildBarChart(m.days);
   window.__lastDashMetrics = m; // used by report export
+  renderDetailedReportTables(m);
+}
+
+function renderDetailedReportTables(m){
+  const dailyHead = `<tr style="font-weight:700; border-bottom:2px solid var(--muted);">
+    <td>Date</td><td>Cash</td><td>Online</td><td>Expenses</td><td>Salary</td><td>Profit</td>
+    <td>Opening</td><td>Closing</td><td>Diff</td><td>Status</td></tr>`;
+  let dailyRowsHtml = '';
+  m.days.forEach(d=>{
+    const status = d.cashDifference===null ? '—' : (d.needsReview ? '⚠️ Review' : '✅ OK');
+    dailyRowsHtml += `<tr style="border-bottom:1px solid rgba(128,128,128,0.15);">
+      <td style="padding:4px 6px;">${d.date}</td>
+      <td style="padding:4px 6px;">₹${Math.round(d.cashSales)}${d.cashSalesIsDerived?' *':''}</td>
+      <td style="padding:4px 6px;">₹${Math.round(d.onlineSales)}</td>
+      <td style="padding:4px 6px;">₹${Math.round(d.expenses)}</td>
+      <td style="padding:4px 6px;">₹${Math.round(d.staffSalary)}</td>
+      <td style="padding:4px 6px; font-weight:600;">₹${Math.round(d.estimatedProfit)}</td>
+      <td style="padding:4px 6px;">₹${Math.round(d.openingCash)}</td>
+      <td style="padding:4px 6px;">${d.closingCashActual===null?'—':'₹'+Math.round(d.closingCashActual)}</td>
+      <td style="padding:4px 6px;">${d.cashDifference===null?'—':'₹'+Math.round(d.cashDifference)}</td>
+      <td style="padding:4px 6px;">${status}</td>
+    </tr>`;
+  });
+  const dailyTable = document.getElementById('db-dailyTable');
+  if(dailyTable) dailyTable.innerHTML = dailyHead + dailyRowsHtml +
+    '<tr><td colspan="10" style="padding-top:6px; font-size:0.7rem; color:var(--muted);">* Cash Sales auto-calculated from Opening/Closing Cash</td></tr>';
+
+  const expenseRows = buildExpenseDetailRows(m.fromDate, m.toDate);
+  const expHead = `<tr style="font-weight:700; border-bottom:2px solid var(--muted);">
+    <td>Date</td><td>Category</td><td>Amount</td><td>Paid</td><td>Note</td></tr>`;
+  let expRowsHtml = '';
+  if(!expenseRows.length){
+    expRowsHtml = '<tr><td colspan="5" style="padding:8px 6px; color:var(--muted);">No expenses in this period</td></tr>';
+  } else {
+    expenseRows.forEach(e=>{
+      expRowsHtml += `<tr style="border-bottom:1px solid rgba(128,128,128,0.15);">
+        <td style="padding:4px 6px;">${e.Date}</td>
+        <td style="padding:4px 6px;">${e.Category}</td>
+        <td style="padding:4px 6px;">₹${e['Amount (₹)']}</td>
+        <td style="padding:4px 6px;">${e['Paid Using']}</td>
+        <td style="padding:4px 6px;">${e.Note||'—'}</td>
+      </tr>`;
+    });
+  }
+  const expTable = document.getElementById('db-expenseTable');
+  if(expTable) expTable.innerHTML = expHead + expRowsHtml;
 }
 
 /* ---------- daily sales entry ---------- */
@@ -1680,6 +1740,20 @@ function buildSummaryRows(m){
   ];
 }
 
+function buildExpenseDetailRows(fromDate, toDate){
+  const custByDate = {}; // name lookup not needed here, just raw list
+  return loadExpenses()
+    .filter(e=>e.date>=fromDate && e.date<=toDate)
+    .sort((a,b)=> a.date<b.date ? -1 : a.date>b.date ? 1 : 0)
+    .map(e=>({
+      Date: e.date,
+      Category: e.category,
+      'Amount (₹)': e.amount,
+      'Paid Using': (e.method==='online') ? 'Online' : 'Cash',
+      Note: e.note || ''
+    }));
+}
+
 function buildDailyDetailRows(m){
   return m.days.map(d=>({
     Date: d.date,
@@ -1712,6 +1786,41 @@ function downloadReport(format){
   else generateExcelReport(m);
 }
 
+// Draws a simple table starting at startY. Returns the Y position after the table.
+// columns: [{header, key, width, maxChars}]. Handles page breaks, re-printing the header on each new page.
+function pdfDrawTable(doc, startY, columns, rows, title){
+  let y = startY;
+  const rowH = 6;
+  const pageBottom = 280;
+
+  function drawHeader(){
+    if(title){ doc.setFontSize(12); doc.setTextColor(0); doc.text(title, 14, y); y += 7; }
+    doc.setFontSize(8); doc.setFont(undefined, 'bold');
+    let x = 14;
+    columns.forEach(c=>{ doc.text(c.header, x, y); x += c.width; });
+    y += 1;
+    doc.setDrawColor(180); doc.line(14, y, x, y);
+    y += 4.5;
+    doc.setFont(undefined, 'normal');
+  }
+
+  drawHeader();
+  rows.forEach(row=>{
+    if(y > pageBottom){ doc.addPage(); y = 16; drawHeader(); }
+    let x = 14;
+    columns.forEach(c=>{
+      let val = row[c.key];
+      if(typeof val === 'number') val = Math.round(val).toLocaleString('en-IN');
+      val = (val===null||val===undefined) ? '' : String(val);
+      if(val.length > c.maxChars) val = val.slice(0, c.maxChars-1)+'…';
+      doc.text(val, x, y);
+      x += c.width;
+    });
+    y += rowH;
+  });
+  return y + 4;
+}
+
 function generatePdfReport(m){
   if(!(window.jspdf && window.jspdf.jsPDF)){ showBanner('⚠️ PDF library not loaded — check your internet connection'); return; }
   const { jsPDF } = window.jspdf;
@@ -1732,14 +1841,14 @@ function generatePdfReport(m){
   });
 
   y += 6;
-  if(y>230){ doc.addPage(); y=16; }
+  if(y>220){ doc.addPage(); y=16; }
   doc.setFontSize(12); doc.text('Sales & Profit Chart', 14, y); y+=8;
   const maxVal = Math.max(1, ...m.days.map(d=>Math.max(d.totalSales, d.estimatedProfit, 0)));
   const chartX = 14, chartW = 180, chartH = 50;
   const bw = Math.max(2, Math.min(10, chartW / Math.max(1,m.days.length) / 2.3));
   m.days.forEach((d,i)=>{
     const x = chartX + i*(bw*2+2);
-    if(x > chartX+chartW-bw) return; // avoid overflowing page width for very long ranges
+    if(x > chartX+chartW-bw) return;
     const sH = (d.totalSales/maxVal)*chartH;
     const pH = (Math.max(d.estimatedProfit,0)/maxVal)*chartH;
     doc.setFillColor(31,111,235); doc.rect(x, y+chartH-sH, bw, sH, 'F');
@@ -1748,6 +1857,39 @@ function generatePdfReport(m){
   y += chartH + 10;
   doc.setFontSize(9); doc.setTextColor(100);
   doc.text('Blue = Sales, Green/Red = Profit (red = loss day)', 14, y);
+  doc.setTextColor(0);
+
+  // Daily breakdown table — every date, on its own page(s)
+  doc.addPage(); y = 16;
+  const dailyCols = [
+    {header:'Date', key:'date', width:18, maxChars:12},
+    {header:'Cash', key:'cashSales', width:16, maxChars:8},
+    {header:'Online', key:'onlineSales', width:16, maxChars:8},
+    {header:'Expenses', key:'expenses', width:18, maxChars:8},
+    {header:'Salary', key:'staffSalary', width:16, maxChars:8},
+    {header:'Profit', key:'estimatedProfit', width:18, maxChars:8},
+    {header:'Closing', key:'closingCashActual', width:18, maxChars:8},
+    {header:'Diff', key:'cashDifference', width:16, maxChars:8},
+    {header:'Status', key:'statusLabel', width:24, maxChars:14}
+  ];
+  const dailyRowsForPdf = m.days.map(d=>Object.assign({}, d, {
+    statusLabel: d.cashDifference===null ? '-' : (d.needsReview ? 'NEEDS REVIEW' : 'OK')
+  }));
+  y = pdfDrawTable(doc, y, dailyCols, dailyRowsForPdf, 'Daily Breakdown');
+
+  // Itemized expenses — every single entry, with its note, date, category, payment method
+  const expenseRows = buildExpenseDetailRows(m.fromDate, m.toDate);
+  if(expenseRows.length){
+    if(y > 230){ doc.addPage(); y = 16; }
+    const expCols = [
+      {header:'Date', key:'Date', width:20, maxChars:12},
+      {header:'Category', key:'Category', width:28, maxChars:16},
+      {header:'Amount', key:'Amount (₹)', width:20, maxChars:8},
+      {header:'Paid', key:'Paid Using', width:16, maxChars:8},
+      {header:'Note', key:'Note', width:70, maxChars:42}
+    ];
+    pdfDrawTable(doc, y, expCols, expenseRows, 'Expense Items (with notes)');
+  }
 
   const safePeriod = reportPeriodLabel(m).replace(/[^a-zA-Z0-9]+/g,'_');
   doc.save('SP-Tea-Shop-Report-'+safePeriod+'.pdf');
@@ -1757,9 +1899,11 @@ function generateExcelReport(m){
   if(!window.XLSX){ showBanner('⚠️ Excel library not loaded — check your internet connection'); return; }
   const summaryRows = buildSummaryRows(m).map(r=>({Field:r[0], Value:r[1]}));
   const dailyRows = buildDailyDetailRows(m);
+  const expenseRows = buildExpenseDetailRows(m.fromDate, m.toDate);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dailyRows), 'Daily Details');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenseRows.length?expenseRows:[{Date:'',Category:'',Note:'No expenses in this period'}]), 'Expense Items');
   const safePeriod = reportPeriodLabel(m).replace(/[^a-zA-Z0-9]+/g,'_');
   XLSX.writeFile(wb, 'SP-Tea-Shop-Report-'+safePeriod+'.xlsx');
 }
