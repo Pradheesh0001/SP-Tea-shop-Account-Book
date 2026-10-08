@@ -34,7 +34,38 @@ window.addEventListener('error', function(e){
   .wrap{width:100%; max-width:440px; padding:20px 16px 40px; margin:0 auto; transition:max-width 0.2s ease;}
   @media (min-width:700px){ .wrap{ max-width:680px; padding:32px 24px 50px; } h1{font-size:1.6rem;} }
   @media (min-width:1100px){ .wrap{ max-width:960px; } }
-  @media (min-width:700px){ .tabGrid{ grid-template-columns:1fr 1fr 1fr 1fr !important; } }
+  .tabGrid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px; }
+  @media (min-width:700px) and (max-width:1023px){ .tabGrid{ grid-template-columns:1fr 1fr 1fr 1fr !important; } }
+
+  /* Desktop app shell: left sidebar nav + content area, like a proper desktop business app */
+  .sideNavSettings{ display:none; }
+  @media (min-width:1024px){
+    .wrap{ max-width:1280px; padding:28px 32px 50px; }
+    .welcomeBanner{ display:flex; align-items:center; justify-content:space-between; text-align:left; padding:22px 28px; }
+    .welcomeBanner .welcomeText{ font-size:0.9rem; }
+    .welcomeBanner .shopNameText{ font-size:1.7rem; margin-top:0; }
+    .appShell{ display:grid; grid-template-columns:230px 1fr; gap:24px; align-items:start; }
+    .sideNav{
+      display:flex; flex-direction:column; gap:4px; grid-template-columns:none !important;
+      background:var(--card); border-radius:16px; padding:14px; box-shadow:0 4px 18px rgba(0,0,0,0.07);
+      position:sticky; top:28px;
+    }
+    .sideNav button{
+      text-align:left; background:transparent !important; color:var(--text) !important;
+      border:none; border-left:3px solid transparent; border-radius:8px; padding:12px 14px;
+      font-weight:600; margin:0 !important;
+    }
+    .sideNav button:hover{ background:rgba(128,128,128,0.08) !important; }
+    .sideNav button.activeTab{
+      background:rgba(31,111,235,0.1) !important; color:var(--brand) !important; border-left-color:var(--brand);
+    }
+    .sideNavSettings{ display:block; margin-top:8px !important; border-top:1px solid rgba(128,128,128,0.15); padding-top:14px !important; }
+    .mainContent{ min-width:0; }
+    /* Let key card groups sit side-by-side instead of stacking the full page height */
+    #dashboardTab .totalbox{ margin-bottom:0; }
+    #dashboardTab > .card:nth-of-type(1),
+    #dashboardTab > .totalbox{ grid-column: span 1; }
+  }
   h1{font-size:1.3rem; margin:8px 0 4px; text-align:center; letter-spacing:-0.01em;}
   .substatus{text-align:center; font-size:0.78rem; margin:0 0 16px; color:var(--muted);}
   .card{background:var(--card); border-radius:18px; padding:20px; margin-bottom:16px; box-shadow:0 4px 18px rgba(0,0,0,0.07); transition:box-shadow 0.2s ease;}
@@ -167,12 +198,15 @@ window.addEventListener('error', function(e){
       <button class="ghost" style="width:auto; margin:0; padding:8px 12px;" onclick="syncNow()">🔄 Sync Now</button>
     </div>
 
-    <div class="tabGrid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px;">
+    <div class="appShell">
+    <nav class="sideNav tabGrid">
       <button id="tab-dashboard-btn" onclick="showDashboardTab()" style="background:var(--brand);">📊 Dashboard</button>
       <button id="tab-sales-btn" onclick="showSalesTab()" class="ghost" style="margin-top:0;">💵 Daily Sales</button>
       <button id="tab-expenses-btn" onclick="showExpensesTab()" class="ghost" style="margin-top:0;">💸 Shop Expenses</button>
       <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Customer Accounts</button>
-    </div>
+      <button class="ghost sideNavSettings" onclick="showSettings()">⚙️ Settings</button>
+    </nav>
+    <div class="mainContent">
 
     <!-- PROFIT DASHBOARD TAB -->
     <div id="dashboardTab" class="hidden">
@@ -328,6 +362,8 @@ window.addEventListener('error', function(e){
       <button style="background:var(--brand);" onclick="showAddCustomer()">+ Add Customer</button>
       <button class="ghost" onclick="showSettings()">⚙️ UPI & Backup Settings</button>
     </div>
+    </div><!-- /mainContent -->
+    </div><!-- /appShell -->
   </div>
 
   <!-- ADD CUSTOMER -->
@@ -506,7 +542,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v18-responsive-ui-welcome';
+const APP_VERSION = '2026-10-03-v19-desktop-sidebar-shell';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -784,9 +820,11 @@ function activateTab(name){
       panel.classList.remove('hidden');
       btn.style.background = 'var(--brand)';
       btn.classList.remove('ghost');
+      btn.classList.add('activeTab');
     } else {
       panel.classList.add('hidden');
       btn.classList.add('ghost');
+      btn.classList.remove('activeTab');
       btn.style.background = 'transparent';
     }
   });
