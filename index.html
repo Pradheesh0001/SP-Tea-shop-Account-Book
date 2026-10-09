@@ -234,6 +234,11 @@ window.addEventListener('error', function(e){
         <div class="sub" id="db-profitLabel">Estimated Profit</div>
       </div>
 
+      <div class="totalbox" style="background:var(--paid);">
+        <div class="amt" id="db-inhandProfit">₹0</div>
+        <div class="sub">💰 In Hand Profit — cash sitting in your till, never withdrawn (all-time)</div>
+      </div>
+
       <div class="card">
         <div id="db-metrics"></div>
       </div>
@@ -383,6 +388,8 @@ window.addEventListener('error', function(e){
     <input id="s-upiId" placeholder="yourshop@upi">
     <label>Shop / Payee name</label>
     <input id="s-shopName" placeholder="Your shop name">
+    <label>Your own WhatsApp number (for weekly profit reports)</label>
+    <input id="s-ownerWhatsapp" placeholder="10-digit number or with country code" type="tel">
     <button style="background:var(--brand);" onclick="saveUpiSettings()">Save UPI Details</button>
 
     <h3>Your UPI QR code (optional)</h3>
@@ -542,7 +549,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v20-lower-desktop-breakpoint';
+const APP_VERSION = '2026-10-03-v21-inhand-profit';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1407,14 +1414,9 @@ function prepWhatsApp(){
   const c = loadCustomers().find(x=>x.id===activeCustomerId);
   if(!c) return;
   const bal = balanceFor(activeCustomerId);
-  const upi = loadUpi();
-  let msg = bal>0
+  const msg = bal>0
     ? `Hi ${c.name}, your outstanding balance is ₹${bal}. Please clear it when convenient.`
     : `Hi ${c.name}, your account is fully clear. Thank you!`;
-  if(bal>0 && upi.upiId){
-    const payLink = buildPayPageLink(bal, c.name);
-    msg += `\n\n👉 Pay ₹${bal} now (opens your UPI app):\n${payLink}\n\nOr pay to UPI ID: ${upi.upiId}`;
-  }
   const phoneDigits = normPhone(c.phone);
   const url = phoneDigits
     ? `https://wa.me/${phoneDigits}?text=${encodeURIComponent(msg)}`
@@ -1516,10 +1518,14 @@ function computeDayMetrics(date){
   // is tracked separately (ownMoneyAdded) so a shortfall always shows honestly in Cash Difference.
   const expectedClosingCash = openingCash + cashSales + custCash - expensesCash - staffSalaryCash;
   const cashDifference = (closingCashActual===null) ? null : (closingCashActual - expectedClosingCash);
+  // Split of profit by where the money sits: cash-side profit stays in the till (never withdrawn
+  // here), online-side profit is what actually gets taken out. cashProfit + onlineProfit = estimatedProfit.
+  const cashProfit = cashSales - expensesCash - staffSalaryCash;
+  const onlineProfit = onlineSales - expensesOnline - staffSalaryOnline;
   return {
     date, cashSales, cashSalesIsDerived, onlineSales, totalSales,
     expenses, staffSalary, expensesCash, expensesOnline, staffSalaryCash, staffSalaryOnline,
-    custCash, custOnline, estimatedProfit, openingCash, expectedClosingCash,
+    custCash, custOnline, estimatedProfit, cashProfit, onlineProfit, openingCash, expectedClosingCash,
     closingCashActual, cashDifference, ownMoneyAdded,
     needsReview: cashDifference!==null && cashDifference<0,
     recorded: hasDailyRecord(date)
@@ -1540,11 +1546,22 @@ function computeRangeMetrics(fromDate, toDate){
     totalStaffSalaryCash: sum('staffSalaryCash'), totalStaffSalaryOnline: sum('staffSalaryOnline'),
     totalCustCash: sum('custCash'), totalCustOnline: sum('custOnline'),
     totalOwnMoneyAdded: sum('ownMoneyAdded'),
-    totalProfit,
+    totalProfit, totalCashProfit: sum('cashProfit'), totalOnlineProfit: sum('onlineProfit'),
     daysRecorded, daysNeedingReview,
     avgDailySales: daysRecorded ? totalSales/daysRecorded : 0,
     avgDailyProfit: daysRecorded ? totalProfit/daysRecorded : 0
   };
+}
+
+// All-time running total of cash-side profit — this never gets withdrawn (only Online
+// money is taken out), so it keeps building up as real cash sitting in the till.
+function computeInHandProfitAllTime(){
+  const dailyDates = Object.keys(loadDailySalesAll());
+  const expenseDates = loadExpenses().map(e=>e.date);
+  const allDates = Array.from(new Set([...dailyDates, ...expenseDates])).sort();
+  if(!allDates.length) return 0;
+  return dateRangeArray(allDates[0], allDates[allDates.length-1])
+    .reduce((s,d)=> s + computeDayMetrics(d).cashProfit, 0);
 }
 
 /* ---------- dashboard UI ---------- */
@@ -1620,8 +1637,12 @@ function renderDashboard(){
 
   document.getElementById('db-profit').textContent = fmtMoney(m.totalProfit);
   document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
+  document.getElementById('db-inhandProfit').textContent = fmtMoney(computeInHandProfitAllTime());
 
   let html = '';
+  html += metricRow('Profit this period — Cash side (stays in till)', fmtMoney(m.totalCashProfit));
+  html += metricRow('Profit this period — Online side (withdrawable)', fmtMoney(m.totalOnlineProfit));
+  html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Sales breakdown</div>';
   html += metricRow('Total Sales', fmtMoney(m.totalSales));
   html += metricRow('— Cash Sales', fmtMoney(m.cashSales));
   html += metricRow('— Online Sales', fmtMoney(m.onlineSales));
@@ -1747,6 +1768,9 @@ function renderDailySummary(date){
   const m = computeDayMetrics(date);
   let html = '<h3 style="margin-top:0;">Summary for '+date+'</h3>';
   html += metricRow('Estimated Profit', fmtMoney(m.estimatedProfit));
+  html += metricRow('— Cash side (stays in till)', fmtMoney(m.cashProfit));
+  html += metricRow('— Online side (withdrawable)', fmtMoney(m.onlineProfit));
+  html += metricRow('💰 In Hand Profit (all-time, in till)', fmtMoney(computeInHandProfitAllTime()));
   html += metricRow('Total Sales', fmtMoney(m.totalSales));
   html += metricRow('— Cash Sales' + (m.cashSalesIsDerived ? ' (auto-calculated)' : ''), fmtMoney(m.cashSales));
   html += metricRow('— Online Sales', fmtMoney(m.onlineSales));
