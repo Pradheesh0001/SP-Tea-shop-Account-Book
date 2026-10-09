@@ -246,6 +246,13 @@ window.addEventListener('error', function(e){
       </div>
 
       <div class="card">
+        <button class="ghost" style="margin-top:0;" onclick="toggleInHandBreakdown()" id="inHandBreakdownToggle">🔍 See Full In Hand Profit Breakdown (every day, running total)</button>
+        <div id="inHandBreakdownWrap" class="hidden" style="overflow-x:auto; margin-top:10px;">
+          <table id="inHandBreakdownTable" style="min-width:600px; font-size:0.78rem;"><tbody></tbody></table>
+        </div>
+      </div>
+
+      <div class="card">
         <div id="db-metrics"></div>
       </div>
 
@@ -555,7 +562,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v22-missing-sales-finder';
+const APP_VERSION = '2026-10-03-v23-inhand-breakdown';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1570,6 +1577,23 @@ function computeInHandProfitAllTime(){
     .reduce((s,d)=> s + computeDayMetrics(d).cashProfit, 0);
 }
 
+// Every day that actually contributed something to the In Hand Profit total, with a running
+// cumulative total — so the final number is fully auditable, not a black box.
+function buildInHandProfitBreakdown(){
+  const dailyDates = Object.keys(loadDailySalesAll());
+  const expenseDates = loadExpenses().map(e=>e.date);
+  const allDates = Array.from(new Set([...dailyDates, ...expenseDates])).sort();
+  if(!allDates.length) return [];
+  let running = 0;
+  return dateRangeArray(allDates[0], allDates[allDates.length-1])
+    .map(date => computeDayMetrics(date))
+    .filter(d => d.cashSales!==0 || d.expensesCash!==0 || d.staffSalaryCash!==0)
+    .map(d => {
+      running += d.cashProfit;
+      return { date:d.date, cashSales:d.cashSales, expensesCash:d.expensesCash, staffSalaryCash:d.staffSalaryCash, cashProfit:d.cashProfit, runningTotal: running };
+    });
+}
+
 // Finds every date that has expenses (or salary) logged but zero sales entered —
 // these are exactly the days dragging the all-time In Hand Profit down incorrectly.
 function findDaysMissingSalesData(){
@@ -1608,6 +1632,38 @@ function goFixDay(date){
   loadDailySalesForm();
   const card = document.getElementById('salesTab');
   if(card && card.scrollIntoView) card.scrollIntoView({behavior:'smooth'});
+}
+
+let inHandBreakdownOpen = false;
+function toggleInHandBreakdown(){
+  inHandBreakdownOpen = !inHandBreakdownOpen;
+  document.getElementById('inHandBreakdownWrap').classList.toggle('hidden', !inHandBreakdownOpen);
+  document.getElementById('inHandBreakdownToggle').textContent = inHandBreakdownOpen
+    ? '🔼 Hide In Hand Profit Breakdown'
+    : '🔍 See Full In Hand Profit Breakdown (every day, running total)';
+  if(inHandBreakdownOpen) renderInHandBreakdown();
+}
+
+function renderInHandBreakdown(){
+  const rows = buildInHandProfitBreakdown();
+  const head = `<tr style="font-weight:700; border-bottom:2px solid var(--muted);">
+    <td>Date</td><td>Cash Sales</td><td>Cash Exp.</td><td>Cash Salary</td><td>Day Cash Profit</td><td>Running Total</td></tr>`;
+  let body = '';
+  if(!rows.length){
+    body = '<tr><td colspan="6" style="padding:8px; color:var(--muted);">No cash activity recorded yet</td></tr>';
+  } else {
+    rows.forEach(r=>{
+      body += `<tr style="border-bottom:1px solid rgba(128,128,128,0.15);">
+        <td style="padding:4px 6px;">${r.date}</td>
+        <td style="padding:4px 6px;">₹${Math.round(r.cashSales)}</td>
+        <td style="padding:4px 6px;">₹${Math.round(r.expensesCash)}</td>
+        <td style="padding:4px 6px;">₹${Math.round(r.staffSalaryCash)}</td>
+        <td style="padding:4px 6px; font-weight:600; color:${r.cashProfit<0?'var(--owe)':'var(--paid)'};">₹${Math.round(r.cashProfit)}</td>
+        <td style="padding:4px 6px; font-weight:700;">₹${Math.round(r.runningTotal)}</td>
+      </tr>`;
+    });
+  }
+  document.getElementById('inHandBreakdownTable').innerHTML = head + body;
 }
 
 /* ---------- dashboard UI ---------- */
@@ -1685,6 +1741,7 @@ function renderDashboard(){
   document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
   document.getElementById('db-inhandProfit').textContent = fmtMoney(computeInHandProfitAllTime());
   renderMissingSalesCard();
+  if(inHandBreakdownOpen) renderInHandBreakdown();
 
   let html = '';
   html += metricRow('Profit this period — Cash side (stays in till)', fmtMoney(m.totalCashProfit));
