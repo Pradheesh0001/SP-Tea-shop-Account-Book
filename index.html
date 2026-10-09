@@ -239,6 +239,12 @@ window.addEventListener('error', function(e){
         <div class="sub">💰 In Hand Profit — cash sitting in your till, never withdrawn (all-time)</div>
       </div>
 
+      <div class="card hidden" id="missingSalesCard">
+        <h3 style="margin-top:0; color:var(--owe);">⚠️ Days Missing Sales Data</h3>
+        <p class="hint" style="margin-bottom:10px;">These days have expenses logged but no sales entered — fixing them will correct your In Hand Profit.</p>
+        <div id="missingSalesList"></div>
+      </div>
+
       <div class="card">
         <div id="db-metrics"></div>
       </div>
@@ -549,7 +555,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v21-inhand-profit';
+const APP_VERSION = '2026-10-03-v22-missing-sales-finder';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1564,6 +1570,46 @@ function computeInHandProfitAllTime(){
     .reduce((s,d)=> s + computeDayMetrics(d).cashProfit, 0);
 }
 
+// Finds every date that has expenses (or salary) logged but zero sales entered —
+// these are exactly the days dragging the all-time In Hand Profit down incorrectly.
+function findDaysMissingSalesData(){
+  const expenseDates = Array.from(new Set(loadExpenses().map(e=>e.date))).sort();
+  return expenseDates
+    .map(date=>computeDayMetrics(date))
+    .filter(d => d.totalSales===0 && (d.expenses>0 || d.staffSalary>0))
+    .map(d => ({ date:d.date, expenses:d.expenses, staffSalary:d.staffSalary, shortfall: d.expenses+d.staffSalary }))
+    .sort((a,b)=> a.date<b.date ? 1 : -1); // most recent first
+}
+
+function renderMissingSalesCard(){
+  const card = document.getElementById('missingSalesCard');
+  const listEl = document.getElementById('missingSalesList');
+  if(!card || !listEl) return;
+  const gaps = findDaysMissingSalesData();
+  if(!gaps.length){
+    card.classList.add('hidden');
+    return;
+  }
+  card.classList.remove('hidden');
+  const totalShortfall = gaps.reduce((s,g)=>s+g.shortfall,0);
+  let html = `<div style="font-weight:700; margin-bottom:8px;">${gaps.length} day(s) found — total ₹${Math.round(totalShortfall).toLocaleString('en-IN')} unmatched</div>`;
+  gaps.forEach(g=>{
+    html += `<div class="paidRow" style="align-items:center;">
+      <span>${g.date}<br><span style="font-size:0.72rem; color:var(--muted);">Expenses ₹${g.expenses} ${g.staffSalary?('+ Salary ₹'+g.staffSalary):''}</span></span>
+      <button style="width:auto; margin:0; padding:8px 14px; font-size:0.8rem; background:var(--brand);" onclick="goFixDay('${g.date}')">Fix</button>
+    </div>`;
+  });
+  listEl.innerHTML = html;
+}
+
+function goFixDay(date){
+  showSalesTab();
+  document.getElementById('ds-date').value = date;
+  loadDailySalesForm();
+  const card = document.getElementById('salesTab');
+  if(card && card.scrollIntoView) card.scrollIntoView({behavior:'smooth'});
+}
+
 /* ---------- dashboard UI ---------- */
 let dashRangeType = 'daily';
 let dashAnchorDate = null;
@@ -1638,6 +1684,7 @@ function renderDashboard(){
   document.getElementById('db-profit').textContent = fmtMoney(m.totalProfit);
   document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
   document.getElementById('db-inhandProfit').textContent = fmtMoney(computeInHandProfitAllTime());
+  renderMissingSalesCard();
 
   let html = '';
   html += metricRow('Profit this period — Cash side (stays in till)', fmtMoney(m.totalCashProfit));
