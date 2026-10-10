@@ -236,12 +236,17 @@ window.addEventListener('error', function(e){
 
       <div class="totalbox" style="background:var(--paid);">
         <div class="amt" id="db-inhandProfit">₹0</div>
-        <div class="sub">💰 In Hand Profit — cash sitting in your till, never withdrawn (all-time)</div>
+        <div class="sub">🤲 In Hand Profit — money you've actually withdrawn (Online Sales − Online Expenses, all-time)</div>
+      </div>
+
+      <div class="totalbox" style="background:#555;">
+        <div class="amt" id="db-tillCash">₹0</div>
+        <div class="sub">🏪 Till Cash — profit still sitting in the shop, not withdrawn (Cash Sales − Cash Expenses, all-time)</div>
       </div>
 
       <div class="card hidden" id="missingSalesCard">
         <h3 style="margin-top:0; color:var(--owe);">⚠️ Days Missing Sales Data</h3>
-        <p class="hint" style="margin-bottom:10px;">These days have expenses logged but no sales entered — fixing them will correct your In Hand Profit.</p>
+        <p class="hint" style="margin-bottom:10px;">These days have online expenses logged but not enough online sales entered — fixing them will correct your In Hand Profit.</p>
         <div id="missingSalesList"></div>
       </div>
 
@@ -562,7 +567,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v23-inhand-breakdown';
+const APP_VERSION = '2026-10-03-v26-inhand-is-online-side';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1535,11 +1540,16 @@ function computeDayMetrics(date){
   // here), online-side profit is what actually gets taken out. cashProfit + onlineProfit = estimatedProfit.
   const cashProfit = cashSales - expensesCash - staffSalaryCash;
   const onlineProfit = onlineSales - expensesOnline - staffSalaryOnline;
+  // True when there's real cost logged for this day but genuinely NO sales information yet —
+  // no manual Cash Sales, no Closing Cash count (so nothing to derive from), no Online Sales.
+  // In that case any "profit" number is meaningless, not a real loss — just missing data.
+  const dataIncomplete = (expenses>0 || staffSalary>0)
+    && cashSalesManual===null && closingCashActual===null && onlineSales===0;
   return {
     date, cashSales, cashSalesIsDerived, onlineSales, totalSales,
     expenses, staffSalary, expensesCash, expensesOnline, staffSalaryCash, staffSalaryOnline,
     custCash, custOnline, estimatedProfit, cashProfit, onlineProfit, openingCash, expectedClosingCash,
-    closingCashActual, cashDifference, ownMoneyAdded,
+    closingCashActual, cashDifference, ownMoneyAdded, dataIncomplete,
     needsReview: cashDifference!==null && cashDifference<0,
     recorded: hasDailyRecord(date)
   };
@@ -1549,6 +1559,7 @@ function computeRangeMetrics(fromDate, toDate){
   const sum = k => days.reduce((s,d)=>s+d[k],0);
   const daysRecorded = days.filter(d=>d.recorded).length;
   const daysNeedingReview = days.filter(d=>d.needsReview).length;
+  const incompleteDays = days.filter(d=>d.dataIncomplete);
   const totalSales = sum('totalSales');
   const totalProfit = sum('estimatedProfit');
   return {
@@ -1561,47 +1572,59 @@ function computeRangeMetrics(fromDate, toDate){
     totalOwnMoneyAdded: sum('ownMoneyAdded'),
     totalProfit, totalCashProfit: sum('cashProfit'), totalOnlineProfit: sum('onlineProfit'),
     daysRecorded, daysNeedingReview,
+    incompleteDaysCount: incompleteDays.length,
+    incompleteDaysShortfall: -incompleteDays.reduce((s,d)=>s+d.estimatedProfit,0),
     avgDailySales: daysRecorded ? totalSales/daysRecorded : 0,
     avgDailyProfit: daysRecorded ? totalProfit/daysRecorded : 0
   };
 }
 
-// All-time running total of cash-side profit — this never gets withdrawn (only Online
-// money is taken out), so it keeps building up as real cash sitting in the till.
-function computeInHandProfitAllTime(){
+function allRecordedDateRange(){
   const dailyDates = Object.keys(loadDailySalesAll());
   const expenseDates = loadExpenses().map(e=>e.date);
   const allDates = Array.from(new Set([...dailyDates, ...expenseDates])).sort();
-  if(!allDates.length) return 0;
-  return dateRangeArray(allDates[0], allDates[allDates.length-1])
-    .reduce((s,d)=> s + computeDayMetrics(d).cashProfit, 0);
+  return allDates.length ? [allDates[0], allDates[allDates.length-1]] : null;
 }
 
-// Every day that actually contributed something to the In Hand Profit total, with a running
-// cumulative total — so the final number is fully auditable, not a black box.
+// All-time running total of ONLINE-side profit — this is money that actually leaves the
+// business into your bank account, i.e. what you've truly withdrawn / hold "in hand".
+function computeInHandProfitAllTime(){
+  const range = allRecordedDateRange();
+  if(!range) return 0;
+  return dateRangeArray(range[0], range[1]).reduce((s,d)=> s + computeDayMetrics(d).onlineProfit, 0);
+}
+
+// All-time running total of CASH-side profit — this never gets withdrawn, it just stays in
+// the shop's till funding expenses and rolling into tomorrow's opening cash.
+function computeTillCashProfitAllTime(){
+  const range = allRecordedDateRange();
+  if(!range) return 0;
+  return dateRangeArray(range[0], range[1]).reduce((s,d)=> s + computeDayMetrics(d).cashProfit, 0);
+}
+
+// Every day that actually contributed something to the In Hand Profit (online-side) total,
+// with a running cumulative total — so the final number is fully auditable, not a black box.
 function buildInHandProfitBreakdown(){
-  const dailyDates = Object.keys(loadDailySalesAll());
-  const expenseDates = loadExpenses().map(e=>e.date);
-  const allDates = Array.from(new Set([...dailyDates, ...expenseDates])).sort();
-  if(!allDates.length) return [];
+  const range = allRecordedDateRange();
+  if(!range) return [];
   let running = 0;
-  return dateRangeArray(allDates[0], allDates[allDates.length-1])
+  return dateRangeArray(range[0], range[1])
     .map(date => computeDayMetrics(date))
-    .filter(d => d.cashSales!==0 || d.expensesCash!==0 || d.staffSalaryCash!==0)
+    .filter(d => d.onlineSales!==0 || d.expensesOnline!==0 || d.staffSalaryOnline!==0)
     .map(d => {
-      running += d.cashProfit;
-      return { date:d.date, cashSales:d.cashSales, expensesCash:d.expensesCash, staffSalaryCash:d.staffSalaryCash, cashProfit:d.cashProfit, runningTotal: running };
+      running += d.onlineProfit;
+      return { date:d.date, onlineSales:d.onlineSales, expensesOnline:d.expensesOnline, staffSalaryOnline:d.staffSalaryOnline, onlineProfit:d.onlineProfit, runningTotal: running };
     });
 }
 
-// Finds every date that has expenses (or salary) logged but zero sales entered —
-// these are exactly the days dragging the all-time In Hand Profit down incorrectly.
+// Finds every date that has ONLINE expenses (or salary) logged but not enough online sales to
+// cover them — these are exactly the days dragging the all-time In Hand Profit down.
 function findDaysMissingSalesData(){
   const expenseDates = Array.from(new Set(loadExpenses().map(e=>e.date))).sort();
   return expenseDates
     .map(date=>computeDayMetrics(date))
-    .filter(d => d.totalSales===0 && (d.expenses>0 || d.staffSalary>0))
-    .map(d => ({ date:d.date, expenses:d.expenses, staffSalary:d.staffSalary, shortfall: d.expenses+d.staffSalary }))
+    .filter(d => d.onlineProfit<0 && (d.expensesOnline>0 || d.staffSalaryOnline>0))
+    .map(d => ({ date:d.date, expenses:d.expensesOnline, staffSalary:d.staffSalaryOnline, onlineSalesEntered:d.onlineSales, shortfall: -d.onlineProfit }))
     .sort((a,b)=> a.date<b.date ? 1 : -1); // most recent first
 }
 
@@ -1619,7 +1642,7 @@ function renderMissingSalesCard(){
   let html = `<div style="font-weight:700; margin-bottom:8px;">${gaps.length} day(s) found — total ₹${Math.round(totalShortfall).toLocaleString('en-IN')} unmatched</div>`;
   gaps.forEach(g=>{
     html += `<div class="paidRow" style="align-items:center;">
-      <span>${g.date}<br><span style="font-size:0.72rem; color:var(--muted);">Expenses ₹${g.expenses} ${g.staffSalary?('+ Salary ₹'+g.staffSalary):''}</span></span>
+      <span>${g.date}<br><span style="font-size:0.72rem; color:var(--muted);">Online Sales entered: ₹${g.onlineSalesEntered} vs Online Expenses ₹${g.expenses}${g.staffSalary?(' + Salary ₹'+g.staffSalary):''}</span></span>
       <button style="width:auto; margin:0; padding:8px 14px; font-size:0.8rem; background:var(--brand);" onclick="goFixDay('${g.date}')">Fix</button>
     </div>`;
   });
@@ -1647,18 +1670,18 @@ function toggleInHandBreakdown(){
 function renderInHandBreakdown(){
   const rows = buildInHandProfitBreakdown();
   const head = `<tr style="font-weight:700; border-bottom:2px solid var(--muted);">
-    <td>Date</td><td>Cash Sales</td><td>Cash Exp.</td><td>Cash Salary</td><td>Day Cash Profit</td><td>Running Total</td></tr>`;
+    <td>Date</td><td>Online Sales</td><td>Online Exp.</td><td>Online Salary</td><td>Day Online Profit</td><td>Running Total</td></tr>`;
   let body = '';
   if(!rows.length){
-    body = '<tr><td colspan="6" style="padding:8px; color:var(--muted);">No cash activity recorded yet</td></tr>';
+    body = '<tr><td colspan="6" style="padding:8px; color:var(--muted);">No online activity recorded yet</td></tr>';
   } else {
     rows.forEach(r=>{
       body += `<tr style="border-bottom:1px solid rgba(128,128,128,0.15);">
         <td style="padding:4px 6px;">${r.date}</td>
-        <td style="padding:4px 6px;">₹${Math.round(r.cashSales)}</td>
-        <td style="padding:4px 6px;">₹${Math.round(r.expensesCash)}</td>
-        <td style="padding:4px 6px;">₹${Math.round(r.staffSalaryCash)}</td>
-        <td style="padding:4px 6px; font-weight:600; color:${r.cashProfit<0?'var(--owe)':'var(--paid)'};">₹${Math.round(r.cashProfit)}</td>
+        <td style="padding:4px 6px;">₹${Math.round(r.onlineSales)}</td>
+        <td style="padding:4px 6px;">₹${Math.round(r.expensesOnline)}</td>
+        <td style="padding:4px 6px;">₹${Math.round(r.staffSalaryOnline)}</td>
+        <td style="padding:4px 6px; font-weight:600; color:${r.onlineProfit<0?'var(--owe)':'var(--paid)'};">₹${Math.round(r.onlineProfit)}</td>
         <td style="padding:4px 6px; font-weight:700;">₹${Math.round(r.runningTotal)}</td>
       </tr>`;
     });
@@ -1737,13 +1760,26 @@ function renderDashboard(){
     : (from+' to '+to);
   document.getElementById('dr-periodLabel').textContent = label;
 
-  document.getElementById('db-profit').textContent = fmtMoney(m.totalProfit);
-  document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
+  const singleDayIncomplete = (dashRangeType==='daily' && m.days[0] && m.days[0].dataIncomplete);
+  if(singleDayIncomplete){
+    document.getElementById('db-profit').textContent = '⏳ —';
+    document.getElementById('db-profitLabel').textContent = 'No sales entered yet for this day — profit will show once you add Cash/Online Sales';
+  } else {
+    document.getElementById('db-profit').textContent = fmtMoney(m.totalProfit);
+    document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
+  }
   document.getElementById('db-inhandProfit').textContent = fmtMoney(computeInHandProfitAllTime());
+  document.getElementById('db-tillCash').textContent = fmtMoney(computeTillCashProfitAllTime());
   renderMissingSalesCard();
   if(inHandBreakdownOpen) renderInHandBreakdown();
 
   let html = '';
+  if(m.incompleteDaysCount>0){
+    html += `<div style="background:rgba(192,57,43,0.12); border:1px solid var(--owe); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
+      <b>⚠️ ${m.incompleteDaysCount} day(s) in this period have no sales entered</b><br>
+      <span style="font-size:0.85rem;">Contributing ₹${Math.round(m.incompleteDaysShortfall).toLocaleString('en-IN')} to the figure above — not a real loss, just missing data. Scroll down to "Days Missing Sales Data" to fix them.</span>
+    </div>`;
+  }
   html += metricRow('Profit this period — Cash side (stays in till)', fmtMoney(m.totalCashProfit));
   html += metricRow('Profit this period — Online side (withdrawable)', fmtMoney(m.totalOnlineProfit));
   html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Sales breakdown</div>';
@@ -1766,6 +1802,9 @@ function renderDashboard(){
 
   if(dashRangeType==='daily'){
     const d = m.days[0];
+    if(d.dataIncomplete){
+      html += metricRow('Status', '⏳ Awaiting sales entry — not a loss, just no data yet');
+    }
     html += metricRow('Closing Cash (entered)', d.closingCashActual===null?'—':fmtMoney(d.closingCashActual));
     html += metricRow('Expected Closing Cash', fmtMoney(d.expectedClosingCash));
     if(d.cashDifference!==null){
@@ -1871,10 +1910,17 @@ function loadDailySalesForm(){
 function renderDailySummary(date){
   const m = computeDayMetrics(date);
   let html = '<h3 style="margin-top:0;">Summary for '+date+'</h3>';
-  html += metricRow('Estimated Profit', fmtMoney(m.estimatedProfit));
+  if(m.dataIncomplete){
+    html += `<div style="background:rgba(192,57,43,0.12); border:1px solid var(--owe); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
+      <b>⏳ No sales entered yet for this day</b><br>
+      <span style="font-size:0.85rem;">You've logged ₹${Math.round(m.expenses+m.staffSalary)} in expenses but no Cash/Online Sales — enter them above to see real profit. This is not a loss, just missing data.</span>
+    </div>`;
+  }
+  html += metricRow('Estimated Profit' + (m.dataIncomplete ? ' (incomplete — see note above)' : ''), fmtMoney(m.estimatedProfit));
   html += metricRow('— Cash side (stays in till)', fmtMoney(m.cashProfit));
   html += metricRow('— Online side (withdrawable)', fmtMoney(m.onlineProfit));
-  html += metricRow('💰 In Hand Profit (all-time, in till)', fmtMoney(computeInHandProfitAllTime()));
+  html += metricRow('🤲 In Hand Profit (all-time, withdrawn)', fmtMoney(computeInHandProfitAllTime()));
+  html += metricRow('🏪 Till Cash (all-time, not withdrawn)', fmtMoney(computeTillCashProfitAllTime()));
   html += metricRow('Total Sales', fmtMoney(m.totalSales));
   html += metricRow('— Cash Sales' + (m.cashSalesIsDerived ? ' (auto-calculated)' : ''), fmtMoney(m.cashSales));
   html += metricRow('— Online Sales', fmtMoney(m.onlineSales));
