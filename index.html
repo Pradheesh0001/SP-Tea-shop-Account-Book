@@ -239,11 +239,6 @@ window.addEventListener('error', function(e){
         <div class="sub">🤲 In Hand Profit — money you've actually withdrawn (Online Sales − Online Expenses, all-time)</div>
       </div>
 
-      <div class="totalbox" style="background:#555;">
-        <div class="amt" id="db-tillCash">₹0</div>
-        <div class="sub">🏪 Till Cash — profit still sitting in the shop, not withdrawn (Cash Sales − Cash Expenses, all-time)</div>
-      </div>
-
       <div class="card hidden" id="missingSalesCard">
         <h3 style="margin-top:0; color:var(--owe);">⚠️ Days Missing Sales Data</h3>
         <p class="hint" style="margin-bottom:10px;">These days have online expenses logged but not enough online sales entered — fixing them will correct your In Hand Profit.</p>
@@ -567,7 +562,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v26-inhand-is-online-side';
+const APP_VERSION = '2026-10-03-v27-remove-till-cash';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1769,7 +1764,6 @@ function renderDashboard(){
     document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
   }
   document.getElementById('db-inhandProfit').textContent = fmtMoney(computeInHandProfitAllTime());
-  document.getElementById('db-tillCash').textContent = fmtMoney(computeTillCashProfitAllTime());
   renderMissingSalesCard();
   if(inHandBreakdownOpen) renderInHandBreakdown();
 
@@ -1920,7 +1914,6 @@ function renderDailySummary(date){
   html += metricRow('— Cash side (stays in till)', fmtMoney(m.cashProfit));
   html += metricRow('— Online side (withdrawable)', fmtMoney(m.onlineProfit));
   html += metricRow('🤲 In Hand Profit (all-time, withdrawn)', fmtMoney(computeInHandProfitAllTime()));
-  html += metricRow('🏪 Till Cash (all-time, not withdrawn)', fmtMoney(computeTillCashProfitAllTime()));
   html += metricRow('Total Sales', fmtMoney(m.totalSales));
   html += metricRow('— Cash Sales' + (m.cashSalesIsDerived ? ' (auto-calculated)' : ''), fmtMoney(m.cashSales));
   html += metricRow('— Online Sales', fmtMoney(m.onlineSales));
