@@ -234,6 +234,10 @@ window.addEventListener('error', function(e){
         <div class="sub" id="db-profitLabel">Estimated Profit</div>
       </div>
 
+      <div class="totalbox" style="background:var(--paid);">
+        <div class="amt" id="db-inhandProfit">₹0</div>
+        <div class="sub">🤲 In Hand Profit — Online Sales − Online Expenses − Own Money Added (all-time)</div>
+      </div>
 
       <div class="card">
         <div id="db-metrics"></div>
@@ -545,7 +549,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v28-single-profit-only';
+const APP_VERSION = '2026-10-03-v30-inhand-profit-restored';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1508,7 +1512,8 @@ function computeDayMetrics(date){
   }
 
   const totalSales = cashSales + onlineSales;
-  // Profit = actual sales performance minus ALL expenses, regardless of how each was paid.
+  // Overall Profit = actual sales performance minus ALL expenses, regardless of how each was
+  // paid. Own Money Added does NOT affect this — it only affects In Hand Profit below.
   const estimatedProfit = totalSales - expenses - staffSalary;
   // Expected Closing Cash uses sales-cash and cash-paid costs only — owner's personal top-up
   // is tracked separately (ownMoneyAdded) so a shortfall always shows honestly in Cash Difference.
@@ -1532,6 +1537,17 @@ function computeDayMetrics(date){
     recorded: hasDailyRecord(date)
   };
 }
+// All-time running total of ONLINE-side profit, minus any of your own money ever put into
+// the shop — this is the real money you actually hold, after accounting for personal top-ups.
+function computeInHandProfitAllTime(){
+  const dailyDates = Object.keys(loadDailySalesAll());
+  const expenseDates = loadExpenses().map(e=>e.date);
+  const allDates = Array.from(new Set([...dailyDates, ...expenseDates])).sort();
+  if(!allDates.length) return 0;
+  return dateRangeArray(allDates[0], allDates[allDates.length-1])
+    .reduce((s,d)=>{ const m = computeDayMetrics(d); return s + m.onlineProfit - m.ownMoneyAdded; }, 0);
+}
+
 function computeRangeMetrics(fromDate, toDate){
   const days = dateRangeArray(fromDate, toDate).map(computeDayMetrics);
   const sum = k => days.reduce((s,d)=>s+d[k],0);
@@ -1636,12 +1652,13 @@ function renderDashboard(){
     document.getElementById('db-profit').textContent = fmtMoney(m.totalProfit);
     document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
   }
+  document.getElementById('db-inhandProfit').textContent = fmtMoney(computeInHandProfitAllTime());
 
   let html = '';
   if(m.incompleteDaysCount>0){
     html += `<div style="background:rgba(192,57,43,0.12); border:1px solid var(--owe); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
       <b>⚠️ ${m.incompleteDaysCount} day(s) in this period have no sales entered</b><br>
-      <span style="font-size:0.85rem;">Contributing ₹${Math.round(m.incompleteDaysShortfall).toLocaleString('en-IN')} to the figure above — not a real loss, just missing data. Scroll down to "Days Missing Sales Data" to fix them.</span>
+      <span style="font-size:0.85rem;">Contributing ₹${Math.round(m.incompleteDaysShortfall).toLocaleString('en-IN')} to the figure above — not a real loss, just missing data. Go to Daily Sales for that date and fill in the real numbers.</span>
     </div>`;
   }
   html += metricRow('Profit this period — Cash side (stays in till)', fmtMoney(m.totalCashProfit));
@@ -1660,7 +1677,7 @@ function renderDashboard(){
   html += metricRow('Customer A/c Cash Collection', fmtMoney(m.totalCustCash));
   html += metricRow('Customer A/c Online Collection', fmtMoney(m.totalCustOnline));
   if(m.totalOwnMoneyAdded>0){
-    html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Your own money (tracked only, not counted in profit)</div>';
+    html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Your own money (already subtracted from the profit above)</div>';
     html += metricRow('Own Money Added', fmtMoney(m.totalOwnMoneyAdded));
   }
 
@@ -1781,6 +1798,7 @@ function renderDailySummary(date){
     </div>`;
   }
   html += metricRow('Estimated Profit' + (m.dataIncomplete ? ' (incomplete — see note above)' : ''), fmtMoney(m.estimatedProfit));
+  html += metricRow('🤲 In Hand Profit (all-time)', fmtMoney(computeInHandProfitAllTime()));
   html += metricRow('Total Sales', fmtMoney(m.totalSales));
   html += metricRow('— Cash Sales' + (m.cashSalesIsDerived ? ' (auto-calculated)' : ''), fmtMoney(m.cashSales));
   html += metricRow('— Online Sales', fmtMoney(m.onlineSales));
@@ -1794,7 +1812,7 @@ function renderDailySummary(date){
   html += metricRow('Customer A/c Cash Collection', fmtMoney(m.custCash));
   html += metricRow('Customer A/c Online Collection', fmtMoney(m.custOnline));
   if(m.ownMoneyAdded>0){
-    html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Your own money (tracked only, not counted in profit)</div>';
+    html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Your own money (already subtracted from the profit above)</div>';
     html += metricRow('Own Money Added', fmtMoney(m.ownMoneyAdded));
   }
   html += metricRow('Expected Closing Cash', fmtMoney(m.expectedClosingCash));
@@ -1866,7 +1884,7 @@ function buildSummaryRows(m){
     ['  paid by Cash', m.totalStaffSalaryCash],
     ['  paid Online', m.totalStaffSalaryOnline],
     ['Estimated Profit', m.totalProfit],
-    ['Own Money Added (not in profit)', m.totalOwnMoneyAdded],
+    ['Own Money Added (already subtracted from profit above)', m.totalOwnMoneyAdded],
     ['Average Daily Sales', Math.round(m.avgDailySales)],
     ['Average Daily Profit', Math.round(m.avgDailyProfit)],
     ['Recorded Days', m.daysRecorded],
