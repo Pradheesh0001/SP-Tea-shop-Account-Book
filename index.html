@@ -234,23 +234,6 @@ window.addEventListener('error', function(e){
         <div class="sub" id="db-profitLabel">Estimated Profit</div>
       </div>
 
-      <div class="totalbox" style="background:var(--paid);">
-        <div class="amt" id="db-inhandProfit">₹0</div>
-        <div class="sub">🤲 In Hand Profit — money you've actually withdrawn (Online Sales − Online Expenses, all-time)</div>
-      </div>
-
-      <div class="card hidden" id="missingSalesCard">
-        <h3 style="margin-top:0; color:var(--owe);">⚠️ Days Missing Sales Data</h3>
-        <p class="hint" style="margin-bottom:10px;">These days have online expenses logged but not enough online sales entered — fixing them will correct your In Hand Profit.</p>
-        <div id="missingSalesList"></div>
-      </div>
-
-      <div class="card">
-        <button class="ghost" style="margin-top:0;" onclick="toggleInHandBreakdown()" id="inHandBreakdownToggle">🔍 See Full In Hand Profit Breakdown (every day, running total)</button>
-        <div id="inHandBreakdownWrap" class="hidden" style="overflow-x:auto; margin-top:10px;">
-          <table id="inHandBreakdownTable" style="min-width:600px; font-size:0.78rem;"><tbody></tbody></table>
-        </div>
-      </div>
 
       <div class="card">
         <div id="db-metrics"></div>
@@ -562,7 +545,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v27-remove-till-cash';
+const APP_VERSION = '2026-10-03-v28-single-profit-only';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1574,116 +1557,6 @@ function computeRangeMetrics(fromDate, toDate){
   };
 }
 
-function allRecordedDateRange(){
-  const dailyDates = Object.keys(loadDailySalesAll());
-  const expenseDates = loadExpenses().map(e=>e.date);
-  const allDates = Array.from(new Set([...dailyDates, ...expenseDates])).sort();
-  return allDates.length ? [allDates[0], allDates[allDates.length-1]] : null;
-}
-
-// All-time running total of ONLINE-side profit — this is money that actually leaves the
-// business into your bank account, i.e. what you've truly withdrawn / hold "in hand".
-function computeInHandProfitAllTime(){
-  const range = allRecordedDateRange();
-  if(!range) return 0;
-  return dateRangeArray(range[0], range[1]).reduce((s,d)=> s + computeDayMetrics(d).onlineProfit, 0);
-}
-
-// All-time running total of CASH-side profit — this never gets withdrawn, it just stays in
-// the shop's till funding expenses and rolling into tomorrow's opening cash.
-function computeTillCashProfitAllTime(){
-  const range = allRecordedDateRange();
-  if(!range) return 0;
-  return dateRangeArray(range[0], range[1]).reduce((s,d)=> s + computeDayMetrics(d).cashProfit, 0);
-}
-
-// Every day that actually contributed something to the In Hand Profit (online-side) total,
-// with a running cumulative total — so the final number is fully auditable, not a black box.
-function buildInHandProfitBreakdown(){
-  const range = allRecordedDateRange();
-  if(!range) return [];
-  let running = 0;
-  return dateRangeArray(range[0], range[1])
-    .map(date => computeDayMetrics(date))
-    .filter(d => d.onlineSales!==0 || d.expensesOnline!==0 || d.staffSalaryOnline!==0)
-    .map(d => {
-      running += d.onlineProfit;
-      return { date:d.date, onlineSales:d.onlineSales, expensesOnline:d.expensesOnline, staffSalaryOnline:d.staffSalaryOnline, onlineProfit:d.onlineProfit, runningTotal: running };
-    });
-}
-
-// Finds every date that has ONLINE expenses (or salary) logged but not enough online sales to
-// cover them — these are exactly the days dragging the all-time In Hand Profit down.
-function findDaysMissingSalesData(){
-  const expenseDates = Array.from(new Set(loadExpenses().map(e=>e.date))).sort();
-  return expenseDates
-    .map(date=>computeDayMetrics(date))
-    .filter(d => d.onlineProfit<0 && (d.expensesOnline>0 || d.staffSalaryOnline>0))
-    .map(d => ({ date:d.date, expenses:d.expensesOnline, staffSalary:d.staffSalaryOnline, onlineSalesEntered:d.onlineSales, shortfall: -d.onlineProfit }))
-    .sort((a,b)=> a.date<b.date ? 1 : -1); // most recent first
-}
-
-function renderMissingSalesCard(){
-  const card = document.getElementById('missingSalesCard');
-  const listEl = document.getElementById('missingSalesList');
-  if(!card || !listEl) return;
-  const gaps = findDaysMissingSalesData();
-  if(!gaps.length){
-    card.classList.add('hidden');
-    return;
-  }
-  card.classList.remove('hidden');
-  const totalShortfall = gaps.reduce((s,g)=>s+g.shortfall,0);
-  let html = `<div style="font-weight:700; margin-bottom:8px;">${gaps.length} day(s) found — total ₹${Math.round(totalShortfall).toLocaleString('en-IN')} unmatched</div>`;
-  gaps.forEach(g=>{
-    html += `<div class="paidRow" style="align-items:center;">
-      <span>${g.date}<br><span style="font-size:0.72rem; color:var(--muted);">Online Sales entered: ₹${g.onlineSalesEntered} vs Online Expenses ₹${g.expenses}${g.staffSalary?(' + Salary ₹'+g.staffSalary):''}</span></span>
-      <button style="width:auto; margin:0; padding:8px 14px; font-size:0.8rem; background:var(--brand);" onclick="goFixDay('${g.date}')">Fix</button>
-    </div>`;
-  });
-  listEl.innerHTML = html;
-}
-
-function goFixDay(date){
-  showSalesTab();
-  document.getElementById('ds-date').value = date;
-  loadDailySalesForm();
-  const card = document.getElementById('salesTab');
-  if(card && card.scrollIntoView) card.scrollIntoView({behavior:'smooth'});
-}
-
-let inHandBreakdownOpen = false;
-function toggleInHandBreakdown(){
-  inHandBreakdownOpen = !inHandBreakdownOpen;
-  document.getElementById('inHandBreakdownWrap').classList.toggle('hidden', !inHandBreakdownOpen);
-  document.getElementById('inHandBreakdownToggle').textContent = inHandBreakdownOpen
-    ? '🔼 Hide In Hand Profit Breakdown'
-    : '🔍 See Full In Hand Profit Breakdown (every day, running total)';
-  if(inHandBreakdownOpen) renderInHandBreakdown();
-}
-
-function renderInHandBreakdown(){
-  const rows = buildInHandProfitBreakdown();
-  const head = `<tr style="font-weight:700; border-bottom:2px solid var(--muted);">
-    <td>Date</td><td>Online Sales</td><td>Online Exp.</td><td>Online Salary</td><td>Day Online Profit</td><td>Running Total</td></tr>`;
-  let body = '';
-  if(!rows.length){
-    body = '<tr><td colspan="6" style="padding:8px; color:var(--muted);">No online activity recorded yet</td></tr>';
-  } else {
-    rows.forEach(r=>{
-      body += `<tr style="border-bottom:1px solid rgba(128,128,128,0.15);">
-        <td style="padding:4px 6px;">${r.date}</td>
-        <td style="padding:4px 6px;">₹${Math.round(r.onlineSales)}</td>
-        <td style="padding:4px 6px;">₹${Math.round(r.expensesOnline)}</td>
-        <td style="padding:4px 6px;">₹${Math.round(r.staffSalaryOnline)}</td>
-        <td style="padding:4px 6px; font-weight:600; color:${r.onlineProfit<0?'var(--owe)':'var(--paid)'};">₹${Math.round(r.onlineProfit)}</td>
-        <td style="padding:4px 6px; font-weight:700;">₹${Math.round(r.runningTotal)}</td>
-      </tr>`;
-    });
-  }
-  document.getElementById('inHandBreakdownTable').innerHTML = head + body;
-}
-
 /* ---------- dashboard UI ---------- */
 let dashRangeType = 'daily';
 let dashAnchorDate = null;
@@ -1763,9 +1636,6 @@ function renderDashboard(){
     document.getElementById('db-profit').textContent = fmtMoney(m.totalProfit);
     document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
   }
-  document.getElementById('db-inhandProfit').textContent = fmtMoney(computeInHandProfitAllTime());
-  renderMissingSalesCard();
-  if(inHandBreakdownOpen) renderInHandBreakdown();
 
   let html = '';
   if(m.incompleteDaysCount>0){
@@ -1911,9 +1781,6 @@ function renderDailySummary(date){
     </div>`;
   }
   html += metricRow('Estimated Profit' + (m.dataIncomplete ? ' (incomplete — see note above)' : ''), fmtMoney(m.estimatedProfit));
-  html += metricRow('— Cash side (stays in till)', fmtMoney(m.cashProfit));
-  html += metricRow('— Online side (withdrawable)', fmtMoney(m.onlineProfit));
-  html += metricRow('🤲 In Hand Profit (all-time, withdrawn)', fmtMoney(computeInHandProfitAllTime()));
   html += metricRow('Total Sales', fmtMoney(m.totalSales));
   html += metricRow('— Cash Sales' + (m.cashSalesIsDerived ? ' (auto-calculated)' : ''), fmtMoney(m.cashSales));
   html += metricRow('— Online Sales', fmtMoney(m.onlineSales));
