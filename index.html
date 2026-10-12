@@ -204,6 +204,7 @@ window.addEventListener('error', function(e){
       <button id="tab-sales-btn" onclick="showSalesTab()" class="ghost" style="margin-top:0;">💵 Daily Sales</button>
       <button id="tab-expenses-btn" onclick="showExpensesTab()" class="ghost" style="margin-top:0;">💸 Shop Expenses</button>
       <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Customer Accounts</button>
+      <button id="tab-personal-btn" onclick="showPersonalTab()" class="ghost" style="margin-top:0;">🧍 Personal Expenses</button>
       <button class="ghost sideNavSettings" onclick="showSettings()">⚙️ Settings</button>
     </nav>
     <div class="mainContent">
@@ -229,12 +230,17 @@ window.addEventListener('error', function(e){
         </div>
       </div>
 
-      <div class="totalbox">
+      <div style="display:flex; gap:8px; margin-bottom:14px;">
+        <button id="mode-official-btn" onclick="setDashMode('official')" style="width:auto; flex:1; padding:12px; font-size:0.9rem;">🏛️ Official Mode</button>
+        <button id="mode-personal-btn" onclick="setDashMode('personal')" class="ghost" style="width:auto; flex:1; margin:0; padding:12px; font-size:0.9rem;">🤲 Personal Mode</button>
+      </div>
+
+      <div class="totalbox" id="db-officialBox">
         <div class="amt" id="db-profit">₹0</div>
         <div class="sub" id="db-profitLabel">Estimated Profit</div>
       </div>
 
-      <div class="totalbox" style="background:var(--paid);">
+      <div class="totalbox hidden" id="db-personalBox" style="background:var(--paid);">
         <div class="amt" id="db-inhandProfit">₹0</div>
         <div class="sub">🤲 In Hand Profit — Online Sales − Online Expenses − Own Money Added (all-time)</div>
       </div>
@@ -266,6 +272,14 @@ window.addEventListener('error', function(e){
       </div>
 
       <button style="background:var(--brand);" onclick="openReportModal()">⬇️ Download Report</button>
+
+      <div id="reportModeModal" class="hidden card">
+        <h3 style="margin-top:0;">Choose report mode</h3>
+        <p class="hint" style="margin-bottom:10px;">Which profit calculation should the report headline?</p>
+        <button style="background:var(--brand);" onclick="chooseReportMode('official')">🏛️ Official Mode (Total Sales − Expenses − Staff Salary)</button>
+        <button style="background:var(--paid);" onclick="chooseReportMode('personal')">🤲 Personal Mode (Online Sales − Online Expenses − Own Money Added)</button>
+        <button class="ghost" onclick="closeReportModal()">Cancel</button>
+      </div>
 
       <div id="reportModal" class="hidden card">
         <h3 style="margin-top:0;">Choose report sections</h3>
@@ -366,6 +380,45 @@ window.addEventListener('error', function(e){
       <div class="card" id="custListCard" style="padding:6px 14px;"></div>
       <button style="background:var(--brand);" onclick="showAddCustomer()">+ Add Customer</button>
       <button class="ghost" onclick="showSettings()">⚙️ UPI & Backup Settings</button>
+    </div>
+
+    <!-- PERSONAL EXPENSES TAB — fully isolated, never affects Dashboard/Sales/Shop Expenses -->
+    <div id="personalTab" class="hidden">
+      <div class="card" style="background:rgba(31,111,235,0.08);">
+        <div style="font-size:0.8rem; color:var(--muted);">🤲 In Hand Online Profit (reference, from Dashboard)</div>
+        <div style="font-size:1.6rem; font-weight:800;" id="pe-inhandRef">₹0</div>
+      </div>
+
+      <div class="totalbox" style="background:var(--brand);">
+        <div class="amt" id="pe-balance">₹0</div>
+        <div class="sub">Personal Balance — In Hand Profit minus Personal Expenses (this section only)</div>
+      </div>
+
+      <div class="card">
+        <h3 id="peFormTitle" style="margin-top:0;">Add Personal Expense</h3>
+        <div class="loadgrid" id="peCatGrid" style="grid-template-columns:repeat(4,1fr);"></div>
+        <div style="display:flex; gap:8px; margin-top:10px;">
+          <input id="newPeCatName" placeholder="New category name" style="margin-bottom:0;">
+          <button style="width:auto; margin:0; padding:10px 16px; background:var(--brand);" onclick="addPeCategory()">+ Add</button>
+        </div>
+        <div style="margin-top:14px;">
+          <label>Category</label>
+          <input id="pe-catLabel" value="Shop Rent" disabled>
+          <label>Amount (₹)</label>
+          <input id="pe-amt" type="number" min="0">
+          <label>Note (optional)</label>
+          <input id="pe-note" placeholder="e.g. October rent">
+          <label>Date</label>
+          <input id="pe-entryDate" type="date">
+        </div>
+        <button id="peSubmitBtn" style="background:var(--owe);" onclick="addPersonalExpense()">+ Add Personal Expense</button>
+        <button id="peCancelBtn" class="ghost hidden" onclick="cancelEditPersonalExpense()">Cancel Edit</button>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Personal Expense History</h3>
+        <div id="peHistoryList"></div>
+      </div>
     </div>
     </div><!-- /mainContent -->
     </div><!-- /appShell -->
@@ -486,6 +539,9 @@ const EXP_KEY = 'udhar_expenses_v1';
 const EXP_DELETED_KEY = 'udhar_expenses_deleted_v1';
 const CATS_KEY = 'udhar_custom_categories_v1';
 const DAILY_KEY = 'udhar_daily_sales_v1';
+const PE_KEY = 'udhar_personal_expenses_v1';
+const PE_DELETED_KEY = 'udhar_personal_expenses_deleted_v1';
+const PE_CATS_KEY = 'udhar_personal_categories_v1';
 const UPI_KEY = 'udhar_upi_v1';
 
 function loadUsers(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'{}'); }catch(e){ return {}; } }
@@ -518,6 +574,13 @@ function hasDailyRecord(date){
   const d = getDailySales(date);
   return !!(d.openingCash || d.cashSales || d.onlineSales || d.ownMoneyAdded || d.closingCashActual!==null);
 }
+function loadPersonalExpenses(){ try{ return JSON.parse(localStorage.getItem(PE_KEY)||'[]'); }catch(e){ return []; } }
+function savePersonalExpenses(a){ localStorage.setItem(PE_KEY, JSON.stringify(a)); }
+function loadPeDeletedIds(){ try{ return JSON.parse(localStorage.getItem(PE_DELETED_KEY)||'{}'); }catch(e){ return {}; } }
+function savePeDeletedIds(o){ localStorage.setItem(PE_DELETED_KEY, JSON.stringify(o)); }
+function loadPeCustomCats(){ try{ return JSON.parse(localStorage.getItem(PE_CATS_KEY)||'[]'); }catch(e){ return []; } }
+function savePeCustomCats(a){ localStorage.setItem(PE_CATS_KEY, JSON.stringify(a)); }
+
 function loadUpi(){ try{ return JSON.parse(localStorage.getItem(UPI_KEY)||'{}'); }catch(e){ return {}; } }
 function saveUpi(o){ localStorage.setItem(UPI_KEY, JSON.stringify(o)); }
 
@@ -549,7 +612,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v30-inhand-profit-restored';
+const APP_VERSION = '2026-10-03-v31-personal-expenses-and-mode';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -668,6 +731,25 @@ function mergeRemoteData(remote){
     if(!existing || stampOf(remoteDaily[date]) > stampOf(existing)) mergedDaily[date] = remoteDaily[date];
   });
   saveDailySalesAll(mergedDaily);
+
+  const mergedPeDeleted = Object.assign({}, loadPeDeletedIds(), remote.deletedPersonalExpenseIds || {});
+  savePeDeletedIds(mergedPeDeleted);
+
+  const peCatMap = {};
+  loadPeCustomCats().forEach(c=>{ peCatMap[c.name.toLowerCase()] = c; });
+  (remote.personalCategories||[]).forEach(c=>{ if(!peCatMap[c.name.toLowerCase()]) peCatMap[c.name.toLowerCase()] = c; });
+  savePeCustomCats(Object.values(peCatMap));
+
+  const peMap = {};
+  loadPersonalExpenses().forEach(e=>{ peMap[e.id] = e; });
+  (remote.personalExpenses||[]).forEach(e=>{
+    const existing = peMap[e.id];
+    if(!existing || stampOf(e) > stampOf(existing)) peMap[e.id] = e;
+  });
+  Object.keys(mergedPeDeleted).forEach(id=>{
+    if(peMap[id] && mergedPeDeleted[id] >= stampOf(peMap[id])) delete peMap[id];
+  });
+  savePersonalExpenses(Object.values(peMap));
 }
 
 // Pull others' changes first, then push the merged result — so phones never overwrite each other.
@@ -676,7 +758,7 @@ async function syncToDrive(){
   setDriveStatus('🔄 Syncing…');
   const pulled = await pullFromDrive();
   if(pulled==='error') return false;
-  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll() };
+  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats() };
   const content = JSON.stringify(payload, null, 2);
   try{
     let res;
@@ -720,6 +802,7 @@ function refreshCurrentView(){
   else if(!document.getElementById('expensesTab').classList.contains('hidden')){ renderExpenses(); }
   else if(!document.getElementById('salesTab').classList.contains('hidden')){ renderDailySummary(document.getElementById('ds-date').value || todayStr()); }
   else if(!document.getElementById('dashboardTab').classList.contains('hidden')){ renderDashboard(); }
+  else if(!document.getElementById('personalTab').classList.contains('hidden')){ renderPersonalTab(); }
 }
 
 async function syncNow(){
@@ -818,7 +901,7 @@ function showDashboard(){
   showDashboardTab();
 }
 
-const TABS = ['dashboard','sales','expenses','customers'];
+const TABS = ['dashboard','sales','expenses','customers','personal'];
 function activateTab(name){
   TABS.forEach(t=>{
     const panel = document.getElementById(t+'Tab');
@@ -837,7 +920,7 @@ function activateTab(name){
   });
 }
 
-function showDashboardTab(){ activateTab('dashboard'); renderDashboard(); }
+function showDashboardTab(){ activateTab('dashboard'); setDashMode(dashMode); renderDashboard(); }
 
 function showSalesTab(){ activateTab('sales'); loadDailySalesForm(); }
 
@@ -852,6 +935,13 @@ function showCustomersTab(){
   activateTab('customers');
   renderCustomers();
   renderTodayPaid();
+}
+
+function showPersonalTab(){
+  activateTab('personal');
+  renderPeCategoryButtons();
+  if(!editingPeId) selectPeCat(selectedPeCat);
+  renderPersonalTab();
 }
 
 /* ---------- shop expenses ---------- */
@@ -1058,6 +1148,157 @@ function renderExpenses(){
       catEl.appendChild(row);
     });
   }
+}
+
+/* ========================================================================
+   PERSONAL EXPENSES — fully isolated section.
+   This only READS computeInHandProfitAllTime() as a reference number.
+   Nothing here is ever written back into Dashboard/Sales/Shop Expenses data.
+   ======================================================================== */
+const BUILTIN_PE_CATS = [
+  {name:'Shop Rent', emoji:'🏠', color:'#8D6E63'},
+  {name:'Personal Spend', emoji:'🛍️', color:'#EC407A'},
+  {name:'EB Bill', emoji:'💡', color:'#FFCA28'},
+  {name:'Loan', emoji:'🏦', color:'#5C6BC0'},
+  {name:'Jewel Loan', emoji:'💍', color:'#AB47BC'},
+  {name:'Other', emoji:'📦', color:'#78909C'}
+];
+const PE_COLOR_PALETTE = ['#26A69A','#7CB342','#29B6F6','#66BB6A','#FF7043','#00ACC1','#D4E157','#FF8A65','#42A5F5','#BDBDBD'];
+
+function allPeCategories(){
+  return BUILTIN_PE_CATS.concat(loadPeCustomCats().map(c=>({name:c.name, emoji:'🏷️', color:c.color})));
+}
+function pickNewPeColor(){
+  const used = allPeCategories().map(c=>c.color);
+  const free = PE_COLOR_PALETTE.find(c=>!used.includes(c));
+  return free || PE_COLOR_PALETTE[Math.floor(Math.random()*PE_COLOR_PALETTE.length)];
+}
+function addPeCategory(){
+  const name = document.getElementById('newPeCatName').value.trim();
+  if(!name){ showBanner('Enter a category name'); return; }
+  const existing = allPeCategories().find(c=>c.name.toLowerCase()===name.toLowerCase());
+  if(existing){ showBanner('That category already exists'); document.getElementById('newPeCatName').value=''; selectPeCat(existing.name); return; }
+  const cats = loadPeCustomCats();
+  cats.push({ name, color: pickNewPeColor(), createdAt: Date.now() });
+  savePeCustomCats(cats);
+  document.getElementById('newPeCatName').value = '';
+  renderPeCategoryButtons();
+  selectPeCat(name);
+  showBanner('✅ Category "'+name+'" added');
+  afterDataChange();
+}
+function renderPeCategoryButtons(){
+  const grid = document.getElementById('peCatGrid');
+  if(!grid) return;
+  grid.innerHTML = '';
+  allPeCategories().forEach(c=>{
+    const div = document.createElement('div');
+    div.className = 'loadbtn';
+    div.style.background = c.color;
+    div.style.opacity = (c.name===selectedPeCat) ? '1' : '0.55';
+    div.textContent = c.emoji + ' ' + c.name;
+    div.onclick = function(){ selectPeCat(c.name); };
+    grid.appendChild(div);
+  });
+}
+
+let selectedPeCat = 'Shop Rent';
+let editingPeId = null;
+function selectPeCat(cat){
+  selectedPeCat = cat;
+  document.getElementById('pe-catLabel').value = cat;
+  renderPeCategoryButtons();
+}
+
+function addPersonalExpense(){
+  const amt = Number(document.getElementById('pe-amt').value)||0;
+  const note = document.getElementById('pe-note').value.trim();
+  const date = document.getElementById('pe-entryDate').value || todayStr();
+  if(amt<=0){ showBanner('Enter a valid amount'); return; }
+  const list = loadPersonalExpenses();
+
+  if(editingPeId){
+    const idx = list.findIndex(e=>String(e.id)===String(editingPeId));
+    if(idx>-1){
+      list[idx] = Object.assign({}, list[idx], { category: selectedPeCat, amount: amt, note, date, updatedAt: Date.now() });
+      savePersonalExpenses(list);
+      showBanner('✅ Personal expense updated');
+    }
+    cancelEditPersonalExpense();
+  } else {
+    list.push({ id: uid(), date, category: selectedPeCat, amount: amt, note, createdAt: Date.now(), updatedAt: Date.now() });
+    savePersonalExpenses(list);
+    showBanner('✅ ' + selectedPeCat + ' expense added');
+  }
+  document.getElementById('pe-amt').value = '';
+  document.getElementById('pe-note').value = '';
+  renderPersonalTab();
+  afterDataChange();
+}
+
+function editPersonalExpense(id){
+  const e = loadPersonalExpenses().find(x=>String(x.id)===String(id));
+  if(!e) return;
+  editingPeId = id;
+  selectPeCat(e.category);
+  document.getElementById('pe-amt').value = e.amount;
+  document.getElementById('pe-note').value = e.note || '';
+  document.getElementById('pe-entryDate').value = e.date;
+  document.getElementById('peFormTitle').textContent = 'Edit Personal Expense';
+  document.getElementById('peSubmitBtn').textContent = '✅ Update Expense';
+  document.getElementById('peCancelBtn').classList.remove('hidden');
+}
+
+function cancelEditPersonalExpense(){
+  editingPeId = null;
+  document.getElementById('peFormTitle').textContent = 'Add Personal Expense';
+  document.getElementById('peSubmitBtn').textContent = '+ Add Personal Expense';
+  document.getElementById('peCancelBtn').classList.add('hidden');
+  document.getElementById('pe-amt').value = '';
+  document.getElementById('pe-note').value = '';
+}
+
+function deletePersonalExpense(id){
+  const list = loadPersonalExpenses().filter(e=>String(e.id)!==String(id));
+  savePersonalExpenses(list);
+  const deleted = loadPeDeletedIds();
+  deleted[String(id)] = Date.now();
+  savePeDeletedIds(deleted);
+  if(editingPeId===id) cancelEditPersonalExpense();
+  showBanner('🗑️ Personal expense deleted');
+  renderPersonalTab();
+  afterDataChange();
+}
+
+function totalPersonalExpenses(){
+  return loadPersonalExpenses().reduce((s,e)=>s+(Number(e.amount)||0),0);
+}
+
+function renderPersonalTab(){
+  if(!document.getElementById('pe-entryDate').value) document.getElementById('pe-entryDate').value = todayStr();
+  // Pure reference read — this NEVER writes back to the Dashboard's numbers.
+  const inHand = computeInHandProfitAllTime();
+  const peTotal = totalPersonalExpenses();
+  document.getElementById('pe-inhandRef').textContent = fmtMoney(inHand);
+  document.getElementById('pe-balance').textContent = fmtMoney(inHand - peTotal);
+
+  const list = loadPersonalExpenses().slice().sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
+  const histEl = document.getElementById('peHistoryList');
+  if(!list.length){ histEl.innerHTML = '<p style="color:var(--muted);">No personal expenses logged yet</p>'; return; }
+  histEl.innerHTML = '';
+  list.forEach(e=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
+    row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <span>${e.date} · ${e.category}${e.note?(' · '+e.note):''}</span>
+        <span style="font-weight:700; white-space:nowrap;">₹${e.amount}</span>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:6px;">
+        <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPersonalExpense('${e.id}')">✏️ Edit</button>
+        <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePersonalExpense('${e.id}')">🗑️ Delete</button>
+      </div>`;
+    histEl.appendChild(row);
+  });
 }
 
 function renderTodayPaid(){
@@ -1575,6 +1816,25 @@ function computeRangeMetrics(fromDate, toDate){
 
 /* ---------- dashboard UI ---------- */
 let dashRangeType = 'daily';
+let dashMode = localStorage.getItem('udhar_dash_mode') || 'official';
+
+function setDashMode(mode){
+  dashMode = mode;
+  localStorage.setItem('udhar_dash_mode', mode);
+  const officialBtn = document.getElementById('mode-official-btn');
+  const personalBtn = document.getElementById('mode-personal-btn');
+  const officialBox = document.getElementById('db-officialBox');
+  const personalBox = document.getElementById('db-personalBox');
+  if(mode==='official'){
+    officialBtn.style.background = 'var(--brand)'; officialBtn.classList.remove('ghost');
+    personalBtn.style.background = 'transparent'; personalBtn.classList.add('ghost');
+    officialBox.classList.remove('hidden'); personalBox.classList.add('hidden');
+  } else {
+    personalBtn.style.background = 'var(--paid)'; personalBtn.classList.remove('ghost');
+    officialBtn.style.background = 'transparent'; officialBtn.classList.add('ghost');
+    personalBox.classList.remove('hidden'); officialBox.classList.add('hidden');
+  }
+}
 let dashAnchorDate = null;
 
 function fmtMoney(n){ return '₹' + Math.round(n).toLocaleString('en-IN'); }
@@ -1860,8 +2120,22 @@ function onExpenseFilterChange(){
   if(window.__lastDashMetrics) renderDetailedReportTables(window.__lastDashMetrics);
 }
 
-function openReportModal(){ document.getElementById('reportModal').classList.remove('hidden'); }
-function closeReportModal(){ document.getElementById('reportModal').classList.add('hidden'); }
+let chosenReportMode = null;
+
+function openReportModal(){
+  chosenReportMode = null;
+  document.getElementById('reportModal').classList.add('hidden');
+  document.getElementById('reportModeModal').classList.remove('hidden');
+}
+function chooseReportMode(mode){
+  chosenReportMode = mode;
+  document.getElementById('reportModeModal').classList.add('hidden');
+  document.getElementById('reportModal').classList.remove('hidden');
+}
+function closeReportModal(){
+  document.getElementById('reportModal').classList.add('hidden');
+  document.getElementById('reportModeModal').classList.add('hidden');
+}
 
 function reportPeriodLabel(m){
   if(dashRangeType==='daily') return m.fromDate;
@@ -1869,27 +2143,45 @@ function reportPeriodLabel(m){
   return m.fromDate + ' to ' + m.toDate;
 }
 
-function buildSummaryRows(m){
-  return [
+function buildSummaryRows(m, mode){
+  mode = mode || 'official';
+  const rows = [
     ['Period', reportPeriodLabel(m)],
-    ['Total Sales', m.totalSales],
-    ['Cash Sales', m.cashSales],
-    ['Online Sales', m.onlineSales],
-    ['Customer A/c Cash Collection', m.totalCustCash],
-    ['Customer A/c Online Collection', m.totalCustOnline],
-    ['Expenses/Purchases', m.totalExpenses],
-    ['  paid by Cash', m.totalExpensesCash],
-    ['  paid Online', m.totalExpensesOnline],
-    ['Staff Salary', m.totalStaffSalary],
-    ['  paid by Cash', m.totalStaffSalaryCash],
-    ['  paid Online', m.totalStaffSalaryOnline],
-    ['Estimated Profit', m.totalProfit],
-    ['Own Money Added (already subtracted from profit above)', m.totalOwnMoneyAdded],
-    ['Average Daily Sales', Math.round(m.avgDailySales)],
-    ['Average Daily Profit', Math.round(m.avgDailyProfit)],
-    ['Recorded Days', m.daysRecorded],
-    ['Days Needing Review', m.daysNeedingReview]
+    ['Report Mode', mode==='personal' ? 'Personal' : 'Official'],
   ];
+  if(mode==='personal'){
+    rows.push(
+      ['Online Sales', m.onlineSales],
+      ['Online Expenses', m.totalExpensesOnline],
+      ['Online Staff Salary', m.totalStaffSalaryOnline],
+      ['Own Money Added (all-time, subtracted below)', m.totalOwnMoneyAdded],
+      ['🤲 In Hand Profit (all-time)', computeInHandProfitAllTime()],
+      ['— For reference —', ''],
+      ['Cash Sales', m.cashSales],
+      ['Total Sales (Cash+Online)', m.totalSales],
+      ['Expenses/Purchases (all)', m.totalExpenses],
+      ['Staff Salary (all)', m.totalStaffSalary]
+    );
+  } else {
+    rows.push(
+      ['Total Sales', m.totalSales],
+      ['Cash Sales', m.cashSales],
+      ['Online Sales', m.onlineSales],
+      ['Customer A/c Cash Collection', m.totalCustCash],
+      ['Customer A/c Online Collection', m.totalCustOnline],
+      ['Expenses/Purchases', m.totalExpenses],
+      ['  paid by Cash', m.totalExpensesCash],
+      ['  paid Online', m.totalExpensesOnline],
+      ['Staff Salary', m.totalStaffSalary],
+      ['  paid by Cash', m.totalStaffSalaryCash],
+      ['  paid Online', m.totalStaffSalaryOnline],
+      ['🏛️ Estimated Profit', m.totalProfit],
+      ['Average Daily Sales', Math.round(m.avgDailySales)],
+      ['Average Daily Profit', Math.round(m.avgDailyProfit)]
+    );
+  }
+  rows.push(['Recorded Days', m.daysRecorded], ['Days Needing Review', m.daysNeedingReview]);
+  return rows;
 }
 
 function buildExpenseDetailRows(fromDate, toDate, categoryFilter){
@@ -1994,9 +2286,10 @@ function downloadReport(format){
   if(!sections.summary && !sections.sales && !sections.expenses && !sections.salary && !sections.customers && !sections.cash){
     showBanner('Select at least one section first'); return;
   }
+  const mode = chosenReportMode || 'official';
   closeReportModal();
-  if(format==='pdf') generatePdfReport(m, sections);
-  else generateExcelReport(m, sections);
+  if(format==='pdf') generatePdfReport(m, sections, mode);
+  else generateExcelReport(m, sections, mode);
 }
 
 // Draws a simple table starting at startY. Returns the Y position after the table.
@@ -2034,20 +2327,22 @@ function pdfDrawTable(doc, startY, columns, rows, title){
   return y + 4;
 }
 
-function generatePdfReport(m, sections){
+function generatePdfReport(m, sections, mode){
   sections = sections || {summary:true, sales:true, expenses:true, salary:true, customers:true, cash:true};
+  mode = mode || 'official';
   if(!(window.jspdf && window.jspdf.jsPDF)){ showBanner('⚠️ PDF library not loaded — check your internet connection'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const upi = loadUpi();
   let y = 16;
   doc.setFontSize(16); doc.text((upi.shopName||'SP Tea Shop'), 14, y); y+=8;
-  doc.setFontSize(11); doc.text('Report period: '+reportPeriodLabel(m), 14, y); y+=10;
+  doc.setFontSize(11); doc.text('Report period: '+reportPeriodLabel(m), 14, y); y+=6;
+  doc.text('Mode: ' + (mode==='personal' ? 'Personal' : 'Official'), 14, y); y+=8;
 
   if(sections.summary){
     doc.setFontSize(12); doc.text('Profit Summary', 14, y); y+=6;
     doc.setFontSize(10);
-    buildSummaryRows(m).forEach(row=>{
+    buildSummaryRows(m, mode).forEach(row=>{
       const val = typeof row[1]==='number' ? ('Rs. '+Math.round(row[1]).toLocaleString('en-IN')) : String(row[1]);
       doc.text(String(row[0]), 14, y);
       doc.text(val, 120, y);
@@ -2146,8 +2441,9 @@ function generatePdfReport(m, sections){
   doc.save('SP-Tea-Shop-Report-'+safePeriod+'.pdf');
 }
 
-function generateExcelReport(m, sections){
+function generateExcelReport(m, sections, mode){
   sections = sections || {summary:true, sales:true, expenses:true, salary:true, customers:true, cash:true};
+  mode = mode || 'official';
   if(!window.XLSX){ showBanner('⚠️ Excel library not loaded — check your internet connection'); return; }
   const wb = XLSX.utils.book_new();
   const addSheet = (rows, emptyRow, name) => {
@@ -2155,7 +2451,7 @@ function generateExcelReport(m, sections){
   };
 
   if(sections.summary){
-    const summaryRows = buildSummaryRows(m).map(r=>({Field:r[0], Value:r[1]}));
+    const summaryRows = buildSummaryRows(m, mode).map(r=>({Field:r[0], Value:r[1]}));
     addSheet(summaryRows, {Field:'',Value:''}, 'Summary');
   }
   if(sections.sales){
