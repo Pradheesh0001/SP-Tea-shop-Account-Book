@@ -346,6 +346,7 @@ window.addEventListener('error', function(e){
         <div style="display:flex; gap:8px; margin-bottom:12px;">
           <button type="button" id="exp-method-cash" style="width:auto; flex:1; padding:10px; margin:0; background:var(--paid);" onclick="setExpMethod('cash')">💵 Cash</button>
           <button type="button" id="exp-method-online" class="ghost" style="width:auto; flex:1; margin:0; padding:10px;" onclick="setExpMethod('online')">📲 Online/UPI</button>
+          <button type="button" id="exp-method-ownmoney" class="ghost" style="width:auto; flex:1; margin:0; padding:10px;" onclick="setExpMethod('ownmoney')">🤲 Own Money</button>
         </div>
         <button id="exp-submitBtn" style="background:var(--owe);" onclick="addExpense()">+ Add Expense</button>
         <button id="exp-cancelBtn" class="ghost hidden" onclick="cancelEditExpense()">Cancel Edit</button>
@@ -612,7 +613,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v31-personal-expenses-and-mode';
+const APP_VERSION = '2026-10-03-v32-ownmoney-expense-method';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1027,15 +1028,13 @@ function ensureExpenseDateDefaults(){
 let selectedExpMethod = 'cash';
 function setExpMethod(m){
   selectedExpMethod = m;
-  const cashBtn = document.getElementById('exp-method-cash');
-  const onlineBtn = document.getElementById('exp-method-online');
-  if(m==='cash'){
-    cashBtn.style.background = 'var(--paid)'; cashBtn.classList.remove('ghost');
-    onlineBtn.style.background = 'transparent'; onlineBtn.classList.add('ghost');
-  } else {
-    onlineBtn.style.background = 'var(--brand)'; onlineBtn.classList.remove('ghost');
-    cashBtn.style.background = 'transparent'; cashBtn.classList.add('ghost');
-  }
+  const buttons = { cash: document.getElementById('exp-method-cash'), online: document.getElementById('exp-method-online'), ownmoney: document.getElementById('exp-method-ownmoney') };
+  const colors = { cash: 'var(--paid)', online: 'var(--brand)', ownmoney: '#8e44ad' };
+  Object.keys(buttons).forEach(key=>{
+    const btn = buttons[key];
+    if(key===m){ btn.style.background = colors[key]; btn.classList.remove('ghost'); }
+    else { btn.style.background = 'transparent'; btn.classList.add('ghost'); }
+  });
 }
 
 function addExpense(){
@@ -1121,7 +1120,7 @@ function renderExpenses(){
     dayExpenses.slice().reverse().forEach(e=>{
       const row = document.createElement('div');
       row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
-      const methodBadge = (e.method==='online') ? '📲 Online' : '💵 Cash';
+      const methodBadge = e.method==='online' ? '📲 Online' : e.method==='ownmoney' ? '🤲 Own Money' : '💵 Cash';
       row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
           <span>${e.category}${e.note?(' · '+e.note):''} <span style="font-size:0.72rem; color:var(--muted);">(${methodBadge})</span></span>
           <span style="font-weight:700; white-space:nowrap;">₹${e.amount}</span>
@@ -1725,12 +1724,19 @@ function computeDayMetrics(date){
   // cost reduces profit no matter how it was paid.
   const expenses = sumExpensesInRange(date, date, false);
   const staffSalary = sumExpensesInRange(date, date, true);
-  // Cash-only portion — this is what actually leaves the physical till, so only this part
-  // affects cash reconciliation / the auto-calculated Cash Sales below.
+  // Each payment-method bucket computed explicitly (not as a "whatever's left" remainder),
+  // since there are now three methods: cash, online, and own-money.
+  // Cash-only — this is what actually leaves the physical till, so only this part affects
+  // cash reconciliation / the auto-calculated Cash Sales below.
   const expensesCash = sumExpensesInRange(date, date, false, 'cash');
   const staffSalaryCash = sumExpensesInRange(date, date, true, 'cash');
-  const expensesOnline = expenses - expensesCash;
-  const staffSalaryOnline = staffSalary - staffSalaryCash;
+  const expensesOnline = sumExpensesInRange(date, date, false, 'online');
+  const staffSalaryOnline = sumExpensesInRange(date, date, true, 'online');
+  // Own-money — expenses YOU personally paid for, not from the shop's cash or online funds.
+  // These still count as a real business cost (so they reduce Estimated Profit normally),
+  // but they also come straight out of your own pocket, so they reduce In Hand Profit too.
+  const expensesOwnMoney = sumExpensesInRange(date, date, false, 'ownmoney');
+  const staffSalaryOwnMoney = sumExpensesInRange(date, date, true, 'ownmoney');
 
   const custCash = sumCustomerPaymentsInRange(date, date, 'cash');
   const custOnline = sumCustomerPaymentsInRange(date, date, 'online');
@@ -1772,6 +1778,7 @@ function computeDayMetrics(date){
   return {
     date, cashSales, cashSalesIsDerived, onlineSales, totalSales,
     expenses, staffSalary, expensesCash, expensesOnline, staffSalaryCash, staffSalaryOnline,
+    expensesOwnMoney, staffSalaryOwnMoney,
     custCash, custOnline, estimatedProfit, cashProfit, onlineProfit, openingCash, expectedClosingCash,
     closingCashActual, cashDifference, ownMoneyAdded, dataIncomplete,
     needsReview: cashDifference!==null && cashDifference<0,
@@ -1786,7 +1793,10 @@ function computeInHandProfitAllTime(){
   const allDates = Array.from(new Set([...dailyDates, ...expenseDates])).sort();
   if(!allDates.length) return 0;
   return dateRangeArray(allDates[0], allDates[allDates.length-1])
-    .reduce((s,d)=>{ const m = computeDayMetrics(d); return s + m.onlineProfit - m.ownMoneyAdded; }, 0);
+    .reduce((s,d)=>{
+      const m = computeDayMetrics(d);
+      return s + m.onlineProfit - m.ownMoneyAdded - m.expensesOwnMoney - m.staffSalaryOwnMoney;
+    }, 0);
 }
 
 function computeRangeMetrics(fromDate, toDate){
@@ -1801,7 +1811,8 @@ function computeRangeMetrics(fromDate, toDate){
     fromDate, toDate, days,
     totalSales, cashSales:sum('cashSales'), onlineSales:sum('onlineSales'),
     totalExpenses: sum('expenses'), totalStaffSalary: sum('staffSalary'),
-    totalExpensesCash: sum('expensesCash'), totalExpensesOnline: sum('expensesOnline'),
+    totalExpensesCash: sum('expensesCash'), totalExpensesOnline: sum('expensesOnline'), totalExpensesOwnMoney: sum('expensesOwnMoney'),
+    totalStaffSalaryOwnMoney: sum('staffSalaryOwnMoney'),
     totalStaffSalaryCash: sum('staffSalaryCash'), totalStaffSalaryOnline: sum('staffSalaryOnline'),
     totalCustCash: sum('custCash'), totalCustOnline: sum('custOnline'),
     totalOwnMoneyAdded: sum('ownMoneyAdded'),
@@ -1930,9 +1941,11 @@ function renderDashboard(){
   html += metricRow('Expenses/Purchases', fmtMoney(m.totalExpenses));
   html += metricRow('— paid by Cash', fmtMoney(m.totalExpensesCash));
   html += metricRow('— paid Online', fmtMoney(m.totalExpensesOnline));
+  html += metricRow('— paid by Own Money', fmtMoney(m.totalExpensesOwnMoney));
   html += metricRow('Staff Salary', fmtMoney(m.totalStaffSalary));
   html += metricRow('— paid by Cash', fmtMoney(m.totalStaffSalaryCash));
   html += metricRow('— paid Online', fmtMoney(m.totalStaffSalaryOnline));
+  html += metricRow('— paid by Own Money', fmtMoney(m.totalStaffSalaryOwnMoney));
   html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Customer A/c collections (already-recorded sales, not added again)</div>';
   html += metricRow('Customer A/c Cash Collection', fmtMoney(m.totalCustCash));
   html += metricRow('Customer A/c Online Collection', fmtMoney(m.totalCustOnline));
@@ -2065,9 +2078,11 @@ function renderDailySummary(date){
   html += metricRow('Expenses/Purchases', fmtMoney(m.expenses));
   html += metricRow('— paid by Cash', fmtMoney(m.expensesCash));
   html += metricRow('— paid Online', fmtMoney(m.expensesOnline));
+  html += metricRow('— paid by Own Money', fmtMoney(m.expensesOwnMoney));
   html += metricRow('Staff Salary', fmtMoney(m.staffSalary));
   html += metricRow('— paid by Cash', fmtMoney(m.staffSalaryCash));
   html += metricRow('— paid Online', fmtMoney(m.staffSalaryOnline));
+  html += metricRow('— paid by Own Money', fmtMoney(m.staffSalaryOwnMoney));
   html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Customer A/c collections (already-recorded sales, not added again)</div>';
   html += metricRow('Customer A/c Cash Collection', fmtMoney(m.custCash));
   html += metricRow('Customer A/c Online Collection', fmtMoney(m.custOnline));
@@ -2154,7 +2169,8 @@ function buildSummaryRows(m, mode){
       ['Online Sales', m.onlineSales],
       ['Online Expenses', m.totalExpensesOnline],
       ['Online Staff Salary', m.totalStaffSalaryOnline],
-      ['Own Money Added (all-time, subtracted below)', m.totalOwnMoneyAdded],
+      ['Own Money Added via Daily Sales (all-time, subtracted below)', m.totalOwnMoneyAdded],
+      ['Own Money spent via Shop Expenses (all-time, subtracted below)', m.totalExpensesOwnMoney + m.totalStaffSalaryOwnMoney],
       ['🤲 In Hand Profit (all-time)', computeInHandProfitAllTime()],
       ['— For reference —', ''],
       ['Cash Sales', m.cashSales],
@@ -2172,9 +2188,11 @@ function buildSummaryRows(m, mode){
       ['Expenses/Purchases', m.totalExpenses],
       ['  paid by Cash', m.totalExpensesCash],
       ['  paid Online', m.totalExpensesOnline],
+      ['  paid by Own Money', m.totalExpensesOwnMoney],
       ['Staff Salary', m.totalStaffSalary],
       ['  paid by Cash', m.totalStaffSalaryCash],
       ['  paid Online', m.totalStaffSalaryOnline],
+      ['  paid by Own Money', m.totalStaffSalaryOwnMoney],
       ['🏛️ Estimated Profit', m.totalProfit],
       ['Average Daily Sales', Math.round(m.avgDailySales)],
       ['Average Daily Profit', Math.round(m.avgDailyProfit)]
@@ -2193,7 +2211,7 @@ function buildExpenseDetailRows(fromDate, toDate, categoryFilter){
       Date: e.date,
       Category: e.category,
       'Amount (₹)': e.amount,
-      'Paid Using': (e.method==='online') ? 'Online' : 'Cash',
+      'Paid Using': e.method==='online' ? 'Online' : e.method==='ownmoney' ? 'Own Money' : 'Cash',
       Note: e.note || ''
     }));
 }
