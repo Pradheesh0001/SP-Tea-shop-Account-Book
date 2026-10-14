@@ -434,9 +434,11 @@ window.addEventListener('error', function(e){
         <div class="twocol">
           <div><label>Qty</label><input id="pl-qty" type="number" min="0"></div>
           <div><label>Unit</label>
-            <div style="display:flex; gap:8px;">
-              <button type="button" id="pl-unit-pcs" style="width:auto; flex:1; padding:10px; margin:0; background:var(--paid);" onclick="setPlUnit('pcs')">Pcs</button>
-              <button type="button" id="pl-unit-case" class="ghost" style="width:auto; flex:1; margin:0; padding:10px;" onclick="setPlUnit('case')">Case</button>
+            <div class="loadgrid" style="grid-template-columns:1fr 1fr;">
+              <button type="button" id="pl-unit-pcs" style="padding:10px; margin:0; background:var(--paid);" onclick="setPlUnit('pcs')">Pcs</button>
+              <button type="button" id="pl-unit-case" class="ghost" style="margin:0; padding:10px;" onclick="setPlUnit('case')">Case</button>
+              <button type="button" id="pl-unit-pack" class="ghost" style="margin:0; padding:10px;" onclick="setPlUnit('pack')">Pack</button>
+              <button type="button" id="pl-unit-saram" class="ghost" style="margin:0; padding:10px;" onclick="setPlUnit('saram')">Saram</button>
             </div>
           </div>
         </div>
@@ -525,6 +527,7 @@ window.addEventListener('error', function(e){
 
   <!-- CUSTOMER DETAIL -->
   <div id="custDetailView" class="hidden card">
+    <button class="ghost" style="width:auto; margin-top:0; margin-bottom:14px;" onclick="showDashboard()">← Back</button>
     <h2 style="margin-top:0;" id="cd-name"></h2>
     <div style="color:var(--muted); font-size:0.85rem;" id="cd-phone"></div>
     <div class="balbig" id="cd-balance">₹0</div>
@@ -672,7 +675,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v33-purchase-list-and-cycle-reset';
+const APP_VERSION = '2026-10-03-v34-units-and-topback';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1428,12 +1431,18 @@ let selectedPlUnit = 'pcs';
 let editingPlId = null;
 let pendingReviewItems = [];
 
+const PL_UNITS = ['pcs','case','pack','saram'];
+function unitLabel(u){
+  return u==='case' ? 'Case' : u==='pack' ? 'Pack' : u==='saram' ? 'Saram' : 'Pcs';
+}
 function setPlUnit(unit){
   selectedPlUnit = unit;
-  const pcsBtn = document.getElementById('pl-unit-pcs');
-  const caseBtn = document.getElementById('pl-unit-case');
-  if(unit==='pcs'){ pcsBtn.style.background='var(--paid)'; pcsBtn.classList.remove('ghost'); caseBtn.style.background='transparent'; caseBtn.classList.add('ghost'); }
-  else { caseBtn.style.background='var(--paid)'; caseBtn.classList.remove('ghost'); pcsBtn.style.background='transparent'; pcsBtn.classList.add('ghost'); }
+  PL_UNITS.forEach(u=>{
+    const btn = document.getElementById('pl-unit-'+u);
+    if(!btn) return;
+    if(u===unit){ btn.style.background='var(--paid)'; btn.classList.remove('ghost'); }
+    else { btn.style.background='transparent'; btn.classList.add('ghost'); }
+  });
 }
 
 function addPurchaseItem(){
@@ -1537,7 +1546,7 @@ function renderPurchaseList(){
           <span class="pl-select-dot" data-id="${it.id}" style="cursor:pointer; font-size:1.2rem;">${isSelected?'✅':'⭕'}</span>
           <span>${it.name}</span>
         </span>
-        <span style="font-weight:700; white-space:nowrap;">${it.qty} ${it.unit==='case'?'case':'pcs'}</span>
+        <span style="font-weight:700; white-space:nowrap;">${it.qty} ${unitLabel(it.unit)}</span>
       </div>
       ${priceDisplay}
       <div style="display:flex; gap:10px; margin-top:6px;">
@@ -1579,7 +1588,7 @@ function renderSelectedSummary(){
 function copyPurchaseListNameQtyOnly(){
   const list = loadPurchaseList();
   if(!list.length){ showBanner('List is empty'); return; }
-  const text = list.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${it.unit==='case'?'case':'pcs'}`).join('\n');
+  const text = list.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)}`).join('\n');
   if(navigator.clipboard){
     navigator.clipboard.writeText(text).then(()=>showBanner('📋 List copied (name + qty only)')).catch(()=>showBanner('Could not copy'));
   } else { showBanner('Copy not supported on this device'); }
@@ -1589,7 +1598,7 @@ function copySelectedPurchaseItems(){
   const list = loadPurchaseList().filter(it=>selectedPurchaseIds.has(it.id));
   if(!list.length){ showBanner('No items selected'); return; }
   const total = selectedPurchaseTotal();
-  let text = list.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${it.unit==='case'?'case':'pcs'} - ₹${it.price!==null&&it.price!==undefined?it.price:0} each`).join('\n');
+  let text = list.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)} - ₹${it.price!==null&&it.price!==undefined?it.price:0} each`).join('\n');
   text += `\n\nTotal: ₹${Math.round(total).toLocaleString('en-IN')}`;
   if(navigator.clipboard){
     navigator.clipboard.writeText(text).then(()=>showBanner('📋 Selected items copied with price')).catch(()=>showBanner('Could not copy'));
@@ -1627,6 +1636,15 @@ function fuzzyCorrectName(candidate, knownNames){
   return { corrected: candidate, wasCorrected: false, score: bestScore };
 }
 
+// Maps any recognized unit keyword found in text to one of the 4 canonical units.
+function detectUnitFromWord(word){
+  if(!word) return 'pcs';
+  if(/case|box|ctn/i.test(word)) return 'case';
+  if(/pack/i.test(word)) return 'pack';
+  if(/saram/i.test(word)) return 'saram';
+  return 'pcs';
+}
+
 /* ---------- parsing: pasted text list ---------- */
 // Pure function: given raw pasted text, returns candidate {name, qty, unit} items.
 function parsePastedListText(rawText){
@@ -1635,16 +1653,16 @@ function parsePastedListText(rawText){
     let qty = 1, unit = 'pcs';
     let rest = line;
     const patterns = [
-      /x\s*(\d+)\s*(pcs|pc|case|box|ctn|kg|nos)?/i,
-      /qty[:\s]*([\d.]+)\s*(pcs|pc|case|box|ctn|kg|nos)?/i,
-      /(\d+)\s*(pcs|pc|case|box|ctn|kg|nos)\b/i,
+      /x\s*(\d+)\s*(pcs|pc|case|box|ctn|kg|nos|pack|saram)?/i,
+      /qty[:\s]*([\d.]+)\s*(pcs|pc|case|box|ctn|kg|nos|pack|saram)?/i,
+      /(\d+)\s*(pcs|pc|case|box|ctn|kg|nos|pack|saram)\b/i,
       /^(\d+)\b/
     ];
     for(const pat of patterns){
       const m = rest.match(pat);
       if(m){
         qty = Number(m[1])||1;
-        if(m[2]) unit = /case|box|ctn/i.test(m[2]) ? 'case' : 'pcs';
+        if(m[2]) unit = detectUnitFromWord(m[2]);
         rest = rest.replace(m[0], '').trim();
         break;
       }
@@ -1681,8 +1699,8 @@ function parseBillText(rawText){
     const mrpMatch = working.match(/MRP[:\s₹.]*([\d]+(?:\.\d+)?)/i);
     if(mrpMatch){ mrp = Number(mrpMatch[1]); working = working.replace(mrpMatch[0], ''); }
 
-    const qtyMatch = working.match(/(?:qty|quantity)?[:\s]*(\d+)\s*(pcs|pc|nos|kg|case|box|ctn)\b/i);
-    if(qtyMatch){ qty = Number(qtyMatch[1])||1; unit = /case|box|ctn/i.test(qtyMatch[2]) ? 'case' : 'pcs'; working = working.replace(qtyMatch[0], ''); }
+    const qtyMatch = working.match(/(?:qty|quantity)?[:\s]*(\d+)\s*(pcs|pc|nos|kg|case|box|ctn|pack|saram)\b/i);
+    if(qtyMatch){ qty = Number(qtyMatch[1])||1; unit = detectUnitFromWord(qtyMatch[2]); working = working.replace(qtyMatch[0], ''); }
 
     const priceMatch = working.match(/(?:rs|inr|₹)[.\s]*([\d]+(?:\.\d+)?)/i) || working.match(/([\d]+(?:\.\d+)?)\s*$/);
     if(priceMatch){ price = Number(priceMatch[1]); working = working.replace(priceMatch[0], ''); }
@@ -1731,6 +1749,8 @@ function showReviewItems(items){
         <select data-idx="${i}" data-field="unit" style="margin-bottom:12px;">
           <option value="pcs" ${it.unit==='pcs'?'selected':''}>Pcs</option>
           <option value="case" ${it.unit==='case'?'selected':''}>Case</option>
+          <option value="pack" ${it.unit==='pack'?'selected':''}>Pack</option>
+          <option value="saram" ${it.unit==='saram'?'selected':''}>Saram</option>
         </select>
       </div>
       <button type="button" class="ghost" style="width:auto; padding:6px 12px; font-size:0.75rem; margin-top:0;" onclick="removeReviewItem(${i})">Remove this row</button>
