@@ -206,7 +206,7 @@ window.addEventListener('error', function(e){
       <button id="tab-expenses-btn" onclick="showExpensesTab()" class="ghost" style="margin-top:0;">💸 Shop Expenses</button>
       <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Customer Accounts</button>
       <button id="tab-personal-btn" onclick="showPersonalTab()" class="ghost" style="margin-top:0;">🧍 Personal Expenses</button>
-      <button id="tab-purchase-btn" onclick="showPurchaseTab()" class="ghost" style="margin-top:0;">🛒 Purchase List</button>
+      <button id="tab-purchase-btn" onclick="showPurchaseTab()" class="ghost" style="margin-top:0;">🛒 Master Sheet</button>
       <button class="ghost sideNavSettings" onclick="showSettings()">⚙️ Settings</button>
     </nav>
     <div class="mainContent">
@@ -428,7 +428,7 @@ window.addEventListener('error', function(e){
     <!-- PURCHASE LIST TAB -->
     <div id="purchaseTab" class="hidden">
       <div class="card">
-        <h3 id="plFormTitle" style="margin-top:0;">Add Item</h3>
+        <h3 id="plFormTitle" style="margin-top:0;">Add Item to Master Sheet</h3>
         <label>Item Name</label>
         <input id="pl-name" placeholder="e.g. Amul Milk 500ml">
         <div class="twocol">
@@ -451,14 +451,14 @@ window.addEventListener('error', function(e){
       </div>
 
       <div class="card">
-        <h3 style="margin-top:0;">📷 Scan a Purchase Bill</h3>
+        <h3 style="margin-top:0;">📷 Scan a Bill (adds to Master Sheet)</h3>
         <p class="hint" style="margin-bottom:10px;">Works offline, free. Handles English and Tamil text. Does NOT translate Tamil to English — you'll review and fix names after scanning. Always double-check the results below before adding.</p>
         <input id="pl-scanFile" type="file" accept="image/*" capture="environment" onchange="scanPurchaseBill(event)">
         <div id="pl-scanStatus" class="hint"></div>
       </div>
 
       <div class="card">
-        <h3 style="margin-top:0;">📝 Paste a Text List</h3>
+        <h3 style="margin-top:0;">📝 Paste a Text List (adds to Master Sheet)</h3>
         <p class="hint" style="margin-bottom:10px;">Paste any list of item names and quantities — one item per line works best. Spelling gets auto-corrected against items you've already used.</p>
         <textarea id="pl-pasteBox" rows="5" style="width:100%; padding:13px; border-radius:12px; border:1px solid #ccd2db; background:transparent; color:var(--text); font-family:inherit; margin-bottom:12px;" placeholder="Milk 10 pcs&#10;Sugar 2 case&#10;Tea powder x5"></textarea>
         <button style="background:var(--brand);" onclick="parsePastedList()">🔍 Parse List</button>
@@ -475,7 +475,7 @@ window.addEventListener('error', function(e){
 
       <div class="card">
         <div class="toprow" style="margin-bottom:10px;">
-          <h3 style="margin:0;">Purchase List</h3>
+          <h3 style="margin:0;">Master Sheet</h3>
           <button class="ghost" style="width:auto; margin:0; padding:8px 14px; font-size:0.85rem;" onclick="copyPurchaseListNameQtyOnly()">📋 Copy (Name + Qty)</button>
         </div>
         <div id="pl-itemsList"></div>
@@ -675,7 +675,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v34-units-and-topback';
+const APP_VERSION = '2026-10-03-v35-master-sheet-qty-order';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1488,7 +1488,7 @@ function editPurchaseItem(id){
 
 function cancelEditPurchaseItem(){
   editingPlId = null;
-  document.getElementById('plFormTitle').textContent = 'Add Item';
+  document.getElementById('plFormTitle').textContent = 'Add Item to Master Sheet';
   document.getElementById('plSubmitBtn').textContent = '+ Add Item';
   document.getElementById('plCancelBtn').classList.add('hidden');
   document.getElementById('pl-name').value=''; document.getElementById('pl-qty').value='';
@@ -1507,19 +1507,37 @@ function deletePurchaseItem(id){
   afterDataChange();
 }
 
-let selectedPurchaseIds = new Set();
+// Maps itemId -> qty chosen for THIS purchase order (independent of the Master Sheet's own
+// stored qty field, which just represents whatever you typed when adding it to the catalog).
+let selectedPurchaseQty = {};
+
+function isPurchaseSelected(id){ return !!selectedPurchaseQty[id]; }
 
 function toggleSelectPurchaseItem(id){
-  if(selectedPurchaseIds.has(id)) selectedPurchaseIds.delete(id);
-  else selectedPurchaseIds.add(id);
+  if(selectedPurchaseQty[id]){ delete selectedPurchaseQty[id]; }
+  else { selectedPurchaseQty[id] = 1; }
+  renderPurchaseList();
+}
+
+function incrementPurchaseQty(id){
+  selectedPurchaseQty[id] = (selectedPurchaseQty[id]||0) + 1;
+  renderPurchaseList();
+}
+
+function decrementPurchaseQty(id){
+  const next = (selectedPurchaseQty[id]||1) - 1;
+  if(next<=0) delete selectedPurchaseQty[id];
+  else selectedPurchaseQty[id] = next;
   renderPurchaseList();
 }
 
 function selectedPurchaseTotal(){
   const list = loadPurchaseList();
-  return list
-    .filter(it=>selectedPurchaseIds.has(it.id))
-    .reduce((s,it)=> s + ((it.price||0) * (it.qty||0)), 0);
+  return Object.keys(selectedPurchaseQty).reduce((s,id)=>{
+    const it = list.find(x=>x.id===id);
+    if(!it) return s;
+    return s + ((it.price||0) * (selectedPurchaseQty[id]||0));
+  }, 0);
 }
 
 function renderPurchaseList(){
@@ -1528,28 +1546,42 @@ function renderPurchaseList(){
   if(!wrap) return;
   // drop selections for items that no longer exist
   const validIds = new Set(list.map(it=>it.id));
-  Array.from(selectedPurchaseIds).forEach(id=>{ if(!validIds.has(id)) selectedPurchaseIds.delete(id); });
+  Object.keys(selectedPurchaseQty).forEach(id=>{ if(!validIds.has(id)) delete selectedPurchaseQty[id]; });
 
   if(!list.length){ wrap.innerHTML = '<p style="color:var(--muted);">No items yet</p>'; renderSelectedSummary(); return; }
   wrap.innerHTML = '';
   list.slice().reverse().forEach(it=>{
-    const isSelected = selectedPurchaseIds.has(it.id);
+    const isSelected = isPurchaseSelected(it.id);
+    const orderQty = selectedPurchaseQty[it.id] || 0;
     const row = document.createElement('div');
     row.style.cssText = 'padding:10px; border-radius:10px; margin-bottom:6px; border:1px solid rgba(128,128,128,0.2);'
       + (isSelected ? ' background:rgba(31,111,235,0.12); border-color:var(--brand);' : '');
     const mrpBit = (it.mrp!==null && it.mrp!==undefined) ? ` · MRP ₹${it.mrp}` : '';
+    const rate = (it.price!==null && it.price!==undefined) ? it.price : 0;
+    const lineTotal = rate * orderQty;
+
     const priceDisplay = isSelected
-      ? `<div style="font-size:0.95rem; font-weight:700; color:var(--brand);">₹${it.price!==null&&it.price!==undefined?it.price:'—'} each${mrpBit}</div>`
-      : `<div style="font-size:0.78rem; color:var(--muted);">${(it.price!==null&&it.price!==undefined)?('₹'+it.price+mrpBit):'swipe right or tap ○ to see price'}</div>`;
+      ? `<div style="font-size:0.9rem; font-weight:700; color:var(--brand);">₹${rate} × ${orderQty} = ₹${lineTotal}${mrpBit}</div>`
+      : `<div style="font-size:0.78rem; color:var(--muted);">${(it.price!==null&&it.price!==undefined)?('₹'+it.price+' per '+unitLabel(it.unit)+mrpBit):'tap ○ to select and see rate'}</div>`;
+
+    const stepper = isSelected ? `
+      <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+        <button type="button" class="pl-dec" data-id="${it.id}" style="width:40px; height:40px; padding:0; margin:0; background:var(--owe); font-size:1.2rem;">−</button>
+        <span style="font-weight:700; min-width:30px; text-align:center;">${orderQty}</span>
+        <button type="button" class="pl-inc" data-id="${it.id}" style="width:40px; height:40px; padding:0; margin:0; background:var(--paid); font-size:1.2rem;">+</button>
+        <span style="color:var(--muted); font-size:0.8rem;">${unitLabel(it.unit)}</span>
+      </div>` : '';
+
     row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <span style="display:flex; align-items:center; gap:8px;">
           <span class="pl-select-dot" data-id="${it.id}" style="cursor:pointer; font-size:1.2rem;">${isSelected?'✅':'⭕'}</span>
           <span>${it.name}</span>
         </span>
-        <span style="font-weight:700; white-space:nowrap;">${it.qty} ${unitLabel(it.unit)}</span>
+        <span style="font-weight:700; white-space:nowrap; color:var(--muted); font-size:0.8rem;">in catalog: ${it.qty} ${unitLabel(it.unit)}</span>
       </div>
       ${priceDisplay}
-      <div style="display:flex; gap:10px; margin-top:6px;">
+      ${stepper}
+      <div style="display:flex; gap:10px; margin-top:8px;">
         <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPurchaseItem('${it.id}')">✏️ Edit</button>
         <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePurchaseItem('${it.id}')">🗑️ Delete</button>
       </div>`;
@@ -1557,6 +1589,10 @@ function renderPurchaseList(){
     // Tap the circle: reliable on every device.
     const dot = row.querySelector('.pl-select-dot');
     if(dot) dot.addEventListener('click', ()=>toggleSelectPurchaseItem(it.id));
+    const decBtn = row.querySelector('.pl-dec');
+    if(decBtn) decBtn.addEventListener('click', ()=>decrementPurchaseQty(it.id));
+    const incBtn = row.querySelector('.pl-inc');
+    if(incBtn) incBtn.addEventListener('click', ()=>incrementPurchaseQty(it.id));
 
     // Right-swipe gesture: an enhancement for touch devices, on top of the always-available tap.
     let touchStartX = null;
@@ -1576,32 +1612,40 @@ function renderPurchaseList(){
 function renderSelectedSummary(){
   const summaryEl = document.getElementById('pl-selectedSummary');
   if(!summaryEl) return;
-  if(!selectedPurchaseIds.size){ summaryEl.innerHTML = ''; return; }
+  const count = Object.keys(selectedPurchaseQty).length;
+  if(!count){ summaryEl.innerHTML = ''; return; }
   const total = selectedPurchaseTotal();
   summaryEl.innerHTML = `<div class="totalbox" style="margin-top:12px; background:var(--brand);">
       <div class="amt">₹${Math.round(total).toLocaleString('en-IN')}</div>
-      <div class="sub">Total price for ${selectedPurchaseIds.size} selected item(s)</div>
+      <div class="sub">This Purchase Order — ${count} item(s) selected</div>
     </div>
-    <button style="background:var(--paid);" onclick="copySelectedPurchaseItems()">📋 Copy Selected (Name + Qty + Price)</button>`;
+    <button style="background:var(--paid);" onclick="copySelectedPurchaseItems()">📋 Copy This Purchase Order</button>`;
 }
 
 function copyPurchaseListNameQtyOnly(){
   const list = loadPurchaseList();
-  if(!list.length){ showBanner('List is empty'); return; }
+  if(!list.length){ showBanner('Master Sheet is empty'); return; }
   const text = list.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)}`).join('\n');
   if(navigator.clipboard){
-    navigator.clipboard.writeText(text).then(()=>showBanner('📋 List copied (name + qty only)')).catch(()=>showBanner('Could not copy'));
+    navigator.clipboard.writeText(text).then(()=>showBanner('📋 Master Sheet copied (name + qty only)')).catch(()=>showBanner('Could not copy'));
   } else { showBanner('Copy not supported on this device'); }
 }
 
 function copySelectedPurchaseItems(){
-  const list = loadPurchaseList().filter(it=>selectedPurchaseIds.has(it.id));
-  if(!list.length){ showBanner('No items selected'); return; }
+  const list = loadPurchaseList();
+  const ids = Object.keys(selectedPurchaseQty);
+  if(!ids.length){ showBanner('No items selected for this order'); return; }
   const total = selectedPurchaseTotal();
-  let text = list.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)} - ₹${it.price!==null&&it.price!==undefined?it.price:0} each`).join('\n');
-  text += `\n\nTotal: ₹${Math.round(total).toLocaleString('en-IN')}`;
+  let text = ids.map((id,i)=>{
+    const it = list.find(x=>x.id===id);
+    if(!it) return null;
+    const qty = selectedPurchaseQty[id];
+    const rate = it.price||0;
+    return `${i+1}. ${it.name} - ${qty} ${unitLabel(it.unit)} × ₹${rate} = ₹${qty*rate}`;
+  }).filter(Boolean).join('\n');
+  text += `\n\nGrand Total: ₹${Math.round(total).toLocaleString('en-IN')}`;
   if(navigator.clipboard){
-    navigator.clipboard.writeText(text).then(()=>showBanner('📋 Selected items copied with price')).catch(()=>showBanner('Could not copy'));
+    navigator.clipboard.writeText(text).then(()=>showBanner('📋 Purchase order copied')).catch(()=>showBanner('Could not copy'));
   } else { showBanner('Copy not supported on this device'); }
 }
 
