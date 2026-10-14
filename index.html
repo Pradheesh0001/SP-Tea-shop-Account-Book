@@ -17,6 +17,7 @@ window.addEventListener('error', function(e){
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
@@ -205,6 +206,7 @@ window.addEventListener('error', function(e){
       <button id="tab-expenses-btn" onclick="showExpensesTab()" class="ghost" style="margin-top:0;">💸 Shop Expenses</button>
       <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Customer Accounts</button>
       <button id="tab-personal-btn" onclick="showPersonalTab()" class="ghost" style="margin-top:0;">🧍 Personal Expenses</button>
+      <button id="tab-purchase-btn" onclick="showPurchaseTab()" class="ghost" style="margin-top:0;">🛒 Purchase List</button>
       <button class="ghost sideNavSettings" onclick="showSettings()">⚙️ Settings</button>
     </nav>
     <div class="mainContent">
@@ -386,8 +388,9 @@ window.addEventListener('error', function(e){
     <!-- PERSONAL EXPENSES TAB — fully isolated, never affects Dashboard/Sales/Shop Expenses -->
     <div id="personalTab" class="hidden">
       <div class="card" style="background:rgba(31,111,235,0.08);">
-        <div style="font-size:0.8rem; color:var(--muted);">🤲 In Hand Online Profit (reference, from Dashboard)</div>
+        <div style="font-size:0.8rem; color:var(--muted);">🤲 In Hand Online Profit <span id="pe-sinceLabel">(reference, from Dashboard)</span></div>
         <div style="font-size:1.6rem; font-weight:800;" id="pe-inhandRef">₹0</div>
+        <button class="ghost" style="width:auto; margin-top:10px; padding:8px 14px; font-size:0.8rem;" onclick="resetPersonalCycle()">🔄 Reset Cycle</button>
       </div>
 
       <div class="totalbox" style="background:var(--brand);">
@@ -419,6 +422,62 @@ window.addEventListener('error', function(e){
       <div class="card">
         <h3 style="margin-top:0;">Personal Expense History</h3>
         <div id="peHistoryList"></div>
+      </div>
+    </div>
+
+    <!-- PURCHASE LIST TAB -->
+    <div id="purchaseTab" class="hidden">
+      <div class="card">
+        <h3 id="plFormTitle" style="margin-top:0;">Add Item</h3>
+        <label>Item Name</label>
+        <input id="pl-name" placeholder="e.g. Amul Milk 500ml">
+        <div class="twocol">
+          <div><label>Qty</label><input id="pl-qty" type="number" min="0"></div>
+          <div><label>Unit</label>
+            <div style="display:flex; gap:8px;">
+              <button type="button" id="pl-unit-pcs" style="width:auto; flex:1; padding:10px; margin:0; background:var(--paid);" onclick="setPlUnit('pcs')">Pcs</button>
+              <button type="button" id="pl-unit-case" class="ghost" style="width:auto; flex:1; margin:0; padding:10px;" onclick="setPlUnit('case')">Case</button>
+            </div>
+          </div>
+        </div>
+        <div class="twocol">
+          <div><label>Item Price (₹) — optional</label><input id="pl-price" type="number" min="0"></div>
+          <div><label>MRP (₹) — optional</label><input id="pl-mrp" type="number" min="0"></div>
+        </div>
+        <button id="plSubmitBtn" style="background:var(--brand);" onclick="addPurchaseItem()">+ Add Item</button>
+        <button id="plCancelBtn" class="ghost hidden" onclick="cancelEditPurchaseItem()">Cancel Edit</button>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">📷 Scan a Purchase Bill</h3>
+        <p class="hint" style="margin-bottom:10px;">Works offline, free. Handles English and Tamil text. Does NOT translate Tamil to English — you'll review and fix names after scanning. Always double-check the results below before adding.</p>
+        <input id="pl-scanFile" type="file" accept="image/*" capture="environment" onchange="scanPurchaseBill(event)">
+        <div id="pl-scanStatus" class="hint"></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">📝 Paste a Text List</h3>
+        <p class="hint" style="margin-bottom:10px;">Paste any list of item names and quantities — one item per line works best. Spelling gets auto-corrected against items you've already used.</p>
+        <textarea id="pl-pasteBox" rows="5" style="width:100%; padding:13px; border-radius:12px; border:1px solid #ccd2db; background:transparent; color:var(--text); font-family:inherit; margin-bottom:12px;" placeholder="Milk 10 pcs&#10;Sugar 2 case&#10;Tea powder x5"></textarea>
+        <button style="background:var(--brand);" onclick="parsePastedList()">🔍 Parse List</button>
+      </div>
+
+      <!-- Review area shown after Scan or Paste, before items are actually added -->
+      <div class="card hidden" id="pl-reviewCard">
+        <h3 style="margin-top:0;">Review Parsed Items</h3>
+        <p class="hint" style="margin-bottom:10px;">Check and fix anything before adding — especially names from a scanned bill.</p>
+        <div id="pl-reviewList"></div>
+        <button style="background:var(--paid);" onclick="confirmAddReviewedItems()">✅ Add All to List</button>
+        <button class="ghost" onclick="cancelReview()">Cancel</button>
+      </div>
+
+      <div class="card">
+        <div class="toprow" style="margin-bottom:10px;">
+          <h3 style="margin:0;">Purchase List</h3>
+          <button class="ghost" style="width:auto; margin:0; padding:8px 14px; font-size:0.85rem;" onclick="copyPurchaseListNameQtyOnly()">📋 Copy (Name + Qty)</button>
+        </div>
+        <div id="pl-itemsList"></div>
+        <div id="pl-selectedSummary"></div>
       </div>
     </div>
     </div><!-- /mainContent -->
@@ -613,7 +672,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v32-ownmoney-expense-method';
+const APP_VERSION = '2026-10-03-v33-purchase-list-and-cycle-reset';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -751,6 +810,23 @@ function mergeRemoteData(remote){
     if(peMap[id] && mergedPeDeleted[id] >= stampOf(peMap[id])) delete peMap[id];
   });
   savePersonalExpenses(Object.values(peMap));
+
+  const mergedPlDeleted = Object.assign({}, loadPlDeletedIds(), remote.deletedPurchaseIds || {});
+  savePlDeletedIds(mergedPlDeleted);
+  const plMap = {};
+  loadPurchaseList().forEach(it=>{ plMap[it.id] = it; });
+  (remote.purchaseList||[]).forEach(it=>{
+    const existing = plMap[it.id];
+    if(!existing || stampOf(it) > stampOf(existing)) plMap[it.id] = it;
+  });
+  Object.keys(mergedPlDeleted).forEach(id=>{
+    if(plMap[id] && mergedPlDeleted[id] >= stampOf(plMap[id])) delete plMap[id];
+  });
+  savePurchaseList(Object.values(plMap));
+
+  const localReset = loadPeReset();
+  const remoteReset = remote.peReset || {};
+  if((remoteReset.resetAt||0) > (localReset.resetAt||0)) savePeReset(remoteReset);
 }
 
 // Pull others' changes first, then push the merged result — so phones never overwrite each other.
@@ -759,7 +835,7 @@ async function syncToDrive(){
   setDriveStatus('🔄 Syncing…');
   const pulled = await pullFromDrive();
   if(pulled==='error') return false;
-  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats() };
+  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), peReset: loadPeReset() };
   const content = JSON.stringify(payload, null, 2);
   try{
     let res;
@@ -804,6 +880,7 @@ function refreshCurrentView(){
   else if(!document.getElementById('salesTab').classList.contains('hidden')){ renderDailySummary(document.getElementById('ds-date').value || todayStr()); }
   else if(!document.getElementById('dashboardTab').classList.contains('hidden')){ renderDashboard(); }
   else if(!document.getElementById('personalTab').classList.contains('hidden')){ renderPersonalTab(); }
+  else if(!document.getElementById('purchaseTab').classList.contains('hidden')){ renderPurchaseList(); }
 }
 
 async function syncNow(){
@@ -902,7 +979,7 @@ function showDashboard(){
   showDashboardTab();
 }
 
-const TABS = ['dashboard','sales','expenses','customers','personal'];
+const TABS = ['dashboard','sales','expenses','customers','personal','purchase'];
 function activateTab(name){
   TABS.forEach(t=>{
     const panel = document.getElementById(t+'Tab');
@@ -943,6 +1020,12 @@ function showPersonalTab(){
   renderPeCategoryButtons();
   if(!editingPeId) selectPeCat(selectedPeCat);
   renderPersonalTab();
+}
+
+function showPurchaseTab(){
+  activateTab('purchase');
+  if(!editingPlId) setPlUnit(selectedPlUnit);
+  renderPurchaseList();
 }
 
 /* ---------- shop expenses ---------- */
@@ -1273,13 +1356,41 @@ function totalPersonalExpenses(){
   return loadPersonalExpenses().reduce((s,e)=>s+(Number(e.amount)||0),0);
 }
 
+const PE_RESET_KEY = 'udhar_pe_reset_v1';
+function loadPeReset(){ try{ return JSON.parse(localStorage.getItem(PE_RESET_KEY)||'{}'); }catch(e){ return {}; } }
+function savePeReset(o){ localStorage.setItem(PE_RESET_KEY, JSON.stringify(o)); }
+
+// The REAL all-time In Hand Profit (used on the Dashboard) is never changed by this.
+// This only subtracts a baseline captured at reset time, purely for what's DISPLAYED
+// inside the Personal Expenses section.
+function personalCycleInHandProfit(){
+  const reset = loadPeReset();
+  const baseline = reset.baseline || 0;
+  return computeInHandProfitAllTime() - baseline;
+}
+
+function resetPersonalCycle(){
+  const current = computeInHandProfitAllTime();
+  savePeReset({ baseline: current, resetAt: Date.now() });
+  showBanner('🔄 Cycle reset — this section now starts counting from ₹0');
+  renderPersonalTab();
+  afterDataChange();
+}
+
 function renderPersonalTab(){
   if(!document.getElementById('pe-entryDate').value) document.getElementById('pe-entryDate').value = todayStr();
-  // Pure reference read — this NEVER writes back to the Dashboard's numbers.
-  const inHand = computeInHandProfitAllTime();
+  // Pure reference read — this NEVER writes back to the Dashboard's real numbers.
+  const inHand = personalCycleInHandProfit();
   const peTotal = totalPersonalExpenses();
   document.getElementById('pe-inhandRef').textContent = fmtMoney(inHand);
   document.getElementById('pe-balance').textContent = fmtMoney(inHand - peTotal);
+  const reset = loadPeReset();
+  const sinceLabel = document.getElementById('pe-sinceLabel');
+  if(sinceLabel){
+    sinceLabel.textContent = reset.resetAt
+      ? '(since reset on ' + new Date(reset.resetAt).toLocaleDateString('en-IN') + ')'
+      : '(reference, from Dashboard)';
+  }
 
   const list = loadPersonalExpenses().slice().sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
   const histEl = document.getElementById('peHistoryList');
@@ -1298,6 +1409,377 @@ function renderPersonalTab(){
       </div>`;
     histEl.appendChild(row);
   });
+}
+
+/* ========================================================================
+   PURCHASE LIST — manual entry, scan-to-parse, paste-to-parse.
+   Isolated from every other section. Nothing here affects Profit or any
+   financial calculation; it is purely a shopping/ordering list.
+   ======================================================================== */
+const PL_KEY = 'udhar_purchase_list_v1';
+const PL_DELETED_KEY = 'udhar_purchase_list_deleted_v1';
+
+function loadPurchaseList(){ try{ return JSON.parse(localStorage.getItem(PL_KEY)||'[]'); }catch(e){ return []; } }
+function savePurchaseList(a){ localStorage.setItem(PL_KEY, JSON.stringify(a)); }
+function loadPlDeletedIds(){ try{ return JSON.parse(localStorage.getItem(PL_DELETED_KEY)||'{}'); }catch(e){ return {}; } }
+function savePlDeletedIds(o){ localStorage.setItem(PL_DELETED_KEY, JSON.stringify(o)); }
+
+let selectedPlUnit = 'pcs';
+let editingPlId = null;
+let pendingReviewItems = [];
+
+function setPlUnit(unit){
+  selectedPlUnit = unit;
+  const pcsBtn = document.getElementById('pl-unit-pcs');
+  const caseBtn = document.getElementById('pl-unit-case');
+  if(unit==='pcs'){ pcsBtn.style.background='var(--paid)'; pcsBtn.classList.remove('ghost'); caseBtn.style.background='transparent'; caseBtn.classList.add('ghost'); }
+  else { caseBtn.style.background='var(--paid)'; caseBtn.classList.remove('ghost'); pcsBtn.style.background='transparent'; pcsBtn.classList.add('ghost'); }
+}
+
+function addPurchaseItem(){
+  const name = document.getElementById('pl-name').value.trim();
+  const qty = Number(document.getElementById('pl-qty').value)||0;
+  const price = document.getElementById('pl-price').value;
+  const mrp = document.getElementById('pl-mrp').value;
+  if(!name){ showBanner('Enter an item name'); return; }
+  const list = loadPurchaseList();
+  const data = {
+    name, qty, unit: selectedPlUnit,
+    price: price===''?null:Number(price),
+    mrp: mrp===''?null:Number(mrp)
+  };
+  if(editingPlId){
+    const idx = list.findIndex(it=>String(it.id)===String(editingPlId));
+    if(idx>-1){ list[idx] = Object.assign({}, list[idx], data, {updatedAt:Date.now()}); savePurchaseList(list); showBanner('✅ Item updated'); }
+    cancelEditPurchaseItem();
+  } else {
+    list.push(Object.assign({id:uid(), createdAt:Date.now(), updatedAt:Date.now()}, data));
+    savePurchaseList(list);
+    showBanner('✅ Item added');
+  }
+  document.getElementById('pl-name').value=''; document.getElementById('pl-qty').value='';
+  document.getElementById('pl-price').value=''; document.getElementById('pl-mrp').value='';
+  renderPurchaseList();
+  afterDataChange();
+}
+
+function editPurchaseItem(id){
+  const it = loadPurchaseList().find(x=>String(x.id)===String(id));
+  if(!it) return;
+  editingPlId = id;
+  document.getElementById('pl-name').value = it.name;
+  document.getElementById('pl-qty').value = it.qty;
+  document.getElementById('pl-price').value = it.price===null||it.price===undefined? '' : it.price;
+  document.getElementById('pl-mrp').value = it.mrp===null||it.mrp===undefined? '' : it.mrp;
+  setPlUnit(it.unit||'pcs');
+  document.getElementById('plFormTitle').textContent = 'Edit Item';
+  document.getElementById('plSubmitBtn').textContent = '✅ Update Item';
+  document.getElementById('plCancelBtn').classList.remove('hidden');
+}
+
+function cancelEditPurchaseItem(){
+  editingPlId = null;
+  document.getElementById('plFormTitle').textContent = 'Add Item';
+  document.getElementById('plSubmitBtn').textContent = '+ Add Item';
+  document.getElementById('plCancelBtn').classList.add('hidden');
+  document.getElementById('pl-name').value=''; document.getElementById('pl-qty').value='';
+  document.getElementById('pl-price').value=''; document.getElementById('pl-mrp').value='';
+}
+
+function deletePurchaseItem(id){
+  const list = loadPurchaseList().filter(it=>String(it.id)!==String(id));
+  savePurchaseList(list);
+  const deleted = loadPlDeletedIds();
+  deleted[String(id)] = Date.now();
+  savePlDeletedIds(deleted);
+  if(editingPlId===id) cancelEditPurchaseItem();
+  showBanner('🗑️ Item deleted');
+  renderPurchaseList();
+  afterDataChange();
+}
+
+let selectedPurchaseIds = new Set();
+
+function toggleSelectPurchaseItem(id){
+  if(selectedPurchaseIds.has(id)) selectedPurchaseIds.delete(id);
+  else selectedPurchaseIds.add(id);
+  renderPurchaseList();
+}
+
+function selectedPurchaseTotal(){
+  const list = loadPurchaseList();
+  return list
+    .filter(it=>selectedPurchaseIds.has(it.id))
+    .reduce((s,it)=> s + ((it.price||0) * (it.qty||0)), 0);
+}
+
+function renderPurchaseList(){
+  const list = loadPurchaseList();
+  const wrap = document.getElementById('pl-itemsList');
+  if(!wrap) return;
+  // drop selections for items that no longer exist
+  const validIds = new Set(list.map(it=>it.id));
+  Array.from(selectedPurchaseIds).forEach(id=>{ if(!validIds.has(id)) selectedPurchaseIds.delete(id); });
+
+  if(!list.length){ wrap.innerHTML = '<p style="color:var(--muted);">No items yet</p>'; renderSelectedSummary(); return; }
+  wrap.innerHTML = '';
+  list.slice().reverse().forEach(it=>{
+    const isSelected = selectedPurchaseIds.has(it.id);
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:10px; border-radius:10px; margin-bottom:6px; border:1px solid rgba(128,128,128,0.2);'
+      + (isSelected ? ' background:rgba(31,111,235,0.12); border-color:var(--brand);' : '');
+    const mrpBit = (it.mrp!==null && it.mrp!==undefined) ? ` · MRP ₹${it.mrp}` : '';
+    const priceDisplay = isSelected
+      ? `<div style="font-size:0.95rem; font-weight:700; color:var(--brand);">₹${it.price!==null&&it.price!==undefined?it.price:'—'} each${mrpBit}</div>`
+      : `<div style="font-size:0.78rem; color:var(--muted);">${(it.price!==null&&it.price!==undefined)?('₹'+it.price+mrpBit):'swipe right or tap ○ to see price'}</div>`;
+    row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <span style="display:flex; align-items:center; gap:8px;">
+          <span class="pl-select-dot" data-id="${it.id}" style="cursor:pointer; font-size:1.2rem;">${isSelected?'✅':'⭕'}</span>
+          <span>${it.name}</span>
+        </span>
+        <span style="font-weight:700; white-space:nowrap;">${it.qty} ${it.unit==='case'?'case':'pcs'}</span>
+      </div>
+      ${priceDisplay}
+      <div style="display:flex; gap:10px; margin-top:6px;">
+        <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPurchaseItem('${it.id}')">✏️ Edit</button>
+        <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePurchaseItem('${it.id}')">🗑️ Delete</button>
+      </div>`;
+
+    // Tap the circle: reliable on every device.
+    const dot = row.querySelector('.pl-select-dot');
+    if(dot) dot.addEventListener('click', ()=>toggleSelectPurchaseItem(it.id));
+
+    // Right-swipe gesture: an enhancement for touch devices, on top of the always-available tap.
+    let touchStartX = null;
+    row.addEventListener('touchstart', (e)=>{ touchStartX = e.touches[0].clientX; }, {passive:true});
+    row.addEventListener('touchend', (e)=>{
+      if(touchStartX===null) return;
+      const deltaX = e.changedTouches[0].clientX - touchStartX;
+      touchStartX = null;
+      if(deltaX > 60) toggleSelectPurchaseItem(it.id);
+    }, {passive:true});
+
+    wrap.appendChild(row);
+  });
+  renderSelectedSummary();
+}
+
+function renderSelectedSummary(){
+  const summaryEl = document.getElementById('pl-selectedSummary');
+  if(!summaryEl) return;
+  if(!selectedPurchaseIds.size){ summaryEl.innerHTML = ''; return; }
+  const total = selectedPurchaseTotal();
+  summaryEl.innerHTML = `<div class="totalbox" style="margin-top:12px; background:var(--brand);">
+      <div class="amt">₹${Math.round(total).toLocaleString('en-IN')}</div>
+      <div class="sub">Total price for ${selectedPurchaseIds.size} selected item(s)</div>
+    </div>
+    <button style="background:var(--paid);" onclick="copySelectedPurchaseItems()">📋 Copy Selected (Name + Qty + Price)</button>`;
+}
+
+function copyPurchaseListNameQtyOnly(){
+  const list = loadPurchaseList();
+  if(!list.length){ showBanner('List is empty'); return; }
+  const text = list.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${it.unit==='case'?'case':'pcs'}`).join('\n');
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(text).then(()=>showBanner('📋 List copied (name + qty only)')).catch(()=>showBanner('Could not copy'));
+  } else { showBanner('Copy not supported on this device'); }
+}
+
+function copySelectedPurchaseItems(){
+  const list = loadPurchaseList().filter(it=>selectedPurchaseIds.has(it.id));
+  if(!list.length){ showBanner('No items selected'); return; }
+  const total = selectedPurchaseTotal();
+  let text = list.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${it.unit==='case'?'case':'pcs'} - ₹${it.price!==null&&it.price!==undefined?it.price:0} each`).join('\n');
+  text += `\n\nTotal: ₹${Math.round(total).toLocaleString('en-IN')}`;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(text).then(()=>showBanner('📋 Selected items copied with price')).catch(()=>showBanner('Could not copy'));
+  } else { showBanner('Copy not supported on this device'); }
+}
+
+/* ---------- fuzzy matching for spelling auto-correct ---------- */
+function levenshtein(a, b){
+  a = a.toLowerCase(); b = b.toLowerCase();
+  const m = a.length, n = b.length;
+  const dp = Array.from({length:m+1}, (_,i)=>[i].concat(new Array(n).fill(0)));
+  for(let j=0;j<=n;j++) dp[0][j]=j;
+  for(let i=1;i<=m;i++){
+    for(let j=1;j<=n;j++){
+      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  return dp[m][n];
+}
+function similarity(a, b){
+  if(!a.length && !b.length) return 1;
+  const dist = levenshtein(a,b);
+  return 1 - dist/Math.max(a.length, b.length, 1);
+}
+// Finds the closest existing item name for a candidate string, if similar enough (but not identical).
+function fuzzyCorrectName(candidate, knownNames){
+  let best = null, bestScore = 0;
+  knownNames.forEach(known=>{
+    const score = similarity(candidate, known);
+    if(score > bestScore){ bestScore = score; best = known; }
+  });
+  if(best && bestScore >= 0.72 && best.toLowerCase() !== candidate.toLowerCase()){
+    return { corrected: best, wasCorrected: true, score: bestScore };
+  }
+  return { corrected: candidate, wasCorrected: false, score: bestScore };
+}
+
+/* ---------- parsing: pasted text list ---------- */
+// Pure function: given raw pasted text, returns candidate {name, qty, unit} items.
+function parsePastedListText(rawText){
+  const lines = rawText.split(/\n|,(?=\s*[A-Za-z])/).map(l=>l.trim()).filter(Boolean);
+  return lines.map(line=>{
+    let qty = 1, unit = 'pcs';
+    let rest = line;
+    const patterns = [
+      /x\s*(\d+)\s*(pcs|pc|case|box|ctn|kg|nos)?/i,
+      /qty[:\s]*([\d.]+)\s*(pcs|pc|case|box|ctn|kg|nos)?/i,
+      /(\d+)\s*(pcs|pc|case|box|ctn|kg|nos)\b/i,
+      /^(\d+)\b/
+    ];
+    for(const pat of patterns){
+      const m = rest.match(pat);
+      if(m){
+        qty = Number(m[1])||1;
+        if(m[2]) unit = /case|box|ctn/i.test(m[2]) ? 'case' : 'pcs';
+        rest = rest.replace(m[0], '').trim();
+        break;
+      }
+    }
+    rest = rest.replace(/^[-–•\s]+|[-–•\s]+$/g, '').trim();
+    return { name: rest || line, qty, unit };
+  }).filter(it=>it.name);
+}
+
+function applyFuzzyCorrect(items){
+  const knownNames = loadPurchaseList().map(it=>it.name);
+  return items.map(it=>{
+    const r = fuzzyCorrectName(it.name, knownNames);
+    return Object.assign({}, it, { name: r.corrected, autoCorrected: r.wasCorrected, originalName: it.name });
+  });
+}
+
+function parsePastedList(){
+  const raw = document.getElementById('pl-pasteBox').value;
+  if(!raw.trim()){ showBanner('Paste a list first'); return; }
+  const parsed = applyFuzzyCorrect(parsePastedListText(raw));
+  if(!parsed.length){ showBanner('Could not find any items in that text'); return; }
+  showReviewItems(parsed);
+}
+
+/* ---------- parsing: scanned bill (OCR) ---------- */
+// Pure function: given raw OCR text, returns candidate {name, qty, unit, price, mrp} items — best effort only.
+function parseBillText(rawText){
+  const lines = rawText.split('\n').map(l=>l.trim()).filter(l=>l.length>1);
+  return lines.map(line=>{
+    let working = line;
+    let price = null, mrp = null, qty = 1, unit = 'pcs';
+
+    const mrpMatch = working.match(/MRP[:\s₹.]*([\d]+(?:\.\d+)?)/i);
+    if(mrpMatch){ mrp = Number(mrpMatch[1]); working = working.replace(mrpMatch[0], ''); }
+
+    const qtyMatch = working.match(/(?:qty|quantity)?[:\s]*(\d+)\s*(pcs|pc|nos|kg|case|box|ctn)\b/i);
+    if(qtyMatch){ qty = Number(qtyMatch[1])||1; unit = /case|box|ctn/i.test(qtyMatch[2]) ? 'case' : 'pcs'; working = working.replace(qtyMatch[0], ''); }
+
+    const priceMatch = working.match(/(?:rs|inr|₹)[.\s]*([\d]+(?:\.\d+)?)/i) || working.match(/([\d]+(?:\.\d+)?)\s*$/);
+    if(priceMatch){ price = Number(priceMatch[1]); working = working.replace(priceMatch[0], ''); }
+
+    const name = working.replace(/[₹:.\-–]+/g,' ').replace(/\s+/g,' ').trim();
+    return { name: name || line.trim(), qty, unit, price, mrp };
+  }).filter(it=>it.name && it.name.length>1);
+}
+
+async function scanPurchaseBill(event){
+  const file = event.target.files && event.target.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById('pl-scanStatus');
+  if(!window.Tesseract){ statusEl.textContent = '⚠️ OCR library failed to load — check your internet connection'; return; }
+  statusEl.textContent = '🔄 Scanning bill… this can take 10–30 seconds';
+  try{
+    const result = await Tesseract.recognize(file, 'eng+tam', {
+      logger: m => { if(m.status==='recognizing text'){ statusEl.textContent = '🔄 Scanning… ' + Math.round((m.progress||0)*100) + '%'; } }
+    });
+    const text = result && result.data && result.data.text ? result.data.text : '';
+    if(!text.trim()){ statusEl.textContent = '⚠️ Could not read any text from that photo — try a clearer, well-lit image'; return; }
+    const parsed = applyFuzzyCorrect(parseBillText(text));
+    if(!parsed.length){ statusEl.textContent = '⚠️ Text was found but no items could be identified — try Paste List instead, or add manually'; return; }
+    statusEl.textContent = '✅ Scan complete — please review before adding';
+    showReviewItems(parsed);
+  }catch(e){
+    statusEl.textContent = '⚠️ Scan failed — try a clearer photo';
+  }
+}
+
+/* ---------- shared review screen (used by both Scan and Paste) ---------- */
+function showReviewItems(items){
+  pendingReviewItems = items;
+  const wrap = document.getElementById('pl-reviewList');
+  wrap.innerHTML = '';
+  items.forEach((it,i)=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
+    const correctedNote = it.autoCorrected ? `<div style="font-size:0.72rem; color:var(--muted);">auto-corrected from "${it.originalName}"</div>` : '';
+    const priceLine = (it.price!==null && it.price!==undefined) ? `<div style="font-size:0.72rem; color:var(--muted);">Price ₹${it.price}${it.mrp?(' · MRP ₹'+it.mrp):''}</div>` : '';
+    row.innerHTML = `
+      <input data-idx="${i}" data-field="name" value="${(it.name||'').replace(/"/g,'&quot;')}" style="margin-bottom:6px;">
+      ${correctedNote}${priceLine}
+      <div class="twocol" style="margin-top:4px;">
+        <input data-idx="${i}" data-field="qty" type="number" value="${it.qty}" placeholder="Qty">
+        <select data-idx="${i}" data-field="unit" style="margin-bottom:12px;">
+          <option value="pcs" ${it.unit==='pcs'?'selected':''}>Pcs</option>
+          <option value="case" ${it.unit==='case'?'selected':''}>Case</option>
+        </select>
+      </div>
+      <button type="button" class="ghost" style="width:auto; padding:6px 12px; font-size:0.75rem; margin-top:0;" onclick="removeReviewItem(${i})">Remove this row</button>
+    `;
+    wrap.appendChild(row);
+  });
+  document.getElementById('pl-reviewCard').classList.remove('hidden');
+  document.getElementById('pl-reviewCard').scrollIntoView && document.getElementById('pl-reviewCard').scrollIntoView({behavior:'smooth'});
+}
+
+function removeReviewItem(idx){
+  pendingReviewItems.splice(idx,1);
+  showReviewItems(pendingReviewItems);
+}
+
+function cancelReview(){
+  pendingReviewItems = [];
+  document.getElementById('pl-reviewCard').classList.add('hidden');
+  document.getElementById('pl-pasteBox').value = '';
+  document.getElementById('pl-scanStatus').textContent = '';
+}
+
+function confirmAddReviewedItems(){
+  // Read any edits made directly in the review inputs before saving.
+  const wrap = document.getElementById('pl-reviewList');
+  const inputs = wrap.querySelectorAll ? wrap.querySelectorAll('[data-idx]') : [];
+  inputs.forEach(el=>{
+    const idx = Number(el.getAttribute('data-idx'));
+    const field = el.getAttribute('data-field');
+    if(!pendingReviewItems[idx]) return;
+    if(field==='qty') pendingReviewItems[idx].qty = Number(el.value)||1;
+    else if(field==='unit') pendingReviewItems[idx].unit = el.value;
+    else if(field==='name') pendingReviewItems[idx].name = el.value;
+  });
+  const list = loadPurchaseList();
+  pendingReviewItems.forEach(it=>{
+    if(!it.name || !it.name.trim()) return;
+    list.push({
+      id: uid(), name: it.name.trim(), qty: it.qty||1, unit: it.unit||'pcs',
+      price: (it.price===undefined||it.price===null) ? null : it.price,
+      mrp: (it.mrp===undefined||it.mrp===null) ? null : it.mrp,
+      createdAt: Date.now(), updatedAt: Date.now()
+    });
+  });
+  savePurchaseList(list);
+  showBanner('✅ ' + pendingReviewItems.length + ' item(s) added to Purchase List');
+  cancelReview();
+  renderPurchaseList();
+  afterDataChange();
 }
 
 function renderTodayPaid(){
