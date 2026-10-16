@@ -489,6 +489,19 @@ window.addEventListener('error', function(e){
           <option value="price-asc">Price (Low–High)</option>
           <option value="price-desc">Price (High–Low)</option>
         </select>
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <button id="pl-groupToggle" class="ghost" style="margin:0; padding:10px; font-size:0.85rem;" onclick="toggleGroupBySupplier()">👥 Group by Supplier</button>
+          <button id="pl-reassignToggle" class="ghost" style="margin:0; padding:10px; font-size:0.85rem;" onclick="toggleReassignMode()">🔀 Move/Copy to Supplier</button>
+        </div>
+        <div id="pl-reassignBar" class="hidden card" style="background:rgba(31,111,235,0.08); margin-bottom:10px;">
+          <div class="hint" style="margin-bottom:8px;">Tick items below, pick or type a supplier, then Move or Copy.</div>
+          <input id="pl-reassignSupplier" placeholder="Supplier name" list="pl-supplierOptions">
+          <datalist id="pl-supplierOptions"></datalist>
+          <div style="display:flex; gap:8px;">
+            <button style="width:auto; flex:1; margin:0; padding:10px; background:var(--brand);" onclick="moveSelectedToSupplier()">📥 Move Selected</button>
+            <button style="width:auto; flex:1; margin:0; padding:10px; background:var(--paid);" onclick="copySelectedToSupplier()">📄 Copy Selected</button>
+          </div>
+        </div>
         <div id="pl-itemsList"></div>
         <div id="pl-selectedSummary"></div>
         <button class="ghost" onclick="openPlExportModal()">⬇️ Export Master Sheet</button>
@@ -700,7 +713,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v38-history-export-supplier-autofetch';
+const APP_VERSION = '2026-10-03-v39-supplier-grouping-move-copy';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1557,6 +1570,61 @@ function deletePurchaseItem(id){
 // Maps itemId -> qty chosen for THIS purchase order (independent of the Master Sheet's own
 // stored qty field, which just represents whatever you typed when adding it to the catalog).
 let selectedPurchaseQty = {};
+let plGroupBySupplier = false;
+let plReassignMode = false;
+let reassignSelectedIds = new Set();
+
+function toggleGroupBySupplier(){
+  plGroupBySupplier = !plGroupBySupplier;
+  const btn = document.getElementById('pl-groupToggle');
+  if(plGroupBySupplier){ btn.style.background='var(--brand)'; btn.classList.remove('ghost'); }
+  else { btn.style.background='transparent'; btn.classList.add('ghost'); }
+  renderPurchaseList();
+}
+
+function toggleReassignMode(){
+  plReassignMode = !plReassignMode;
+  reassignSelectedIds.clear();
+  const btn = document.getElementById('pl-reassignToggle');
+  const bar = document.getElementById('pl-reassignBar');
+  if(plReassignMode){ btn.style.background='var(--brand)'; btn.classList.remove('ghost'); bar.classList.remove('hidden'); }
+  else { btn.style.background='transparent'; btn.classList.add('ghost'); bar.classList.add('hidden'); }
+  renderPurchaseList();
+}
+
+function toggleReassignSelect(id){
+  if(reassignSelectedIds.has(id)) reassignSelectedIds.delete(id);
+  else reassignSelectedIds.add(id);
+  renderPurchaseList();
+}
+
+function moveSelectedToSupplier(){
+  const supplier = document.getElementById('pl-reassignSupplier').value.trim();
+  const ids = Array.from(reassignSelectedIds);
+  if(!ids.length){ showBanner('Tick at least one item first'); return; }
+  if(!supplier){ showBanner('Enter a supplier name'); return; }
+  const updated = moveItemsToSupplier(loadPurchaseList(), ids, supplier);
+  savePurchaseList(updated);
+  showBanner('✅ Moved '+ids.length+' item(s) to '+supplier);
+  reassignSelectedIds.clear();
+  document.getElementById('pl-reassignSupplier').value = '';
+  renderPurchaseList();
+  afterDataChange();
+}
+
+function copySelectedToSupplier(){
+  const supplier = document.getElementById('pl-reassignSupplier').value.trim();
+  const ids = Array.from(reassignSelectedIds);
+  if(!ids.length){ showBanner('Tick at least one item first'); return; }
+  if(!supplier){ showBanner('Enter a supplier name'); return; }
+  const updated = copyItemsToSupplier(loadPurchaseList(), ids, supplier, uid);
+  savePurchaseList(updated);
+  showBanner('✅ Copied '+ids.length+' item(s) to '+supplier+' (originals kept)');
+  reassignSelectedIds.clear();
+  document.getElementById('pl-reassignSupplier').value = '';
+  renderPurchaseList();
+  afterDataChange();
+}
 
 function isPurchaseSelected(id){ return !!selectedPurchaseQty[id]; }
 
@@ -1588,6 +1656,48 @@ function selectedPurchaseTotal(){
 }
 
 // Pure function: applies search + sort to a Master Sheet list. Testable independent of the DOM.
+/* ---------- supplier grouping ---------- */
+function allKnownSuppliers(){
+  const names = loadPurchaseList().map(it=>it.supplier).filter(Boolean);
+  return Array.from(new Set(names)).sort((a,b)=>a.localeCompare(b));
+}
+
+// Pure function: groups an already filtered/sorted item list by supplier name.
+// Items with no supplier go under "No Supplier", shown last.
+function groupItemsBySupplier(list){
+  const groups = {};
+  list.forEach(it=>{
+    const key = it.supplier || 'No Supplier';
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(it);
+  });
+  const names = Object.keys(groups).filter(n=>n!=='No Supplier').sort((a,b)=>a.localeCompare(b));
+  if(groups['No Supplier']) names.push('No Supplier');
+  return names.map(name=>({ supplier:name, items:groups[name] }));
+}
+
+// Pure function: reassigns the given item ids to a new supplier, IN PLACE (the original
+// item keeps everything else — name, qty, unit, price, MRP, price history — unchanged).
+function moveItemsToSupplier(list, ids, supplierName){
+  return list.map(it=>{
+    if(!ids.includes(it.id)) return it;
+    return Object.assign({}, it, { supplier: supplierName || null, updatedAt: Date.now() });
+  });
+}
+
+// Pure function: duplicates the given item ids as NEW items under a new supplier, carrying
+// over every detail (qty, unit, price, MRP, price history) — the originals are untouched.
+function copyItemsToSupplier(list, ids, supplierName, idFactory){
+  const copies = list.filter(it=>ids.includes(it.id)).map(it=>Object.assign({}, it, {
+    id: idFactory(),
+    supplier: supplierName || null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    priceHistory: (it.priceHistory||[]).slice()
+  }));
+  return list.concat(copies);
+}
+
 function filterAndSortPurchaseList(list, query, sortKey){
   let out = list.slice();
   if(query && query.trim()){
@@ -1604,6 +1714,81 @@ function filterAndSortPurchaseList(list, query, sortKey){
   return out;
 }
 
+function buildPurchaseRow(it){
+  if(plReassignMode){
+    const checked = reassignSelectedIds.has(it.id);
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:10px; border-radius:10px; margin-bottom:6px; border:1px solid rgba(128,128,128,0.2);'
+      + (checked ? ' background:rgba(31,111,235,0.12); border-color:var(--brand);' : '');
+    row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <span style="display:flex; align-items:center; gap:8px;">
+          <span class="pl-reassign-box" data-id="${it.id}" style="cursor:pointer; font-size:1.2rem;">${checked?'☑️':'⬜'}</span>
+          <span>${it.name}</span>
+        </span>
+        <span style="color:var(--muted); font-size:0.78rem;">${it.supplier ? ('🚚 '+it.supplier) : 'No Supplier'}</span>
+      </div>`;
+    const box = row.querySelector('.pl-reassign-box');
+    if(box) box.addEventListener('click', ()=>toggleReassignSelect(it.id));
+    return row;
+  }
+
+  const isSelected = isPurchaseSelected(it.id);
+  const orderQty = selectedPurchaseQty[it.id] || 0;
+  const row = document.createElement('div');
+  row.style.cssText = 'padding:10px; border-radius:10px; margin-bottom:6px; border:1px solid rgba(128,128,128,0.2);'
+    + (isSelected ? ' background:rgba(31,111,235,0.12); border-color:var(--brand);' : '');
+  const mrpBit = (it.mrp!==null && it.mrp!==undefined) ? ` · MRP ₹${it.mrp}` : '';
+  const supplierBit = it.supplier ? ` · 🚚 ${it.supplier}` : '';
+  const rate = (it.price!==null && it.price!==undefined) ? it.price : 0;
+  const lineTotal = rate * orderQty;
+  const lastPriceChange = (it.priceHistory && it.priceHistory.length) ? it.priceHistory[it.priceHistory.length-1] : null;
+  const priceChangeBit = lastPriceChange ? ` <span style="color:${lastPriceChange.price<rate?'var(--owe)':'var(--paid)'};">(was ₹${lastPriceChange.price})</span>` : '';
+
+  const priceDisplay = isSelected
+    ? `<div style="font-size:0.9rem; font-weight:700; color:var(--brand);">₹${rate} × ${orderQty} = ₹${lineTotal}${mrpBit}${priceChangeBit}</div><div style="font-size:0.72rem; color:var(--muted);">${supplierBit.replace(/^ · /,'')}</div>`
+    : `<div style="font-size:0.78rem; color:var(--muted);">${(it.price!==null&&it.price!==undefined)?('₹'+it.price+' per '+unitLabel(it.unit)+mrpBit+priceChangeBit+supplierBit):'tap ○ to select and see rate'}</div>`;
+
+  const stepper = isSelected ? `
+    <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+      <button type="button" class="pl-dec" data-id="${it.id}" style="width:40px; height:40px; padding:0; margin:0; background:var(--owe); font-size:1.2rem;">−</button>
+      <span style="font-weight:700; min-width:30px; text-align:center;">${orderQty}</span>
+      <button type="button" class="pl-inc" data-id="${it.id}" style="width:40px; height:40px; padding:0; margin:0; background:var(--paid); font-size:1.2rem;">+</button>
+      <span style="color:var(--muted); font-size:0.8rem;">${unitLabel(it.unit)}</span>
+    </div>` : '';
+
+  row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <span style="display:flex; align-items:center; gap:8px;">
+        <span class="pl-select-dot" data-id="${it.id}" style="cursor:pointer; font-size:1.2rem;">${isSelected?'✅':'⭕'}</span>
+        <span>${it.name}</span>
+      </span>
+      <span style="font-weight:700; white-space:nowrap; color:var(--muted); font-size:0.8rem;">in catalog: ${it.qty} ${unitLabel(it.unit)}</span>
+    </div>
+    ${priceDisplay}
+    ${stepper}
+    <div style="display:flex; gap:10px; margin-top:8px;">
+      <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPurchaseItem('${it.id}')">✏️ Edit</button>
+      <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePurchaseItem('${it.id}')">🗑️ Delete</button>
+    </div>`;
+
+  const dot = row.querySelector('.pl-select-dot');
+  if(dot) dot.addEventListener('click', ()=>toggleSelectPurchaseItem(it.id));
+  const decBtn = row.querySelector('.pl-dec');
+  if(decBtn) decBtn.addEventListener('click', ()=>decrementPurchaseQty(it.id));
+  const incBtn = row.querySelector('.pl-inc');
+  if(incBtn) incBtn.addEventListener('click', ()=>incrementPurchaseQty(it.id));
+
+  let touchStartX = null;
+  row.addEventListener('touchstart', (e)=>{ touchStartX = e.touches[0].clientX; }, {passive:true});
+  row.addEventListener('touchend', (e)=>{
+    if(touchStartX===null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX;
+    touchStartX = null;
+    if(deltaX > 60) toggleSelectPurchaseItem(it.id);
+  }, {passive:true});
+
+  return row;
+}
+
 function renderPurchaseList(){
   const list = loadPurchaseList();
   const wrap = document.getElementById('pl-itemsList');
@@ -1611,6 +1796,7 @@ function renderPurchaseList(){
   // drop selections for items that no longer exist
   const validIds = new Set(list.map(it=>it.id));
   Object.keys(selectedPurchaseQty).forEach(id=>{ if(!validIds.has(id)) delete selectedPurchaseQty[id]; });
+  Array.from(reassignSelectedIds).forEach(id=>{ if(!validIds.has(id)) reassignSelectedIds.delete(id); });
 
   const searchEl = document.getElementById('pl-search');
   const sortEl = document.getElementById('pl-sort');
@@ -1618,68 +1804,24 @@ function renderPurchaseList(){
   const sortKey = sortEl ? sortEl.value : 'recent';
   const displayList = filterAndSortPurchaseList(list, query, sortKey);
 
+  const datalist = document.getElementById('pl-supplierOptions');
+  if(datalist) datalist.innerHTML = allKnownSuppliers().map(s=>`<option value="${s}">`).join('');
+
   if(!list.length){ wrap.innerHTML = '<p style="color:var(--muted);">No items yet</p>'; renderSelectedSummary(); return; }
   if(!displayList.length){ wrap.innerHTML = '<p style="color:var(--muted);">No items match your search</p>'; renderSelectedSummary(); return; }
   wrap.innerHTML = '';
-  displayList.forEach(it=>{
-    const isSelected = isPurchaseSelected(it.id);
-    const orderQty = selectedPurchaseQty[it.id] || 0;
-    const row = document.createElement('div');
-    row.style.cssText = 'padding:10px; border-radius:10px; margin-bottom:6px; border:1px solid rgba(128,128,128,0.2);'
-      + (isSelected ? ' background:rgba(31,111,235,0.12); border-color:var(--brand);' : '');
-    const mrpBit = (it.mrp!==null && it.mrp!==undefined) ? ` · MRP ₹${it.mrp}` : '';
-    const supplierBit = it.supplier ? ` · 🚚 ${it.supplier}` : '';
-    const rate = (it.price!==null && it.price!==undefined) ? it.price : 0;
-    const lineTotal = rate * orderQty;
-    const lastPriceChange = (it.priceHistory && it.priceHistory.length) ? it.priceHistory[it.priceHistory.length-1] : null;
-    const priceChangeBit = lastPriceChange ? ` <span style="color:${lastPriceChange.price<rate?'var(--owe)':'var(--paid)'};">(was ₹${lastPriceChange.price})</span>` : '';
 
-    const priceDisplay = isSelected
-      ? `<div style="font-size:0.9rem; font-weight:700; color:var(--brand);">₹${rate} × ${orderQty} = ₹${lineTotal}${mrpBit}${priceChangeBit}</div><div style="font-size:0.72rem; color:var(--muted);">${supplierBit.replace(/^ · /,'')}</div>`
-      : `<div style="font-size:0.78rem; color:var(--muted);">${(it.price!==null&&it.price!==undefined)?('₹'+it.price+' per '+unitLabel(it.unit)+mrpBit+priceChangeBit+supplierBit):'tap ○ to select and see rate'}</div>`;
-
-    const stepper = isSelected ? `
-      <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
-        <button type="button" class="pl-dec" data-id="${it.id}" style="width:40px; height:40px; padding:0; margin:0; background:var(--owe); font-size:1.2rem;">−</button>
-        <span style="font-weight:700; min-width:30px; text-align:center;">${orderQty}</span>
-        <button type="button" class="pl-inc" data-id="${it.id}" style="width:40px; height:40px; padding:0; margin:0; background:var(--paid); font-size:1.2rem;">+</button>
-        <span style="color:var(--muted); font-size:0.8rem;">${unitLabel(it.unit)}</span>
-      </div>` : '';
-
-    row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <span style="display:flex; align-items:center; gap:8px;">
-          <span class="pl-select-dot" data-id="${it.id}" style="cursor:pointer; font-size:1.2rem;">${isSelected?'✅':'⭕'}</span>
-          <span>${it.name}</span>
-        </span>
-        <span style="font-weight:700; white-space:nowrap; color:var(--muted); font-size:0.8rem;">in catalog: ${it.qty} ${unitLabel(it.unit)}</span>
-      </div>
-      ${priceDisplay}
-      ${stepper}
-      <div style="display:flex; gap:10px; margin-top:8px;">
-        <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPurchaseItem('${it.id}')">✏️ Edit</button>
-        <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePurchaseItem('${it.id}')">🗑️ Delete</button>
-      </div>`;
-
-    // Tap the circle: reliable on every device.
-    const dot = row.querySelector('.pl-select-dot');
-    if(dot) dot.addEventListener('click', ()=>toggleSelectPurchaseItem(it.id));
-    const decBtn = row.querySelector('.pl-dec');
-    if(decBtn) decBtn.addEventListener('click', ()=>decrementPurchaseQty(it.id));
-    const incBtn = row.querySelector('.pl-inc');
-    if(incBtn) incBtn.addEventListener('click', ()=>incrementPurchaseQty(it.id));
-
-    // Right-swipe gesture: an enhancement for touch devices, on top of the always-available tap.
-    let touchStartX = null;
-    row.addEventListener('touchstart', (e)=>{ touchStartX = e.touches[0].clientX; }, {passive:true});
-    row.addEventListener('touchend', (e)=>{
-      if(touchStartX===null) return;
-      const deltaX = e.changedTouches[0].clientX - touchStartX;
-      touchStartX = null;
-      if(deltaX > 60) toggleSelectPurchaseItem(it.id);
-    }, {passive:true});
-
-    wrap.appendChild(row);
-  });
+  if(plGroupBySupplier){
+    groupItemsBySupplier(displayList).forEach(group=>{
+      const header = document.createElement('div');
+      header.style.cssText = 'font-weight:700; margin:10px 0 6px; padding-bottom:4px; border-bottom:1px solid rgba(128,128,128,0.3);';
+      header.textContent = (group.supplier==='No Supplier' ? '📦 No Supplier' : '🚚 '+group.supplier) + ' (' + group.items.length + ')';
+      wrap.appendChild(header);
+      group.items.forEach(it=> wrap.appendChild(buildPurchaseRow(it)));
+    });
+  } else {
+    displayList.forEach(it=> wrap.appendChild(buildPurchaseRow(it)));
+  }
   renderSelectedSummary();
 }
 
