@@ -311,8 +311,8 @@ window.addEventListener('error', function(e){
         <input id="ds-cash" type="number" min="0">
         <label>Online / UPI Sales (₹) — optional</label>
         <input id="ds-online" type="number" min="0">
-        <label>Your own money added to cover expenses (₹) — optional</label>
-        <input id="ds-ownmoney" type="number" min="0">
+        <label>Own Money Added — auto-fetched from Shop Expenses tagged "🤲 Own Money" on this date</label>
+        <input id="ds-ownmoney" type="number" disabled style="opacity:0.7;">
         <label>Actual Closing Cash counted (₹) — optional</label>
         <input id="ds-closing" type="number" min="0">
         <button style="background:var(--brand);" onclick="saveDailySales()">💾 Save Day</button>
@@ -446,6 +446,8 @@ window.addEventListener('error', function(e){
           <div><label>Item Price (₹) — optional</label><input id="pl-price" type="number" min="0"></div>
           <div><label>MRP (₹) — optional</label><input id="pl-mrp" type="number" min="0"></div>
         </div>
+        <label>Supplier (optional)</label>
+        <input id="pl-supplier" placeholder="e.g. Ramesh Distributors">
         <button id="plSubmitBtn" style="background:var(--brand);" onclick="addPurchaseItem()">+ Add Item</button>
         <button id="plCancelBtn" class="ghost hidden" onclick="cancelEditPurchaseItem()">Cancel Edit</button>
       </div>
@@ -478,8 +480,31 @@ window.addEventListener('error', function(e){
           <h3 style="margin:0;">Master Sheet</h3>
           <button class="ghost" style="width:auto; margin:0; padding:8px 14px; font-size:0.85rem;" onclick="copyPurchaseListNameQtyOnly()">📋 Copy (Name + Qty)</button>
         </div>
+        <input id="pl-search" placeholder="🔍 Search to quickly find and select an item" oninput="renderPurchaseList()">
+        <label>Sort by</label>
+        <select id="pl-sort" onchange="renderPurchaseList()">
+          <option value="recent">Recently Added</option>
+          <option value="name-asc">Name (A–Z)</option>
+          <option value="name-desc">Name (Z–A)</option>
+          <option value="price-asc">Price (Low–High)</option>
+          <option value="price-desc">Price (High–Low)</option>
+        </select>
         <div id="pl-itemsList"></div>
         <div id="pl-selectedSummary"></div>
+        <button class="ghost" onclick="openPlExportModal()">⬇️ Export Master Sheet</button>
+      </div>
+
+      <div id="plExportModal" class="hidden card">
+        <h3 style="margin-top:0;">Choose export format</h3>
+        <button style="background:var(--owe);" onclick="exportMasterSheet('pdf')">📄 PDF</button>
+        <button style="background:var(--paid);" onclick="exportMasterSheet('excel')">📊 Excel</button>
+        <button class="ghost" onclick="closePlExportModal()">Cancel</button>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">📜 Purchase Order History</h3>
+        <p class="hint" style="margin-bottom:10px;">Every order you copy is saved here automatically (last 50).</p>
+        <div id="pl-historyList"></div>
       </div>
     </div>
     </div><!-- /mainContent -->
@@ -675,7 +700,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v36-copy-order-no-price';
+const APP_VERSION = '2026-10-03-v38-history-export-supplier-autofetch';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -830,6 +855,11 @@ function mergeRemoteData(remote){
   const localReset = loadPeReset();
   const remoteReset = remote.peReset || {};
   if((remoteReset.resetAt||0) > (localReset.resetAt||0)) savePeReset(remoteReset);
+
+  const poMap = {};
+  loadPoHistory().forEach(o=>{ poMap[o.id]=o; });
+  (remote.poHistory||[]).forEach(o=>{ if(!poMap[o.id]) poMap[o.id]=o; });
+  savePoHistory(Object.values(poMap).sort((a,b)=>b.createdAt-a.createdAt).slice(0,50));
 }
 
 // Pull others' changes first, then push the merged result — so phones never overwrite each other.
@@ -838,7 +868,7 @@ async function syncToDrive(){
   setDriveStatus('🔄 Syncing…');
   const pulled = await pullFromDrive();
   if(pulled==='error') return false;
-  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), peReset: loadPeReset() };
+  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), peReset: loadPeReset(), poHistory: loadPoHistory() };
   const content = JSON.stringify(payload, null, 2);
   try{
     let res;
@@ -1029,6 +1059,7 @@ function showPurchaseTab(){
   activateTab('purchase');
   if(!editingPlId) setPlUnit(selectedPlUnit);
   renderPurchaseList();
+  renderPoHistory();
 }
 
 /* ---------- shop expenses ---------- */
@@ -1450,24 +1481,38 @@ function addPurchaseItem(){
   const qty = Number(document.getElementById('pl-qty').value)||0;
   const price = document.getElementById('pl-price').value;
   const mrp = document.getElementById('pl-mrp').value;
+  const supplier = document.getElementById('pl-supplier').value.trim();
   if(!name){ showBanner('Enter an item name'); return; }
   const list = loadPurchaseList();
+  const newPrice = price===''?null:Number(price);
   const data = {
     name, qty, unit: selectedPlUnit,
-    price: price===''?null:Number(price),
-    mrp: mrp===''?null:Number(mrp)
+    price: newPrice,
+    mrp: mrp===''?null:Number(mrp),
+    supplier: supplier || null
   };
   if(editingPlId){
     const idx = list.findIndex(it=>String(it.id)===String(editingPlId));
-    if(idx>-1){ list[idx] = Object.assign({}, list[idx], data, {updatedAt:Date.now()}); savePurchaseList(list); showBanner('✅ Item updated'); }
+    if(idx>-1){
+      const existing = list[idx];
+      const priceHistory = (existing.priceHistory||[]).slice();
+      // Record the OLD price before overwriting, only when it actually changed and had a real value.
+      if(existing.price!==null && existing.price!==undefined && existing.price!==newPrice){
+        priceHistory.push({ price: existing.price, changedAt: Date.now() });
+      }
+      list[idx] = Object.assign({}, existing, data, { priceHistory, updatedAt:Date.now() });
+      savePurchaseList(list);
+      showBanner('✅ Item updated');
+    }
     cancelEditPurchaseItem();
   } else {
-    list.push(Object.assign({id:uid(), createdAt:Date.now(), updatedAt:Date.now()}, data));
+    list.push(Object.assign({id:uid(), createdAt:Date.now(), updatedAt:Date.now(), priceHistory:[]}, data));
     savePurchaseList(list);
     showBanner('✅ Item added');
   }
   document.getElementById('pl-name').value=''; document.getElementById('pl-qty').value='';
   document.getElementById('pl-price').value=''; document.getElementById('pl-mrp').value='';
+  document.getElementById('pl-supplier').value='';
   renderPurchaseList();
   afterDataChange();
 }
@@ -1480,6 +1525,7 @@ function editPurchaseItem(id){
   document.getElementById('pl-qty').value = it.qty;
   document.getElementById('pl-price').value = it.price===null||it.price===undefined? '' : it.price;
   document.getElementById('pl-mrp').value = it.mrp===null||it.mrp===undefined? '' : it.mrp;
+  document.getElementById('pl-supplier').value = it.supplier || '';
   setPlUnit(it.unit||'pcs');
   document.getElementById('plFormTitle').textContent = 'Edit Item';
   document.getElementById('plSubmitBtn').textContent = '✅ Update Item';
@@ -1493,6 +1539,7 @@ function cancelEditPurchaseItem(){
   document.getElementById('plCancelBtn').classList.add('hidden');
   document.getElementById('pl-name').value=''; document.getElementById('pl-qty').value='';
   document.getElementById('pl-price').value=''; document.getElementById('pl-mrp').value='';
+  document.getElementById('pl-supplier').value='';
 }
 
 function deletePurchaseItem(id){
@@ -1540,6 +1587,23 @@ function selectedPurchaseTotal(){
   }, 0);
 }
 
+// Pure function: applies search + sort to a Master Sheet list. Testable independent of the DOM.
+function filterAndSortPurchaseList(list, query, sortKey){
+  let out = list.slice();
+  if(query && query.trim()){
+    const q = query.trim().toLowerCase();
+    out = out.filter(it=>it.name.toLowerCase().includes(q));
+  }
+  switch(sortKey){
+    case 'name-asc': out.sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase())); break;
+    case 'name-desc': out.sort((a,b)=>b.name.toLowerCase().localeCompare(a.name.toLowerCase())); break;
+    case 'price-asc': out.sort((a,b)=>(a.price||0)-(b.price||0)); break;
+    case 'price-desc': out.sort((a,b)=>(b.price||0)-(a.price||0)); break;
+    default: out.reverse(); // 'recent' — newest added first, same as the old default behavior
+  }
+  return out;
+}
+
 function renderPurchaseList(){
   const list = loadPurchaseList();
   const wrap = document.getElementById('pl-itemsList');
@@ -1548,21 +1612,31 @@ function renderPurchaseList(){
   const validIds = new Set(list.map(it=>it.id));
   Object.keys(selectedPurchaseQty).forEach(id=>{ if(!validIds.has(id)) delete selectedPurchaseQty[id]; });
 
+  const searchEl = document.getElementById('pl-search');
+  const sortEl = document.getElementById('pl-sort');
+  const query = searchEl ? searchEl.value : '';
+  const sortKey = sortEl ? sortEl.value : 'recent';
+  const displayList = filterAndSortPurchaseList(list, query, sortKey);
+
   if(!list.length){ wrap.innerHTML = '<p style="color:var(--muted);">No items yet</p>'; renderSelectedSummary(); return; }
+  if(!displayList.length){ wrap.innerHTML = '<p style="color:var(--muted);">No items match your search</p>'; renderSelectedSummary(); return; }
   wrap.innerHTML = '';
-  list.slice().reverse().forEach(it=>{
+  displayList.forEach(it=>{
     const isSelected = isPurchaseSelected(it.id);
     const orderQty = selectedPurchaseQty[it.id] || 0;
     const row = document.createElement('div');
     row.style.cssText = 'padding:10px; border-radius:10px; margin-bottom:6px; border:1px solid rgba(128,128,128,0.2);'
       + (isSelected ? ' background:rgba(31,111,235,0.12); border-color:var(--brand);' : '');
     const mrpBit = (it.mrp!==null && it.mrp!==undefined) ? ` · MRP ₹${it.mrp}` : '';
+    const supplierBit = it.supplier ? ` · 🚚 ${it.supplier}` : '';
     const rate = (it.price!==null && it.price!==undefined) ? it.price : 0;
     const lineTotal = rate * orderQty;
+    const lastPriceChange = (it.priceHistory && it.priceHistory.length) ? it.priceHistory[it.priceHistory.length-1] : null;
+    const priceChangeBit = lastPriceChange ? ` <span style="color:${lastPriceChange.price<rate?'var(--owe)':'var(--paid)'};">(was ₹${lastPriceChange.price})</span>` : '';
 
     const priceDisplay = isSelected
-      ? `<div style="font-size:0.9rem; font-weight:700; color:var(--brand);">₹${rate} × ${orderQty} = ₹${lineTotal}${mrpBit}</div>`
-      : `<div style="font-size:0.78rem; color:var(--muted);">${(it.price!==null&&it.price!==undefined)?('₹'+it.price+' per '+unitLabel(it.unit)+mrpBit):'tap ○ to select and see rate'}</div>`;
+      ? `<div style="font-size:0.9rem; font-weight:700; color:var(--brand);">₹${rate} × ${orderQty} = ₹${lineTotal}${mrpBit}${priceChangeBit}</div><div style="font-size:0.72rem; color:var(--muted);">${supplierBit.replace(/^ · /,'')}</div>`
+      : `<div style="font-size:0.78rem; color:var(--muted);">${(it.price!==null&&it.price!==undefined)?('₹'+it.price+' per '+unitLabel(it.unit)+mrpBit+priceChangeBit+supplierBit):'tap ○ to select and see rate'}</div>`;
 
     const stepper = isSelected ? `
       <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
@@ -1631,19 +1705,59 @@ function copyPurchaseListNameQtyOnly(){
   } else { showBanner('Copy not supported on this device'); }
 }
 
+/* ---------- purchase order history ---------- */
+const PO_HISTORY_KEY = 'udhar_purchase_order_history_v1';
+function loadPoHistory(){ try{ return JSON.parse(localStorage.getItem(PO_HISTORY_KEY)||'[]'); }catch(e){ return []; } }
+function savePoHistory(a){ localStorage.setItem(PO_HISTORY_KEY, JSON.stringify(a)); }
+
+function recordPurchaseOrderHistory(items){
+  const history = loadPoHistory();
+  history.unshift({ id: uid(), date: todayStr(), createdAt: Date.now(), items });
+  // keep the most recent 50 orders only, to avoid unbounded growth
+  savePoHistory(history.slice(0, 50));
+}
+
 function copySelectedPurchaseItems(){
   const list = loadPurchaseList();
   const ids = Object.keys(selectedPurchaseQty);
   if(!ids.length){ showBanner('No items selected for this order'); return; }
-  const text = ids.map((id,i)=>{
+  const orderItems = ids.map(id=>{
     const it = list.find(x=>x.id===id);
     if(!it) return null;
-    const qty = selectedPurchaseQty[id];
-    return `${i+1}. ${it.name} - ${qty} ${unitLabel(it.unit)}`;
-  }).filter(Boolean).join('\n');
+    return { name: it.name, qty: selectedPurchaseQty[id], unit: it.unit };
+  }).filter(Boolean);
+  const text = orderItems.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)}`).join('\n');
+  recordPurchaseOrderHistory(orderItems);
   if(navigator.clipboard){
-    navigator.clipboard.writeText(text).then(()=>showBanner('📋 Purchase order copied (name + qty only)')).catch(()=>showBanner('Could not copy'));
+    navigator.clipboard.writeText(text).then(()=>showBanner('📋 Purchase order copied and saved to history')).catch(()=>showBanner('Could not copy'));
   } else { showBanner('Copy not supported on this device'); }
+  renderPoHistory();
+}
+
+function copyHistoricalOrder(orderId){
+  const order = loadPoHistory().find(o=>o.id===orderId);
+  if(!order) return;
+  const text = order.items.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)}`).join('\n');
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(text).then(()=>showBanner('📋 Copied again')).catch(()=>showBanner('Could not copy'));
+  } else { showBanner('Copy not supported on this device'); }
+}
+
+function renderPoHistory(){
+  const wrap = document.getElementById('pl-historyList');
+  if(!wrap) return;
+  const history = loadPoHistory();
+  if(!history.length){ wrap.innerHTML = '<p style="color:var(--muted);">No past orders saved yet — tap "Copy This Purchase Order" to save one</p>'; return; }
+  wrap.innerHTML = '';
+  history.forEach(order=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
+    const itemsSummary = order.items.map(it=>`${it.name} (${it.qty} ${unitLabel(it.unit)})`).join(', ');
+    row.innerHTML = `<div style="font-weight:600;">${order.date} — ${order.items.length} item(s)</div>
+      <div style="font-size:0.78rem; color:var(--muted); margin:4px 0 8px;">${itemsSummary}</div>
+      <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="copyHistoricalOrder('${order.id}')">📋 Copy Again</button>`;
+    wrap.appendChild(row);
+  });
 }
 
 /* ---------- fuzzy matching for spelling auto-correct ---------- */
@@ -2284,7 +2398,11 @@ function computeDayMetrics(date){
   const custCash = sumCustomerPaymentsInRange(date, date, 'cash');
   const custOnline = sumCustomerPaymentsInRange(date, date, 'online');
   const openingCash = Number(ds.openingCash)||0;
-  const ownMoneyAdded = Number(ds.ownMoneyAdded)||0;
+  // Own Money Added now auto-fetches from Shop Expenses entries tagged "Own Money" for this
+  // date, instead of needing manual entry. Any OLD manually-entered value (from before this
+  // auto-fetch existed) is still added on top, so past records aren't silently changed.
+  const ownMoneyAddedManualLegacy = Number(ds.ownMoneyAdded)||0;
+  const ownMoneyAdded = ownMoneyAddedManualLegacy + expensesOwnMoney + staffSalaryOwnMoney;
   const closingCashActual = (ds.closingCashActual===null || ds.closingCashActual===undefined || ds.closingCashActual==='') ? null : Number(ds.closingCashActual);
 
   // Cash Sales: use the manually entered figure if there is one. Otherwise, if a Closing
@@ -2338,7 +2456,7 @@ function computeInHandProfitAllTime(){
   return dateRangeArray(allDates[0], allDates[allDates.length-1])
     .reduce((s,d)=>{
       const m = computeDayMetrics(d);
-      return s + m.onlineProfit - m.ownMoneyAdded - m.expensesOwnMoney - m.staffSalaryOwnMoney;
+      return s + m.onlineProfit - m.ownMoneyAdded; // ownMoneyAdded already folds in expensesOwnMoney + staffSalaryOwnMoney
     }, 0);
 }
 
@@ -2591,13 +2709,13 @@ function loadDailySalesForm(){
   const dateEl = document.getElementById('ds-date');
   if(!dateEl.value) dateEl.value = todayStr();
   const d = getDailySales(dateEl.value);
+  const m = computeDayMetrics(dateEl.value);
   document.getElementById('ds-opening').value = d.openingCash || '';
   document.getElementById('ds-cash').value = (d.cashSales===null||d.cashSales===undefined) ? '' : d.cashSales;
   document.getElementById('ds-online').value = d.onlineSales || '';
-  document.getElementById('ds-ownmoney').value = d.ownMoneyAdded || '';
+  document.getElementById('ds-ownmoney').value = m.ownMoneyAdded || '';
   document.getElementById('ds-closing').value = (d.closingCashActual===null||d.closingCashActual===undefined) ? '' : d.closingCashActual;
 
-  const m = computeDayMetrics(dateEl.value);
   const cashInput = document.getElementById('ds-cash');
   cashInput.placeholder = m.cashSalesIsDerived ? ('Auto: ₹'+Math.round(m.cashSales)+' (from closing cash)') : 'e.g. 1500';
 
@@ -2647,13 +2765,13 @@ function saveDailySales(){
   const opening = numOrNull(document.getElementById('ds-opening').value);
   const cash = numOrNull(document.getElementById('ds-cash').value);
   const online = numOrNull(document.getElementById('ds-online').value);
-  const ownMoney = numOrNull(document.getElementById('ds-ownmoney').value);
+  // Own Money is no longer saved from this form — it's now auto-fetched (at display/calc time)
+  // from Shop Expenses entries tagged "Own Money" for this date, so there's nothing to persist here.
   const closing = numOrNull(document.getElementById('ds-closing').value);
   upsertDailySales(date, {
     openingCash: opening||0,
     cashSales: cash,
     onlineSales: online||0,
-    ownMoneyAdded: ownMoney||0,
     closingCashActual: closing
   });
 
@@ -2855,6 +2973,51 @@ function downloadReport(format){
 
 // Draws a simple table starting at startY. Returns the Y position after the table.
 // columns: [{header, key, width, maxChars}]. Handles page breaks, re-printing the header on each new page.
+function openPlExportModal(){ document.getElementById('plExportModal').classList.remove('hidden'); }
+function closePlExportModal(){ document.getElementById('plExportModal').classList.add('hidden'); }
+
+function buildMasterSheetRows(){
+  return loadPurchaseList().map(it=>({
+    Name: it.name,
+    Qty: it.qty,
+    Unit: unitLabel(it.unit),
+    'Price (₹)': it.price===null||it.price===undefined? '' : it.price,
+    'MRP (₹)': it.mrp===null||it.mrp===undefined? '' : it.mrp,
+    Supplier: it.supplier || '',
+    'Previous Price': (it.priceHistory&&it.priceHistory.length) ? it.priceHistory[it.priceHistory.length-1].price : ''
+  }));
+}
+
+function exportMasterSheet(format){
+  const rows = buildMasterSheetRows();
+  if(!rows.length){ showBanner('Master Sheet is empty'); return; }
+  closePlExportModal();
+  if(format==='excel'){
+    if(!window.XLSX){ showBanner('⚠️ Excel library not loaded — check your internet connection'); return; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Master Sheet');
+    XLSX.writeFile(wb, 'Master-Sheet-'+todayStr()+'.xlsx');
+  } else {
+    if(!(window.jspdf && window.jspdf.jsPDF)){ showBanner('⚠️ PDF library not loaded — check your internet connection'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const upi = loadUpi();
+    doc.setFontSize(16); doc.text((upi.shopName||'SP Tea Shop')+' — Master Sheet', 14, 16);
+    doc.setFontSize(10); doc.text('Exported: '+todayStr(), 14, 23);
+    const cols = [
+      {header:'Name', key:'Name', width:40, maxChars:24},
+      {header:'Qty', key:'Qty', width:16, maxChars:6},
+      {header:'Unit', key:'Unit', width:18, maxChars:8},
+      {header:'Price', key:'Price (₹)', width:18, maxChars:8},
+      {header:'MRP', key:'MRP (₹)', width:18, maxChars:8},
+      {header:'Supplier', key:'Supplier', width:40, maxChars:24}
+    ];
+    pdfDrawTable(doc, 32, cols, rows);
+    doc.save('Master-Sheet-'+todayStr()+'.pdf');
+  }
+  showBanner('✅ Master Sheet exported');
+}
+
 function pdfDrawTable(doc, startY, columns, rows, title){
   let y = startY;
   const rowH = 6;
