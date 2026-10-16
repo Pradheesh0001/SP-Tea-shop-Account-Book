@@ -475,20 +475,33 @@ window.addEventListener('error', function(e){
         <button class="ghost" onclick="cancelReview()">Cancel</button>
       </div>
 
+      <div class="card hidden" id="pl-invoiceSummaryCard">
+        <h3 style="margin-top:0;">🧾 Last Added Bill — Invoice Total</h3>
+        <div id="pl-invoiceSummaryList"></div>
+      </div>
+
       <div class="card">
         <div class="toprow" style="margin-bottom:10px;">
           <h3 style="margin:0;">Master Sheet</h3>
           <button class="ghost" style="width:auto; margin:0; padding:8px 14px; font-size:0.85rem;" onclick="copyPurchaseListNameQtyOnly()">📋 Copy (Name + Qty)</button>
         </div>
         <input id="pl-search" placeholder="🔍 Search to quickly find and select an item" oninput="renderPurchaseList()">
-        <label>Sort by</label>
-        <select id="pl-sort" onchange="renderPurchaseList()">
-          <option value="recent">Recently Added</option>
-          <option value="name-asc">Name (A–Z)</option>
-          <option value="name-desc">Name (Z–A)</option>
-          <option value="price-asc">Price (Low–High)</option>
-          <option value="price-desc">Price (High–Low)</option>
-        </select>
+        <div class="twocol">
+          <div><label>Sort by</label>
+            <select id="pl-sort" onchange="renderPurchaseList()">
+              <option value="recent">Recently Added</option>
+              <option value="name-asc">Name (A–Z)</option>
+              <option value="name-desc">Name (Z–A)</option>
+              <option value="price-asc">Price (Low–High)</option>
+              <option value="price-desc">Price (High–Low)</option>
+            </select>
+          </div>
+          <div><label>Filter by supplier</label>
+            <select id="pl-supplierFilter" onchange="renderPurchaseList()">
+              <option value="">All Suppliers</option>
+            </select>
+          </div>
+        </div>
         <div style="display:flex; gap:8px; margin-bottom:10px;">
           <button id="pl-groupToggle" class="ghost" style="margin:0; padding:10px; font-size:0.85rem;" onclick="toggleGroupBySupplier()">👥 Group by Supplier</button>
           <button id="pl-reassignToggle" class="ghost" style="margin:0; padding:10px; font-size:0.85rem;" onclick="toggleReassignMode()">🔀 Move/Copy to Supplier</button>
@@ -713,7 +726,7 @@ let driveConnectedThisSession = false;
 // Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
 // Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v39-supplier-grouping-move-copy';
+const APP_VERSION = '2026-10-03-v40-invoice-total-supplier-filter';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1698,11 +1711,14 @@ function copyItemsToSupplier(list, ids, supplierName, idFactory){
   return list.concat(copies);
 }
 
-function filterAndSortPurchaseList(list, query, sortKey){
+function filterAndSortPurchaseList(list, query, sortKey, supplierFilter){
   let out = list.slice();
   if(query && query.trim()){
     const q = query.trim().toLowerCase();
     out = out.filter(it=>it.name.toLowerCase().includes(q));
+  }
+  if(supplierFilter){
+    out = out.filter(it=>(it.supplier||'No Supplier')===supplierFilter);
   }
   switch(sortKey){
     case 'name-asc': out.sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase())); break;
@@ -1800,12 +1816,24 @@ function renderPurchaseList(){
 
   const searchEl = document.getElementById('pl-search');
   const sortEl = document.getElementById('pl-sort');
+  const supplierFilterEl = document.getElementById('pl-supplierFilter');
   const query = searchEl ? searchEl.value : '';
   const sortKey = sortEl ? sortEl.value : 'recent';
-  const displayList = filterAndSortPurchaseList(list, query, sortKey);
+
+  const suppliers = allKnownSuppliers();
+  const hasUnassigned = list.some(it=>!it.supplier);
+  if(supplierFilterEl){
+    const prevVal = supplierFilterEl.value;
+    let opts = '<option value="">All Suppliers</option>' + suppliers.map(s=>`<option value="${s}">${s}</option>`).join('');
+    if(hasUnassigned) opts += '<option value="No Supplier">No Supplier</option>';
+    supplierFilterEl.innerHTML = opts;
+    supplierFilterEl.value = (prevVal && (suppliers.includes(prevVal) || prevVal==='No Supplier')) ? prevVal : '';
+  }
+  const supplierFilter = supplierFilterEl ? supplierFilterEl.value : '';
+  const displayList = filterAndSortPurchaseList(list, query, sortKey, supplierFilter);
 
   const datalist = document.getElementById('pl-supplierOptions');
-  if(datalist) datalist.innerHTML = allKnownSuppliers().map(s=>`<option value="${s}">`).join('');
+  if(datalist) datalist.innerHTML = suppliers.map(s=>`<option value="${s}">`).join('');
 
   if(!list.length){ wrap.innerHTML = '<p style="color:var(--muted);">No items yet</p>'; renderSelectedSummary(); return; }
   if(!displayList.length){ wrap.innerHTML = '<p style="color:var(--muted);">No items match your search</p>'; renderSelectedSummary(); return; }
@@ -2093,10 +2121,32 @@ function confirmAddReviewedItems(){
     });
   });
   savePurchaseList(list);
-  showBanner('✅ ' + pendingReviewItems.length + ' item(s) added to Purchase List');
+  renderInvoiceSummary(pendingReviewItems);
+  showBanner('✅ ' + pendingReviewItems.length + ' item(s) added — see invoice total below');
   cancelReview();
   renderPurchaseList();
   afterDataChange();
+}
+
+// Pure function: total value of a batch of items (price x qty), like a purchase invoice total.
+function computeInvoiceTotal(items){
+  return items.reduce((s,it)=> s + ((it.price||0) * (it.qty||0)), 0);
+}
+
+function renderInvoiceSummary(items){
+  const card = document.getElementById('pl-invoiceSummaryCard');
+  const listEl = document.getElementById('pl-invoiceSummaryList');
+  if(!card || !listEl) return;
+  const total = computeInvoiceTotal(items);
+  let html = '';
+  items.forEach(it=>{
+    const rate = it.price||0;
+    const lineTotal = rate * (it.qty||0);
+    html += `<div class="paidRow"><span>${it.name} (${it.qty} ${unitLabel(it.unit)})</span><span>${rate?('₹'+lineTotal):'—'}</span></div>`;
+  });
+  html += `<div class="paidRow" style="font-weight:700; border-top:2px solid var(--muted); margin-top:6px; padding-top:8px;"><span>Invoice Total</span><span>₹${Math.round(total).toLocaleString('en-IN')}</span></div>`;
+  listEl.innerHTML = html;
+  card.classList.remove('hidden');
 }
 
 function renderTodayPaid(){
