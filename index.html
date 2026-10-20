@@ -424,7 +424,7 @@ window.addEventListener('error', function(e){
       </div>
     </div>
 
-    <!-- PURCHASE LIST TAB -->
+    <!-- PURCHASE LIST / MASTER SHEET TAB -->
     <div id="purchaseTab" class="hidden">
       <div class="card">
         <h3 id="plFormTitle" style="margin-top:0;">Add Item to Master Sheet</h3>
@@ -478,10 +478,15 @@ window.addEventListener('error', function(e){
         <div id="pl-invoiceSummaryList"></div>
       </div>
 
+      <!-- MASTER SHEET ITEMS LIST CARD -->
       <div class="card">
-        <div class="toprow" style="margin-bottom:10px;">
+        <div class="toprow" style="margin-bottom:10px; flex-wrap:wrap; gap:8px;">
           <h3 style="margin:0;">Master Sheet</h3>
-          <button class="ghost" style="width:auto; margin:0; padding:8px 14px; font-size:0.85rem;" onclick="copyPurchaseListNameQtyOnly()">📋 Copy (Name + Qty)</button>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="ghost" style="width:auto; margin:0; padding:6px 10px; font-size:0.8rem;" onclick="selectAllPurchaseItems()">☑️ Select All</button>
+            <button class="ghost" style="width:auto; margin:0; padding:6px 10px; font-size:0.8rem;" onclick="deselectAllPurchaseItems()">⏹️ Deselect All</button>
+            <button class="ghost" style="width:auto; margin:0; padding:6px 10px; font-size:0.8rem;" onclick="copyPurchaseListNameQtyOnly()">📋 Copy</button>
+          </div>
         </div>
         <input id="pl-search" placeholder="🔍 Search to quickly find and select an item" oninput="renderPurchaseList()">
         <div class="twocol">
@@ -523,6 +528,16 @@ window.addEventListener('error', function(e){
         <button style="background:var(--owe);" onclick="exportMasterSheet('pdf')">📄 PDF</button>
         <button style="background:var(--paid);" onclick="exportMasterSheet('excel')">📊 Excel</button>
         <button class="ghost" onclick="closePlExportModal()">Cancel</button>
+      </div>
+
+      <!-- MASTER SHEET RECYCLE BIN -->
+      <div class="card" id="plTrashCard">
+        <div class="toprow" style="margin-bottom:8px;">
+          <h3 style="margin:0;">🗑️ Master Sheet Recycle Bin</h3>
+          <button class="ghost" style="width:auto; margin:0; padding:6px 12px; font-size:0.8rem; color:var(--owe); border-color:var(--owe);" onclick="emptyPlTrash()">Empty Trash</button>
+        </div>
+        <p class="hint" style="margin-bottom:10px;">Items deleted from the Master Sheet stay here. You can restore them anytime.</p>
+        <div id="pl-trashList"></div>
       </div>
 
       <!-- PURCHASE ORDER HISTORY & MODAL -->
@@ -742,7 +757,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-20-v41-po-history-invoices';
+const APP_VERSION = '2026-10-20-v42-master-trash-selectall';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -892,6 +907,13 @@ function mergeRemoteData(remote){
   });
   savePurchaseList(Object.values(plMap));
 
+  if(remote.purchaseTrash){
+    const trashMap = {};
+    loadPlTrash().forEach(it=>{ trashMap[it.id] = it; });
+    remote.purchaseTrash.forEach(it=>{ trashMap[it.id] = it; });
+    savePlTrash(Object.values(trashMap));
+  }
+
   const localReset = loadPeReset();
   const remoteReset = remote.peReset || {};
   if((remoteReset.resetAt||0) > (localReset.resetAt||0)) savePeReset(remoteReset);
@@ -907,7 +929,7 @@ async function syncToDrive(){
   setDriveStatus('🔄 Syncing…');
   const pulled = await pullFromDrive();
   if(pulled==='error') return false;
-  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), peReset: loadPeReset(), poHistory: loadPoHistory() };
+  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), peReset: loadPeReset(), poHistory: loadPoHistory() };
   const content = JSON.stringify(payload, null, 2);
   try{
     let res;
@@ -952,7 +974,7 @@ function refreshCurrentView(){
   else if(!document.getElementById('salesTab').classList.contains('hidden')){ renderDailySummary(document.getElementById('ds-date').value || todayStr()); }
   else if(!document.getElementById('dashboardTab').classList.contains('hidden')){ renderDashboard(); }
   else if(!document.getElementById('personalTab').classList.contains('hidden')){ renderPersonalTab(); }
-  else if(!document.getElementById('purchaseTab').classList.contains('hidden')){ renderPurchaseList(); renderPoHistory(); }
+  else if(!document.getElementById('purchaseTab').classList.contains('hidden')){ renderPurchaseList(); renderPlTrash(); renderPoHistory(); }
 }
 
 async function syncNow(){
@@ -962,7 +984,7 @@ async function syncNow(){
 
 function afterDataChange(){
   if(gDriveToken && driveConnectedThisSession){ syncToDrive(); }
-  else { showBanner('⚠️ Saved on this phone only — connect to the server from the login screen to share it'); }
+  else { showBanner('⚠️ Saved on this phone only — connect to server to sync'); }
 }
 
 setInterval(async ()=>{
@@ -1089,6 +1111,7 @@ function showPurchaseTab(){
   activateTab('purchase');
   if(!editingPlId) setPlUnit(selectedPlUnit);
   renderPurchaseList();
+  renderPlTrash();
   renderPoHistory();
 }
 
@@ -1429,7 +1452,7 @@ function personalCycleInHandProfit(){
 function resetPersonalCycle(){
   const current = computeInHandProfitAllTime();
   savePeReset({ baseline: current, resetAt: Date.now() });
-  showBanner('🔄 Cycle reset — this section now starts counting from ₹0');
+  showBanner('🔄 Cycle reset — counting from ₹0');
   renderPersonalTab();
   afterDataChange();
 }
@@ -1467,14 +1490,17 @@ function renderPersonalTab(){
   });
 }
 
-/* ---------- master sheet ---------- */
+/* ---------- master sheet (purchase list) ---------- */
 const PL_KEY = 'udhar_purchase_list_v1';
 const PL_DELETED_KEY = 'udhar_purchase_list_deleted_v1';
+const PL_TRASH_KEY = 'udhar_purchase_trash_v1';
 
 function loadPurchaseList(){ try{ return JSON.parse(localStorage.getItem(PL_KEY)||'[]'); }catch(e){ return []; } }
 function savePurchaseList(a){ localStorage.setItem(PL_KEY, JSON.stringify(a)); }
 function loadPlDeletedIds(){ try{ return JSON.parse(localStorage.getItem(PL_DELETED_KEY)||'{}'); }catch(e){ return {}; } }
 function savePlDeletedIds(o){ localStorage.setItem(PL_DELETED_KEY, JSON.stringify(o)); }
+function loadPlTrash(){ try{ return JSON.parse(localStorage.getItem(PL_TRASH_KEY)||'[]'); }catch(e){ return []; } }
+function savePlTrash(a){ localStorage.setItem(PL_TRASH_KEY, JSON.stringify(a)); }
 
 let selectedPlUnit = 'pcs';
 let editingPlId = null;
@@ -1559,22 +1585,136 @@ function cancelEditPurchaseItem(){
   document.getElementById('pl-supplier').value='';
 }
 
+/* Master Sheet Item Delete with Confirmation & Recycle Bin */
 function deletePurchaseItem(id){
-  const list = loadPurchaseList().filter(it=>String(it.id)!==String(id));
-  savePurchaseList(list);
+  const list = loadPurchaseList();
+  const it = list.find(x=>String(x.id)===String(id));
+  if(!it) return;
+
+  const ok = confirm(`Are you sure you want to move "${it.name}" to the Recycle Bin?`);
+  if(!ok) return;
+
+  const updatedList = list.filter(x=>String(x.id)!==String(id));
+  savePurchaseList(updatedList);
+
+  const trash = loadPlTrash();
+  trash.unshift(Object.assign({}, it, { deletedAt: Date.now() }));
+  savePlTrash(trash);
+
   const deleted = loadPlDeletedIds();
   deleted[String(id)] = Date.now();
   savePlDeletedIds(deleted);
+
   if(editingPlId===id) cancelEditPurchaseItem();
-  showBanner('🗑️ Item deleted');
+  if(selectedPurchaseQty[id]) delete selectedPurchaseQty[id];
+  if(reassignSelectedIds.has(id)) reassignSelectedIds.delete(id);
+
+  showBanner(`🗑️ "${it.name}" moved to Recycle Bin`);
   renderPurchaseList();
+  renderPlTrash();
   afterDataChange();
 }
 
+function restorePurchaseItem(id){
+  const trash = loadPlTrash();
+  const it = trash.find(x=>String(x.id)===String(id));
+  if(!it) return;
+
+  savePlTrash(trash.filter(x=>String(x.id)!==String(id)));
+
+  const deleted = loadPlDeletedIds();
+  delete deleted[String(id)];
+  savePlDeletedIds(deleted);
+
+  const list = loadPurchaseList();
+  const cleanItem = Object.assign({}, it);
+  delete cleanItem.deletedAt;
+  cleanItem.updatedAt = Date.now();
+  list.push(cleanItem);
+  savePurchaseList(list);
+
+  showBanner(`♻️ "${it.name}" restored to Master Sheet`);
+  renderPurchaseList();
+  renderPlTrash();
+  afterDataChange();
+}
+
+function permanentDeletePurchaseItem(id){
+  if(!confirm("Permanently delete this item? This cannot be undone.")) return;
+  const trash = loadPlTrash();
+  savePlTrash(trash.filter(x=>String(x.id)!==String(id)));
+  showBanner("🗑️ Item permanently deleted");
+  renderPlTrash();
+  afterDataChange();
+}
+
+function emptyPlTrash(){
+  const trash = loadPlTrash();
+  if(!trash.length){ showBanner("Recycle Bin is already empty"); return; }
+  if(!confirm(`Permanently delete all ${trash.length} item(s) in the Recycle Bin?`)) return;
+  savePlTrash([]);
+  showBanner("🗑️ Recycle Bin emptied");
+  renderPlTrash();
+  afterDataChange();
+}
+
+function renderPlTrash(){
+  const wrap = document.getElementById('pl-trashList');
+  if(!wrap) return;
+  const trash = loadPlTrash();
+  if(!trash.length){
+    wrap.innerHTML = '<p style="color:var(--muted); margin:4px 0;">Recycle Bin is empty</p>';
+    return;
+  }
+  wrap.innerHTML = '';
+  trash.forEach(it=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2); display:flex; justify-content:space-between; align-items:center; gap:8px;';
+    const deletedDate = it.deletedAt ? new Date(it.deletedAt).toLocaleDateString('en-IN') : '';
+    row.innerHTML = `
+      <div>
+        <div style="font-weight:600;">${it.name}</div>
+        <div style="font-size:0.75rem; color:var(--muted);">${it.qty} ${unitLabel(it.unit)}${it.price!==null&&it.price!==undefined?' · ₹'+it.price:''}${it.supplier?' · 🚚 '+it.supplier:''}${deletedDate?' · Deleted: '+deletedDate:''}</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button type="button" style="width:auto; padding:6px 12px; font-size:0.8rem; background:var(--paid);" onclick="restorePurchaseItem('${it.id}')">♻️ Restore</button>
+        <button type="button" style="width:auto; padding:6px 12px; font-size:0.8rem; background:var(--owe);" onclick="permanentDeletePurchaseItem('${it.id}')">🗑️ Delete</button>
+      </div>
+    `;
+    wrap.appendChild(row);
+  });
+}
+
+/* Master Sheet Item Selection & Select All / Deselect All */
 let selectedPurchaseQty = {};
 let plGroupBySupplier = false;
 let plReassignMode = false;
 let reassignSelectedIds = new Set();
+
+function selectAllPurchaseItems(){
+  const list = loadPurchaseList();
+  const searchEl = document.getElementById('pl-search');
+  const sortEl = document.getElementById('pl-sort');
+  const supplierFilterEl = document.getElementById('pl-supplierFilter');
+  const query = searchEl ? searchEl.value : '';
+  const sortKey = sortEl ? sortEl.value : 'recent';
+  const supplierFilter = supplierFilterEl ? supplierFilterEl.value : '';
+  const displayList = filterAndSortPurchaseList(list, query, sortKey, supplierFilter);
+
+  if(!displayList.length){ showBanner('No items to select'); return; }
+
+  displayList.forEach(it=>{
+    if(!selectedPurchaseQty[it.id]) selectedPurchaseQty[it.id] = 1;
+  });
+  showBanner(`✅ Selected ${displayList.length} item(s)`);
+  renderPurchaseList();
+}
+
+function deselectAllPurchaseItems(){
+  selectedPurchaseQty = {};
+  showBanner('⏹️ Deselected all items');
+  renderPurchaseList();
+}
 
 function toggleGroupBySupplier(){
   plGroupBySupplier = !plGroupBySupplier;
@@ -1621,7 +1761,7 @@ function copySelectedToSupplier(){
   if(!supplier){ showBanner('Enter a supplier name'); return; }
   const updated = copyItemsToSupplier(loadPurchaseList(), ids, supplier, uid);
   savePurchaseList(updated);
-  showBanner('✅ Copied '+ids.length+' item(s) to '+supplier+' (originals kept)');
+  showBanner('✅ Copied '+ids.length+' item(s) to '+supplier);
   reassignSelectedIds.clear();
   document.getElementById('pl-reassignSupplier').value = '';
   renderPurchaseList();
@@ -2016,7 +2156,7 @@ function levenshtein(a, b){
   for(let j=0;j<=n;j++) dp[0][j]=j;
   for(let i=1;i<=m;i++){
     for(let j=1;j<=n;j++){
-      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1], dp[i-1][j], dp[i-1][j-1]);
     }
   }
   return dp[m][n];
