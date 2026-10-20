@@ -389,12 +389,12 @@ window.addEventListener('error', function(e){
       <div class="card" style="background:rgba(31,111,235,0.08);">
         <div style="font-size:0.8rem; color:var(--muted);">🤲 In Hand Online Profit <span id="pe-sinceLabel">(reference, from Dashboard)</span></div>
         <div style="font-size:1.6rem; font-weight:800;" id="pe-inhandRef">₹0</div>
-        <button class="ghost" style="width:auto; margin-top:10px; padding:8px 14px; font-size:0.8rem;" onclick="resetPersonalCycle()">🔄 Reset Cycle</button>
+        <button class="ghost" style="width:auto; margin-top:10px; padding:8px 14px; font-size:0.8rem;" onclick="resetPersonalCycle()">🔄 Reset Cycle (Profit &amp; Expenses)</button>
       </div>
 
       <div class="totalbox" style="background:var(--brand);">
         <div class="amt" id="pe-balance">₹0</div>
-        <div class="sub">Personal Balance — In Hand Profit minus Personal Expenses (this section only)</div>
+        <div class="sub" id="pe-balanceSub">Personal Balance — In Hand Profit minus Personal Expenses in Current Cycle</div>
       </div>
 
       <div class="card">
@@ -419,8 +419,15 @@ window.addEventListener('error', function(e){
       </div>
 
       <div class="card">
-        <h3 style="margin-top:0;">Personal Expense History</h3>
+        <h3 style="margin-top:0;" id="peCurrentCycleTitle">Current Cycle Expense History</h3>
         <div id="peHistoryList"></div>
+      </div>
+
+      <!-- PAST CYCLES ARCHIVE CARD -->
+      <div class="card">
+        <h3 style="margin-top:0;">📜 Previous Closed Cycles</h3>
+        <p class="hint" style="margin-bottom:10px;">Archived periods saved when you click Reset Cycle.</p>
+        <div id="pePastCyclesList"></div>
       </div>
     </div>
 
@@ -757,7 +764,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-20-v42-master-trash-selectall';
+const APP_VERSION = '2026-10-20-v43-personal-cycle-reset-archive';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -918,6 +925,13 @@ function mergeRemoteData(remote){
   const remoteReset = remote.peReset || {};
   if((remoteReset.resetAt||0) > (localReset.resetAt||0)) savePeReset(remoteReset);
 
+  if(remote.peCycles){
+    const cMap = {};
+    loadPeCycles().forEach(c=>{ cMap[c.id]=c; });
+    remote.peCycles.forEach(c=>{ cMap[c.id]=c; });
+    savePeCycles(Object.values(cMap).sort((a,b)=>b.resetAt-a.resetAt));
+  }
+
   const poMap = {};
   loadPoHistory().forEach(o=>{ poMap[o.id]=o; });
   (remote.poHistory||[]).forEach(o=>{ if(!poMap[o.id]) poMap[o.id]=o; });
@@ -929,7 +943,7 @@ async function syncToDrive(){
   setDriveStatus('🔄 Syncing…');
   const pulled = await pullFromDrive();
   if(pulled==='error') return false;
-  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), peReset: loadPeReset(), poHistory: loadPoHistory() };
+  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory() };
   const content = JSON.stringify(payload, null, 2);
   try{
     let res;
@@ -1319,7 +1333,9 @@ function renderExpenses(){
   }
 }
 
-/* ---------- personal expenses ---------- */
+/* ========================================================================
+   PERSONAL EXPENSES — ISOLATED SECTION WITH COMPLETE CYCLE RESETS & ARCHIVE
+   ======================================================================== */
 const BUILTIN_PE_CATS = [
   {name:'Shop Rent', emoji:'🏠', color:'#8D6E63'},
   {name:'Personal Spend', emoji:'🛍️', color:'#EC407A'},
@@ -1435,13 +1451,29 @@ function deletePersonalExpense(id){
   afterDataChange();
 }
 
-function totalPersonalExpenses(){
-  return loadPersonalExpenses().reduce((s,e)=>s+(Number(e.amount)||0),0);
-}
-
 const PE_RESET_KEY = 'udhar_pe_reset_v1';
+const PE_CYCLES_KEY = 'udhar_pe_cycles_v1';
+
 function loadPeReset(){ try{ return JSON.parse(localStorage.getItem(PE_RESET_KEY)||'{}'); }catch(e){ return {}; } }
 function savePeReset(o){ localStorage.setItem(PE_RESET_KEY, JSON.stringify(o)); }
+function loadPeCycles(){ try{ return JSON.parse(localStorage.getItem(PE_CYCLES_KEY)||'[]'); }catch(e){ return []; } }
+function savePeCycles(a){ localStorage.setItem(PE_CYCLES_KEY, JSON.stringify(a)); }
+
+function personalCycleStartDate(){
+  const reset = loadPeReset();
+  return reset.startDate || null;
+}
+
+function currentCycleExpenses(){
+  const start = personalCycleStartDate();
+  const list = loadPersonalExpenses();
+  if(!start) return list;
+  return list.filter(e => e.date >= start);
+}
+
+function totalPersonalExpensesCurrentCycle(){
+  return currentCycleExpenses().reduce((s,e)=>s+(Number(e.amount)||0),0);
+}
 
 function personalCycleInHandProfit(){
   const reset = loadPeReset();
@@ -1450,43 +1482,108 @@ function personalCycleInHandProfit(){
 }
 
 function resetPersonalCycle(){
-  const current = computeInHandProfitAllTime();
-  savePeReset({ baseline: current, resetAt: Date.now() });
-  showBanner('🔄 Cycle reset — counting from ₹0');
+  const currentInHand = personalCycleInHandProfit();
+  const currentSpent = totalPersonalExpensesCurrentCycle();
+  const reset = loadPeReset();
+  const startDate = reset.startDate || 'Start';
+  const endDate = todayStr();
+
+  const confirmMsg = `Reset the current cycle?\n\nPeriod: ${startDate} to ${endDate}\nIn Hand Profit: ₹${Math.round(currentInHand)}\nExpenses Spent: ₹${Math.round(currentSpent)}\n\nThis will archive the current cycle and reset both profit & expense totals to ₹0.`;
+  if(!confirm(confirmMsg)) return;
+
+  // Archive completed cycle
+  const cycles = loadPeCycles();
+  cycles.unshift({
+    id: uid(),
+    startDate: startDate,
+    endDate: endDate,
+    inHandProfit: currentInHand,
+    totalExpenses: currentSpent,
+    balance: currentInHand - currentSpent,
+    resetAt: Date.now()
+  });
+  savePeCycles(cycles);
+
+  // Advance baseline profit & set new cycle start date
+  const newBaseline = computeInHandProfitAllTime();
+  savePeReset({ baseline: newBaseline, startDate: todayStr(), resetAt: Date.now() });
+
+  showBanner(`🔄 Cycle archived: ${startDate} to ${endDate}. Starting fresh cycle from ₹0.`);
   renderPersonalTab();
   afterDataChange();
 }
 
 function renderPersonalTab(){
   if(!document.getElementById('pe-entryDate').value) document.getElementById('pe-entryDate').value = todayStr();
+
   const inHand = personalCycleInHandProfit();
-  const peTotal = totalPersonalExpenses();
+  const peTotal = totalPersonalExpensesCurrentCycle();
   document.getElementById('pe-inhandRef').textContent = fmtMoney(inHand);
   document.getElementById('pe-balance').textContent = fmtMoney(inHand - peTotal);
+
   const reset = loadPeReset();
   const sinceLabel = document.getElementById('pe-sinceLabel');
-  if(sinceLabel){
-    sinceLabel.textContent = reset.resetAt
-      ? '(since reset on ' + new Date(reset.resetAt).toLocaleDateString('en-IN') + ')'
-      : '(reference, from Dashboard)';
+  const cycleTitle = document.getElementById('peCurrentCycleTitle');
+
+  if(reset.startDate){
+    const lbl = `(cycle: ${reset.startDate} to present)`;
+    if(sinceLabel) sinceLabel.textContent = lbl;
+    if(cycleTitle) cycleTitle.textContent = `Current Cycle Expenses (${reset.startDate} to present)`;
+  } else {
+    if(sinceLabel) sinceLabel.textContent = `(all-time active cycle)`;
+    if(cycleTitle) cycleTitle.textContent = `Current Cycle Expense History`;
   }
 
-  const list = loadPersonalExpenses().slice().sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
+  // Display only the active cycle expenses in the main list
+  const activeList = currentCycleExpenses().slice().sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
   const histEl = document.getElementById('peHistoryList');
-  if(!list.length){ histEl.innerHTML = '<p style="color:var(--muted);">No personal expenses logged yet</p>'; return; }
-  histEl.innerHTML = '';
-  list.forEach(e=>{
-    const row = document.createElement('div');
-    row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
-    row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <span>${e.date} · ${e.category}${e.note?(' · '+e.note):''}</span>
-        <span style="font-weight:700; white-space:nowrap;">₹${e.amount}</span>
+
+  if(!activeList.length){
+    histEl.innerHTML = '<p style="color:var(--muted); padding:6px 0;">No personal expenses in this current cycle yet</p>';
+  } else {
+    histEl.innerHTML = '';
+    activeList.forEach(e=>{
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
+      row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <span>${e.date} · ${e.category}${e.note?(' · '+e.note):''}</span>
+          <span style="font-weight:700; white-space:nowrap;">₹${e.amount}</span>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPersonalExpense('${e.id}')">✏️ Edit</button>
+          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePersonalExpense('${e.id}')">🗑️ Delete</button>
+        </div>`;
+      histEl.appendChild(row);
+    });
+  }
+
+  // Render previous archived cycles
+  renderPastPeCycles();
+}
+
+function renderPastPeCycles(){
+  const wrap = document.getElementById('pePastCyclesList');
+  if(!wrap) return;
+  const cycles = loadPeCycles();
+  if(!cycles.length){
+    wrap.innerHTML = '<p style="color:var(--muted); padding:6px 0;">No archived cycles yet. Click "Reset Cycle" above to archive a period.</p>';
+    return;
+  }
+  wrap.innerHTML = '';
+  cycles.forEach(c=>{
+    const card = document.createElement('div');
+    card.style.cssText = 'padding:12px; border-radius:12px; margin-bottom:8px; border:1px solid rgba(128,128,128,0.2); background:var(--card);';
+    card.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-weight:700; font-size:0.95rem;">📅 ${c.startDate} to ${c.endDate}</span>
+        <span style="font-weight:700; color:${c.balance>=0?'var(--paid)':'var(--owe)'};">Bal: ${fmtMoney(c.balance)}</span>
       </div>
-      <div style="display:flex; gap:10px; margin-top:6px;">
-        <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPersonalExpense('${e.id}')">✏️ Edit</button>
-        <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePersonalExpense('${e.id}')">🗑️ Delete</button>
-      </div>`;
-    histEl.appendChild(row);
+      <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--muted); margin-top:6px;">
+        <span>Online Profit: ${fmtMoney(c.inHandProfit)}</span>
+        <span>Total Spent: ${fmtMoney(c.totalExpenses)}</span>
+      </div>
+    `;
+    wrap.appendChild(card);
   });
 }
 
@@ -1585,7 +1682,6 @@ function cancelEditPurchaseItem(){
   document.getElementById('pl-supplier').value='';
 }
 
-/* Master Sheet Item Delete with Confirmation & Recycle Bin */
 function deletePurchaseItem(id){
   const list = loadPurchaseList();
   const it = list.find(x=>String(x.id)===String(id));
@@ -1685,7 +1781,6 @@ function renderPlTrash(){
   });
 }
 
-/* Master Sheet Item Selection & Select All / Deselect All */
 let selectedPurchaseQty = {};
 let plGroupBySupplier = false;
 let plReassignMode = false;
