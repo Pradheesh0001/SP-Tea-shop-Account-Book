@@ -38,7 +38,6 @@ window.addEventListener('error', function(e){
   .tabGrid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px; }
   @media (min-width:700px) and (max-width:899px){ .tabGrid{ grid-template-columns:1fr 1fr 1fr 1fr !important; } }
 
-  /* Desktop app shell: left sidebar nav + content area, like a proper desktop business app */
   .sideNavSettings{ display:none; }
   @media (min-width:900px){
     .wrap{ max-width:1280px; padding:28px 32px 50px; }
@@ -62,7 +61,6 @@ window.addEventListener('error', function(e){
     }
     .sideNavSettings{ display:block; margin-top:8px !important; border-top:1px solid rgba(128,128,128,0.15); padding-top:14px !important; }
     .mainContent{ min-width:0; }
-    /* Let key card groups sit side-by-side instead of stacking the full page height */
     #dashboardTab .totalbox{ margin-bottom:0; }
     #dashboardTab > .card:nth-of-type(1),
     #dashboardTab > .totalbox{ grid-column: span 1; }
@@ -121,6 +119,7 @@ window.addEventListener('error', function(e){
   .twocol{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
   #banner{position:fixed;left:16px;right:16px;bottom:20px;color:#fff;padding:10px 14px;border-radius:10px;font-size:0.85rem;text-align:center;z-index:99;display:none;background:#2c7a4b;}
   .paidRow{display:flex; justify-content:space-between; padding:6px 0; font-size:0.85rem; border-bottom:1px dashed rgba(128,128,128,0.2);}
+  .loadgrid{display:grid; gap:8px;}
 </style>
 </head>
 <body>
@@ -154,7 +153,7 @@ window.addEventListener('error', function(e){
     <p class="hint" id="authDriveStatus">Not connected</p>
   </div>
 
-  <!-- CUSTOMER PAY PAGE (opens when someone taps a pay link) -->
+  <!-- CUSTOMER PAY PAGE -->
   <div id="payView" class="hidden">
     <div class="card" style="text-align:center;">
       <div style="color:var(--muted); font-size:0.9rem;" id="pay-for"></div>
@@ -385,7 +384,7 @@ window.addEventListener('error', function(e){
       <button class="ghost" onclick="showSettings()">⚙️ UPI & Backup Settings</button>
     </div>
 
-    <!-- PERSONAL EXPENSES TAB — fully isolated, never affects Dashboard/Sales/Shop Expenses -->
+    <!-- PERSONAL EXPENSES TAB -->
     <div id="personalTab" class="hidden">
       <div class="card" style="background:rgba(31,111,235,0.08);">
         <div style="font-size:0.8rem; color:var(--muted);">🤲 In Hand Online Profit <span id="pe-sinceLabel">(reference, from Dashboard)</span></div>
@@ -454,22 +453,21 @@ window.addEventListener('error', function(e){
 
       <div class="card">
         <h3 style="margin-top:0;">📷 Scan a Bill (adds to Master Sheet)</h3>
-        <p class="hint" style="margin-bottom:10px;">Works offline, free. Handles English and Tamil text. Does NOT translate Tamil to English — you'll review and fix names after scanning. Always double-check the results below before adding.</p>
+        <p class="hint" style="margin-bottom:10px;">Works offline, free. Handles English and Tamil text. Review and fix names after scanning.</p>
         <input id="pl-scanFile" type="file" accept="image/*" capture="environment" onchange="scanPurchaseBill(event)">
         <div id="pl-scanStatus" class="hint"></div>
       </div>
 
       <div class="card">
         <h3 style="margin-top:0;">📝 Paste a Text List (adds to Master Sheet)</h3>
-        <p class="hint" style="margin-bottom:10px;">Paste any list of item names and quantities — one item per line works best. Spelling gets auto-corrected against items you've already used.</p>
+        <p class="hint" style="margin-bottom:10px;">Paste any list of item names and quantities — one item per line works best.</p>
         <textarea id="pl-pasteBox" rows="5" style="width:100%; padding:13px; border-radius:12px; border:1px solid #ccd2db; background:transparent; color:var(--text); font-family:inherit; margin-bottom:12px;" placeholder="Milk 10 pcs&#10;Sugar 2 case&#10;Tea powder x5"></textarea>
         <button style="background:var(--brand);" onclick="parsePastedList()">🔍 Parse List</button>
       </div>
 
-      <!-- Review area shown after Scan or Paste, before items are actually added -->
       <div class="card hidden" id="pl-reviewCard">
         <h3 style="margin-top:0;">Review Parsed Items</h3>
-        <p class="hint" style="margin-bottom:10px;">Check and fix anything before adding — especially names from a scanned bill.</p>
+        <p class="hint" style="margin-bottom:10px;">Check and fix anything before adding.</p>
         <div id="pl-reviewList"></div>
         <button style="background:var(--paid);" onclick="confirmAddReviewedItems()">✅ Add All to List</button>
         <button class="ghost" onclick="cancelReview()">Cancel</button>
@@ -527,10 +525,31 @@ window.addEventListener('error', function(e){
         <button class="ghost" onclick="closePlExportModal()">Cancel</button>
       </div>
 
+      <!-- PURCHASE ORDER HISTORY & MODAL -->
       <div class="card">
-        <h3 style="margin-top:0;">📜 Purchase Order History</h3>
-        <p class="hint" style="margin-bottom:10px;">Every order you copy is saved here automatically (last 50).</p>
+        <div class="toprow" style="margin-bottom:10px;">
+          <h3 style="margin:0;">📜 Purchase Order History</h3>
+          <input id="po-viewDate" type="date" style="width:auto; margin:0; padding:8px 10px;" onchange="renderPoHistory()">
+        </div>
+        <p class="hint" style="margin-bottom:10px;">Showing orders for the selected date. Click any order card to view full invoice breakdown.</p>
         <div id="pl-historyList"></div>
+      </div>
+
+      <div id="poInvoiceModal" class="hidden card" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:90%; max-width:500px; max-height:85vh; overflow-y:auto; z-index:1000; box-shadow:0 10px 30px rgba(0,0,0,0.3); border:1px solid rgba(128,128,128,0.3);">
+        <div class="toprow" style="margin-bottom:8px;">
+          <h3 style="margin:0;" id="poModalSupplier">Supplier Invoice</h3>
+          <button class="ghost" style="width:auto; margin:0; padding:4px 10px;" onclick="closePoInvoiceModal()">✕</button>
+        </div>
+        <div style="font-size:0.85rem; color:var(--muted); margin-bottom:12px;" id="poModalDate"></div>
+        <div id="poModalItems"></div>
+        <div style="display:flex; justify-content:space-between; font-weight:800; font-size:1.1rem; border-top:2px solid var(--muted); margin-top:10px; padding-top:10px;">
+          <span>Total Bill Value</span>
+          <span id="poModalTotal" style="color:var(--brand);">₹0</span>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:14px;">
+          <button style="background:var(--brand); flex:1; margin:0;" id="poModalCopyBtn">📋 Copy Again</button>
+          <button class="ghost" style="flex:1; margin:0;" onclick="closePoInvoiceModal()">Close</button>
+        </div>
       </div>
     </div>
     </div><!-- /mainContent -->
@@ -554,23 +573,23 @@ window.addEventListener('error', function(e){
     <input id="s-upiId" placeholder="yourshop@upi">
     <label>Shop / Payee name</label>
     <input id="s-shopName" placeholder="Your shop name">
-    <label>Your own WhatsApp number (for weekly profit reports)</label>
+    <label>Your own WhatsApp number</label>
     <input id="s-ownerWhatsapp" placeholder="10-digit number or with country code" type="tel">
     <button style="background:var(--brand);" onclick="saveUpiSettings()">Save UPI Details</button>
 
     <h3>Your UPI QR code (optional)</h3>
-    <p class="hint" style="margin-bottom:10px;">Upload a photo of your existing UPI QR code (from your bank or GPay/PhonePe business app). It'll be shown to customers when collecting payment.</p>
+    <p class="hint" style="margin-bottom:10px;">Upload a photo of your existing UPI QR code.</p>
     <input id="s-qrUpload" type="file" accept="image/*" onchange="uploadQrImage(event)">
     <div id="qrPreviewBox" style="text-align:center;"></div>
 
     <h3>Server Auto-Sync</h3>
-    <p class="hint" style="margin-bottom:10px;">One-time setup needed (see instructions). Paste your Google Client ID, then connect.</p>
+    <p class="hint" style="margin-bottom:10px;">Paste your Google Client ID, then connect.</p>
     <input id="s-gClientId" placeholder="Google OAuth Client ID">
     <button style="background:#4285F4;" onclick="connectGoogleDrive()">🔗 Connect to Server</button>
     <p class="hint" id="driveStatus">Not connected</p>
 
     <h3>Backup</h3>
-    <p class="hint" style="margin-bottom:10px;">Keeps your data synced to the server, so all staff phones see the same customers, sales and expenses.</p>
+    <p class="hint" style="margin-bottom:10px;">Download local snapshot.</p>
     <button style="background:var(--paid);" id="backupBtn" onclick="backupData()">💾 Save Backup File</button>
 
     <button class="ghost" onclick="showDashboard()">Back</button>
@@ -620,7 +639,7 @@ window.addEventListener('error', function(e){
         <a href="#" id="cd-openUpi" class="btnlink" style="width:auto; background:#5a3ea1; margin:0; padding:10px 14px;" onclick="return openUpiApp(event)">📲 Open UPI App</a>
       </div>
     </div>
-    <button style="background:var(--paid);" onclick="addTxn('payment')">✅ Confirm Payment Received (reduces balance)</button>
+    <button style="background:var(--paid);" onclick="addTxn('payment')">✅ Confirm Payment Received</button>
 
     <button style="background:var(--wa); margin-top:14px;" id="waBtn" onclick="prepWhatsApp()">💬 Send WhatsApp Reminder</button>
     <a href="#" id="waLink" class="btnlink hidden" style="background:var(--wa);" target="_blank" rel="noopener">💬 Tap to Open WhatsApp</a>
@@ -671,7 +690,6 @@ function saveDeletedExpenseIds(o){ localStorage.setItem(EXP_DELETED_KEY, JSON.st
 function loadCustomCats(){ try{ return JSON.parse(localStorage.getItem(CATS_KEY)||'[]'); }catch(e){ return []; } }
 function saveCustomCats(a){ localStorage.setItem(CATS_KEY, JSON.stringify(a)); }
 
-// Daily Sales: one record per date, stored as {date: {openingCash, cashSales, onlineSales, closingCashActual, updatedAt}}
 function loadDailySalesAll(){ try{ return JSON.parse(localStorage.getItem(DAILY_KEY)||'{}'); }catch(e){ return {}; } }
 function saveDailySalesAll(o){ localStorage.setItem(DAILY_KEY, JSON.stringify(o)); }
 function getDailySales(date){
@@ -723,10 +741,8 @@ let gDriveToken = null;
 let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
-// Shop owner: paste your Google OAuth Client ID here once, then re-upload this file.
-// Every staff phone will then connect automatically without typing anything.
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-03-v40-invoice-total-supplier-filter';
+const APP_VERSION = '2026-10-20-v41-po-history-invoices';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -769,8 +785,6 @@ function connectGoogleDrive(){
   tokenClient.requestAccessToken();
 }
 
-// Reads ALL copies of the shared file (in case duplicates exist), merges them into this phone.
-// Returns 'ok', 'none' (no file yet) or 'error'.
 async function pullFromDrive(){
   if(!gDriveToken) return 'error';
   try{
@@ -787,7 +801,7 @@ async function pullFromDrive(){
       localStorage.removeItem('udhar_gdrive_fileid');
       return 'none';
     }
-    gDriveFileId = files[0].id; // oldest file = the one everyone uses
+    gDriveFileId = files[0].id;
     localStorage.setItem('udhar_gdrive_fileid', gDriveFileId);
     for(const f of files){
       const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
@@ -885,10 +899,9 @@ function mergeRemoteData(remote){
   const poMap = {};
   loadPoHistory().forEach(o=>{ poMap[o.id]=o; });
   (remote.poHistory||[]).forEach(o=>{ if(!poMap[o.id]) poMap[o.id]=o; });
-  savePoHistory(Object.values(poMap).sort((a,b)=>b.createdAt-a.createdAt).slice(0,50));
+  savePoHistory(Object.values(poMap).sort((a,b)=>b.createdAt-a.createdAt).slice(0,100));
 }
 
-// Pull others' changes first, then push the merged result — so phones never overwrite each other.
 async function syncToDrive(){
   if(!gDriveToken) return false;
   setDriveStatus('🔄 Syncing…');
@@ -939,7 +952,7 @@ function refreshCurrentView(){
   else if(!document.getElementById('salesTab').classList.contains('hidden')){ renderDailySummary(document.getElementById('ds-date').value || todayStr()); }
   else if(!document.getElementById('dashboardTab').classList.contains('hidden')){ renderDashboard(); }
   else if(!document.getElementById('personalTab').classList.contains('hidden')){ renderPersonalTab(); }
-  else if(!document.getElementById('purchaseTab').classList.contains('hidden')){ renderPurchaseList(); }
+  else if(!document.getElementById('purchaseTab').classList.contains('hidden')){ renderPurchaseList(); renderPoHistory(); }
 }
 
 async function syncNow(){
@@ -952,8 +965,6 @@ function afterDataChange(){
   else { showBanner('⚠️ Saved on this phone only — connect to the server from the login screen to share it'); }
 }
 
-// Auto-sync (pull + push) every 10 seconds in the background, silently — only while connected.
-// A single hiccup does NOT disconnect anything; it just tries again on the next tick.
 setInterval(async ()=>{
   if(gDriveToken && driveConnectedThisSession && !document.hidden){
     await syncToDrive();
@@ -1021,7 +1032,6 @@ function enterApp(){
   showDashboard();
 }
 
-/* ---------- balances ---------- */
 function balanceFor(custId){
   const txns = loadTxns().filter(t=>t.customerId===custId);
   let bal = 0;
@@ -1029,7 +1039,6 @@ function balanceFor(custId){
   return bal;
 }
 
-/* ---------- dashboard ---------- */
 function showDashboard(){
   document.getElementById('addCustView').classList.add('hidden');
   document.getElementById('custDetailView').classList.add('hidden');
@@ -1058,29 +1067,24 @@ function activateTab(name){
 }
 
 function showDashboardTab(){ activateTab('dashboard'); setDashMode(dashMode); renderDashboard(); }
-
 function showSalesTab(){ activateTab('sales'); loadDailySalesForm(); }
-
 function showExpensesTab(){
   activateTab('expenses');
   renderCategoryButtons();
   if(!editingExpenseId) selectExpCat(selectedExpCat);
   renderExpenses();
 }
-
 function showCustomersTab(){
   activateTab('customers');
   renderCustomers();
   renderTodayPaid();
 }
-
 function showPersonalTab(){
   activateTab('personal');
   renderPeCategoryButtons();
   if(!editingPeId) selectPeCat(selectedPeCat);
   renderPersonalTab();
 }
-
 function showPurchaseTab(){
   activateTab('purchase');
   if(!editingPlId) setPlUnit(selectedPlUnit);
@@ -1292,11 +1296,7 @@ function renderExpenses(){
   }
 }
 
-/* ========================================================================
-   PERSONAL EXPENSES — fully isolated section.
-   This only READS computeInHandProfitAllTime() as a reference number.
-   Nothing here is ever written back into Dashboard/Sales/Shop Expenses data.
-   ======================================================================== */
+/* ---------- personal expenses ---------- */
 const BUILTIN_PE_CATS = [
   {name:'Shop Rent', emoji:'🏠', color:'#8D6E63'},
   {name:'Personal Spend', emoji:'🛍️', color:'#EC407A'},
@@ -1420,9 +1420,6 @@ const PE_RESET_KEY = 'udhar_pe_reset_v1';
 function loadPeReset(){ try{ return JSON.parse(localStorage.getItem(PE_RESET_KEY)||'{}'); }catch(e){ return {}; } }
 function savePeReset(o){ localStorage.setItem(PE_RESET_KEY, JSON.stringify(o)); }
 
-// The REAL all-time In Hand Profit (used on the Dashboard) is never changed by this.
-// This only subtracts a baseline captured at reset time, purely for what's DISPLAYED
-// inside the Personal Expenses section.
 function personalCycleInHandProfit(){
   const reset = loadPeReset();
   const baseline = reset.baseline || 0;
@@ -1439,7 +1436,6 @@ function resetPersonalCycle(){
 
 function renderPersonalTab(){
   if(!document.getElementById('pe-entryDate').value) document.getElementById('pe-entryDate').value = todayStr();
-  // Pure reference read — this NEVER writes back to the Dashboard's real numbers.
   const inHand = personalCycleInHandProfit();
   const peTotal = totalPersonalExpenses();
   document.getElementById('pe-inhandRef').textContent = fmtMoney(inHand);
@@ -1471,11 +1467,7 @@ function renderPersonalTab(){
   });
 }
 
-/* ========================================================================
-   PURCHASE LIST — manual entry, scan-to-parse, paste-to-parse.
-   Isolated from every other section. Nothing here affects Profit or any
-   financial calculation; it is purely a shopping/ordering list.
-   ======================================================================== */
+/* ---------- master sheet ---------- */
 const PL_KEY = 'udhar_purchase_list_v1';
 const PL_DELETED_KEY = 'udhar_purchase_list_deleted_v1';
 
@@ -1522,7 +1514,6 @@ function addPurchaseItem(){
     if(idx>-1){
       const existing = list[idx];
       const priceHistory = (existing.priceHistory||[]).slice();
-      // Record the OLD price before overwriting, only when it actually changed and had a real value.
       if(existing.price!==null && existing.price!==undefined && existing.price!==newPrice){
         priceHistory.push({ price: existing.price, changedAt: Date.now() });
       }
@@ -1580,8 +1571,6 @@ function deletePurchaseItem(id){
   afterDataChange();
 }
 
-// Maps itemId -> qty chosen for THIS purchase order (independent of the Master Sheet's own
-// stored qty field, which just represents whatever you typed when adding it to the catalog).
 let selectedPurchaseQty = {};
 let plGroupBySupplier = false;
 let plReassignMode = false;
@@ -1668,15 +1657,11 @@ function selectedPurchaseTotal(){
   }, 0);
 }
 
-// Pure function: applies search + sort to a Master Sheet list. Testable independent of the DOM.
-/* ---------- supplier grouping ---------- */
 function allKnownSuppliers(){
   const names = loadPurchaseList().map(it=>it.supplier).filter(Boolean);
   return Array.from(new Set(names)).sort((a,b)=>a.localeCompare(b));
 }
 
-// Pure function: groups an already filtered/sorted item list by supplier name.
-// Items with no supplier go under "No Supplier", shown last.
 function groupItemsBySupplier(list){
   const groups = {};
   list.forEach(it=>{
@@ -1689,8 +1674,6 @@ function groupItemsBySupplier(list){
   return names.map(name=>({ supplier:name, items:groups[name] }));
 }
 
-// Pure function: reassigns the given item ids to a new supplier, IN PLACE (the original
-// item keeps everything else — name, qty, unit, price, MRP, price history — unchanged).
 function moveItemsToSupplier(list, ids, supplierName){
   return list.map(it=>{
     if(!ids.includes(it.id)) return it;
@@ -1698,8 +1681,6 @@ function moveItemsToSupplier(list, ids, supplierName){
   });
 }
 
-// Pure function: duplicates the given item ids as NEW items under a new supplier, carrying
-// over every detail (qty, unit, price, MRP, price history) — the originals are untouched.
 function copyItemsToSupplier(list, ids, supplierName, idFactory){
   const copies = list.filter(it=>ids.includes(it.id)).map(it=>Object.assign({}, it, {
     id: idFactory(),
@@ -1725,7 +1706,7 @@ function filterAndSortPurchaseList(list, query, sortKey, supplierFilter){
     case 'name-desc': out.sort((a,b)=>b.name.toLowerCase().localeCompare(a.name.toLowerCase())); break;
     case 'price-asc': out.sort((a,b)=>(a.price||0)-(b.price||0)); break;
     case 'price-desc': out.sort((a,b)=>(b.price||0)-(a.price||0)); break;
-    default: out.reverse(); // 'recent' — newest added first, same as the old default behavior
+    default: out.reverse();
   }
   return out;
 }
@@ -1809,7 +1790,6 @@ function renderPurchaseList(){
   const list = loadPurchaseList();
   const wrap = document.getElementById('pl-itemsList');
   if(!wrap) return;
-  // drop selections for items that no longer exist
   const validIds = new Set(list.map(it=>it.id));
   Object.keys(selectedPurchaseQty).forEach(id=>{ if(!validIds.has(id)) delete selectedPurchaseQty[id]; });
   Array.from(reassignSelectedIds).forEach(id=>{ if(!validIds.has(id)) reassignSelectedIds.delete(id); });
@@ -1875,33 +1855,57 @@ function copyPurchaseListNameQtyOnly(){
   } else { showBanner('Copy not supported on this device'); }
 }
 
-/* ---------- purchase order history ---------- */
+/* ---------- purchase order history & invoice modal ---------- */
 const PO_HISTORY_KEY = 'udhar_purchase_order_history_v1';
 function loadPoHistory(){ try{ return JSON.parse(localStorage.getItem(PO_HISTORY_KEY)||'[]'); }catch(e){ return []; } }
 function savePoHistory(a){ localStorage.setItem(PO_HISTORY_KEY, JSON.stringify(a)); }
 
 function recordPurchaseOrderHistory(items){
   const history = loadPoHistory();
-  history.unshift({ id: uid(), date: todayStr(), createdAt: Date.now(), items });
-  // keep the most recent 50 orders only, to avoid unbounded growth
-  savePoHistory(history.slice(0, 50));
+  const totalValue = items.reduce((s, it) => s + ((it.price || 0) * (it.qty || 1)), 0);
+  
+  const suppliers = Array.from(new Set(items.map(it => it.supplier).filter(Boolean)));
+  const supplierName = suppliers.length === 1 ? suppliers[0] : (suppliers.length > 1 ? suppliers.join(', ') : 'General Supplier');
+
+  history.unshift({ 
+    id: uid(), 
+    date: todayStr(), 
+    supplier: supplierName,
+    totalValue: totalValue,
+    createdAt: Date.now(), 
+    items 
+  });
+  
+  savePoHistory(history.slice(0, 100));
 }
 
 function copySelectedPurchaseItems(){
   const list = loadPurchaseList();
   const ids = Object.keys(selectedPurchaseQty);
   if(!ids.length){ showBanner('No items selected for this order'); return; }
+  
   const orderItems = ids.map(id=>{
     const it = list.find(x=>x.id===id);
     if(!it) return null;
-    return { name: it.name, qty: selectedPurchaseQty[id], unit: it.unit };
+    return { 
+      id: it.id,
+      name: it.name, 
+      qty: selectedPurchaseQty[id], 
+      unit: it.unit,
+      price: (it.price !== null && it.price !== undefined) ? it.price : 0,
+      supplier: it.supplier || null
+    };
   }).filter(Boolean);
+
   const text = orderItems.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)}`).join('\n');
   recordPurchaseOrderHistory(orderItems);
+  
   if(navigator.clipboard){
     navigator.clipboard.writeText(text).then(()=>showBanner('📋 Purchase order copied and saved to history')).catch(()=>showBanner('Could not copy'));
   } else { showBanner('Copy not supported on this device'); }
+  
   renderPoHistory();
+  afterDataChange();
 }
 
 function copyHistoricalOrder(orderId){
@@ -1909,28 +1913,102 @@ function copyHistoricalOrder(orderId){
   if(!order) return;
   const text = order.items.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)}`).join('\n');
   if(navigator.clipboard){
-    navigator.clipboard.writeText(text).then(()=>showBanner('📋 Copied again')).catch(()=>showBanner('Could not copy'));
+    navigator.clipboard.writeText(text).then(()=>showBanner('📋 Order copied')).catch(()=>showBanner('Could not copy'));
   } else { showBanner('Copy not supported on this device'); }
+}
+
+function openPoInvoiceModal(orderId){
+  const order = loadPoHistory().find(o=>o.id===orderId);
+  if(!order) return;
+  
+  document.getElementById('poModalSupplier').textContent = '🚚 ' + (order.supplier || 'Supplier Order');
+  document.getElementById('poModalDate').textContent = 'Date: ' + (order.date || 'Unknown') + ' · ' + (order.items ? order.items.length : 0) + ' items';
+  
+  const itemsWrap = document.getElementById('poModalItems');
+  itemsWrap.innerHTML = '';
+  
+  let total = 0;
+  (order.items || []).forEach(it=>{
+    const rate = Number(it.price) || 0;
+    const qty = Number(it.qty) || 1;
+    const lineTotal = rate * qty;
+    total += lineTotal;
+    
+    const div = document.createElement('div');
+    div.className = 'paidRow';
+    div.style.padding = '8px 0';
+    div.innerHTML = `
+      <div>
+        <div style="font-weight:600;">${it.name}</div>
+        <div style="font-size:0.75rem; color:var(--muted);">${qty} ${unitLabel(it.unit)} × ₹${rate}</div>
+      </div>
+      <div style="font-weight:700;">₹${lineTotal.toLocaleString('en-IN')}</div>
+    `;
+    itemsWrap.appendChild(div);
+  });
+  
+  document.getElementById('poModalTotal').textContent = '₹' + (order.totalValue !== undefined ? order.totalValue : total).toLocaleString('en-IN');
+  
+  const copyBtn = document.getElementById('poModalCopyBtn');
+  copyBtn.onclick = function(){ copyHistoricalOrder(order.id); };
+  
+  document.getElementById('poInvoiceModal').classList.remove('hidden');
+}
+
+function closePoInvoiceModal(){
+  document.getElementById('poInvoiceModal').classList.add('hidden');
 }
 
 function renderPoHistory(){
   const wrap = document.getElementById('pl-historyList');
   if(!wrap) return;
-  const history = loadPoHistory();
-  if(!history.length){ wrap.innerHTML = '<p style="color:var(--muted);">No past orders saved yet — tap "Copy This Purchase Order" to save one</p>'; return; }
+
+  const dateInput = document.getElementById('po-viewDate');
+  if(dateInput && !dateInput.value){
+    dateInput.value = todayStr();
+  }
+  const filterDate = dateInput ? dateInput.value : todayStr();
+
+  const allHistory = loadPoHistory();
+  const history = allHistory.filter(o => o.date === filterDate);
+
+  if(!history.length){ 
+    wrap.innerHTML = `<p style="color:var(--muted); padding:8px 0;">No purchase orders on ${filterDate}</p>`; 
+    return; 
+  }
+
   wrap.innerHTML = '';
   history.forEach(order=>{
-    const row = document.createElement('div');
-    row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
-    const itemsSummary = order.items.map(it=>`${it.name} (${it.qty} ${unitLabel(it.unit)})`).join(', ');
-    row.innerHTML = `<div style="font-weight:600;">${order.date} — ${order.items.length} item(s)</div>
-      <div style="font-size:0.78rem; color:var(--muted); margin:4px 0 8px;">${itemsSummary}</div>
-      <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="copyHistoricalOrder('${order.id}')">📋 Copy Again</button>`;
-    wrap.appendChild(row);
+    const orderTotal = (order.totalValue !== undefined) 
+      ? order.totalValue 
+      : (order.items || []).reduce((s, it) => s + ((Number(it.price)||0) * (Number(it.qty)||1)), 0);
+
+    const supplierDisplay = order.supplier || 'Supplier Order';
+
+    const card = document.createElement('div');
+    card.style.cssText = 'padding:14px; border-radius:12px; margin-bottom:8px; border:1px solid rgba(128,128,128,0.25); background:var(--card); cursor:pointer; transition:background 0.15s ease;';
+    card.onmouseover = function(){ this.style.background = 'rgba(128,128,128,0.06)'; };
+    card.onmouseout = function(){ this.style.background = 'var(--card)'; };
+
+    card.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+          <div style="font-weight:700; font-size:1rem; color:var(--text);">🚚 ${supplierDisplay}</div>
+          <div style="font-size:0.8rem; color:var(--muted); margin-top:2px;">${order.items.length} item(s) · ${order.date}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.15rem; font-weight:800; color:var(--brand);">₹${Number(orderTotal).toLocaleString('en-IN')}</div>
+          <div style="font-size:0.72rem; color:var(--muted); margin-top:2px;">Tap for Invoice 🔍</div>
+        </div>
+      </div>
+    `;
+
+    card.addEventListener('click', () => openPoInvoiceModal(order.id));
+    wrap.appendChild(card);
   });
 }
 
-/* ---------- fuzzy matching for spelling auto-correct ---------- */
+/* ---------- parsing: fuzzy and ocr ---------- */
 function levenshtein(a, b){
   a = a.toLowerCase(); b = b.toLowerCase();
   const m = a.length, n = b.length;
@@ -1948,7 +2026,6 @@ function similarity(a, b){
   const dist = levenshtein(a,b);
   return 1 - dist/Math.max(a.length, b.length, 1);
 }
-// Finds the closest existing item name for a candidate string, if similar enough (but not identical).
 function fuzzyCorrectName(candidate, knownNames){
   let best = null, bestScore = 0;
   knownNames.forEach(known=>{
@@ -1961,7 +2038,6 @@ function fuzzyCorrectName(candidate, knownNames){
   return { corrected: candidate, wasCorrected: false, score: bestScore };
 }
 
-// Maps any recognized unit keyword found in text to one of the 4 canonical units.
 function detectUnitFromWord(word){
   if(!word) return 'pcs';
   if(/case|box|ctn/i.test(word)) return 'case';
@@ -1970,8 +2046,6 @@ function detectUnitFromWord(word){
   return 'pcs';
 }
 
-/* ---------- parsing: pasted text list ---------- */
-// Pure function: given raw pasted text, returns candidate {name, qty, unit} items.
 function parsePastedListText(rawText){
   const lines = rawText.split(/\n|,(?=\s*[A-Za-z])/).map(l=>l.trim()).filter(Boolean);
   return lines.map(line=>{
@@ -2013,8 +2087,6 @@ function parsePastedList(){
   showReviewItems(parsed);
 }
 
-/* ---------- parsing: scanned bill (OCR) ---------- */
-// Pure function: given raw OCR text, returns candidate {name, qty, unit, price, mrp} items — best effort only.
 function parseBillText(rawText){
   const lines = rawText.split('\n').map(l=>l.trim()).filter(l=>l.length>1);
   return lines.map(line=>{
@@ -2046,9 +2118,9 @@ async function scanPurchaseBill(event){
       logger: m => { if(m.status==='recognizing text'){ statusEl.textContent = '🔄 Scanning… ' + Math.round((m.progress||0)*100) + '%'; } }
     });
     const text = result && result.data && result.data.text ? result.data.text : '';
-    if(!text.trim()){ statusEl.textContent = '⚠️ Could not read any text from that photo — try a clearer, well-lit image'; return; }
+    if(!text.trim()){ statusEl.textContent = '⚠️ Could not read any text from that photo'; return; }
     const parsed = applyFuzzyCorrect(parseBillText(text));
-    if(!parsed.length){ statusEl.textContent = '⚠️ Text was found but no items could be identified — try Paste List instead, or add manually'; return; }
+    if(!parsed.length){ statusEl.textContent = '⚠️ Text was found but no items could be identified'; return; }
     statusEl.textContent = '✅ Scan complete — please review before adding';
     showReviewItems(parsed);
   }catch(e){
@@ -2056,7 +2128,6 @@ async function scanPurchaseBill(event){
   }
 }
 
-/* ---------- shared review screen (used by both Scan and Paste) ---------- */
 function showReviewItems(items){
   pendingReviewItems = items;
   const wrap = document.getElementById('pl-reviewList');
@@ -2099,7 +2170,6 @@ function cancelReview(){
 }
 
 function confirmAddReviewedItems(){
-  // Read any edits made directly in the review inputs before saving.
   const wrap = document.getElementById('pl-reviewList');
   const inputs = wrap.querySelectorAll ? wrap.querySelectorAll('[data-idx]') : [];
   inputs.forEach(el=>{
@@ -2128,7 +2198,6 @@ function confirmAddReviewedItems(){
   afterDataChange();
 }
 
-// Pure function: total value of a batch of items (price x qty), like a purchase invoice total.
 function computeInvoiceTotal(items){
   return items.reduce((s,it)=> s + ((it.price||0) * (it.qty||0)), 0);
 }
@@ -2194,7 +2263,6 @@ function renderCustomers(){
   });
 }
 
-/* ---------- add customer ---------- */
 function showAddCustomer(){
   document.getElementById('dashView').classList.add('hidden');
   document.getElementById('addCustView').classList.remove('hidden');
@@ -2214,7 +2282,6 @@ function addCustomer(){
   afterDataChange();
 }
 
-/* ---------- settings: UPI + backup ---------- */
 function showSettings(){
   document.getElementById('dashView').classList.add('hidden');
   document.getElementById('settingsView').classList.remove('hidden');
@@ -2277,7 +2344,7 @@ async function backupData(){
       await downloadsCap.save({ filename, data: json });
       showBanner('✅ Backup saved');
     }catch(e){
-      showBanner('Backup was not saved (cancelled or unavailable)');
+      showBanner('Backup was not saved');
     }
   } else {
     const blob = new Blob([json], {type:'application/json'});
@@ -2288,7 +2355,6 @@ async function backupData(){
   }
 }
 
-/* ---------- customer detail ---------- */
 function openCustomer(id){
   activeCustomerId = id;
   const c = loadCustomers().find(x=>x.id===id);
@@ -2366,7 +2432,6 @@ function addTxn(type){
   afterDataChange();
 }
 
-/* ---------- UPI ---------- */
 function upiQuery(pa, pn, am, tn){
   let q = 'pa=' + encodeURIComponent(pa).replace(/%40/g,'@') + '&pn=' + encodeURIComponent(pn || 'Shop');
   if(Number(am) > 0) q += '&am=' + encodeURIComponent(Number(am).toFixed(2));
@@ -2384,7 +2449,6 @@ function buildUpiLink(amount, customerName){
   return 'upi://pay?' + upiQuery(upi.upiId, upi.shopName, amount, 'Udhar ' + (customerName||'').slice(0,30));
 }
 
-// https link (tappable in WhatsApp) that opens the pay page of this same app
 function buildPayPageLink(amount, customerName){
   const upi = loadUpi();
   if(!upi.upiId) return null;
@@ -2406,7 +2470,6 @@ function copyPayLink(){
   } else { showBanner('Copy not supported on this device'); }
 }
 
-/* ---------- customer-facing pay page ---------- */
 function copyPayUpiId(){
   const t = document.getElementById('pay-upiid').textContent;
   if(navigator.clipboard){ navigator.clipboard.writeText(t).then(()=>showBanner('📋 UPI ID copied')).catch(()=>{}); }
@@ -2422,7 +2485,7 @@ function renderPayPage(p){
   document.getElementById('appTitle').textContent = '💳 ' + pn;
   document.getElementById('payView').classList.remove('hidden');
   if(!/^[\w.\-]{2,}@[A-Za-z0-9]{2,}$/.test(pa) || am<=0){
-    document.getElementById('pay-for').textContent = 'This payment link is not valid. Please ask the shop for a new one.';
+    document.getElementById('pay-for').textContent = 'This payment link is not valid.';
     document.getElementById('pay-amt').textContent = '';
     return;
   }
@@ -2450,7 +2513,7 @@ function openUpiApp(e){
   const c = loadCustomers().find(x=>x.id===activeCustomerId);
   const link = buildUpiLink(amt>0?amt:0, c?c.name:'Customer');
   document.getElementById('cd-openUpi').href = link;
-  return true; // real href, browser/OS handles it — may or may not be allowed by the UPI app
+  return true;
 }
 
 function clearDateFilter(){
@@ -2498,7 +2561,6 @@ function copyUpiId(){
   }
 }
 
-/* ---------- WhatsApp ---------- */
 function prepWhatsApp(){
   const c = loadCustomers().find(x=>x.id===activeCustomerId);
   if(!c) return;
@@ -2537,7 +2599,7 @@ function dateRangeArray(fromDate, toDate){
 }
 function getWeekRange(anchorDate){
   const d = parseISODate(anchorDate);
-  const dow = d.getDay(); // 0=Sun..6=Sat
+  const dow = d.getDay();
   const mondayOffset = (dow===0) ? -6 : (1-dow);
   const start = addDays(anchorDate, mondayOffset);
   const end = addDays(start, 6);
@@ -2550,7 +2612,7 @@ function getMonthRange(anchorDate){
   return [start, end];
 }
 
-/* ---------- profit calculation engine ---------- */
+/* ---------- calculations ---------- */
 function sumExpensesInRange(fromDate, toDate, isSalary, method){
   return loadExpenses()
     .filter(e=>e.date>=fromDate && e.date<=toDate)
@@ -2569,37 +2631,22 @@ function computeDayMetrics(date){
   const ds = getDailySales(date);
   const onlineSales = Number(ds.onlineSales)||0;
 
-  // Total expenses/salary (both payment methods) — this is what Profit subtracts, since a
-  // cost reduces profit no matter how it was paid.
   const expenses = sumExpensesInRange(date, date, false);
   const staffSalary = sumExpensesInRange(date, date, true);
-  // Each payment-method bucket computed explicitly (not as a "whatever's left" remainder),
-  // since there are now three methods: cash, online, and own-money.
-  // Cash-only — this is what actually leaves the physical till, so only this part affects
-  // cash reconciliation / the auto-calculated Cash Sales below.
   const expensesCash = sumExpensesInRange(date, date, false, 'cash');
   const staffSalaryCash = sumExpensesInRange(date, date, true, 'cash');
   const expensesOnline = sumExpensesInRange(date, date, false, 'online');
   const staffSalaryOnline = sumExpensesInRange(date, date, true, 'online');
-  // Own-money — expenses YOU personally paid for, not from the shop's cash or online funds.
-  // These still count as a real business cost (so they reduce Estimated Profit normally),
-  // but they also come straight out of your own pocket, so they reduce In Hand Profit too.
   const expensesOwnMoney = sumExpensesInRange(date, date, false, 'ownmoney');
   const staffSalaryOwnMoney = sumExpensesInRange(date, date, true, 'ownmoney');
 
   const custCash = sumCustomerPaymentsInRange(date, date, 'cash');
   const custOnline = sumCustomerPaymentsInRange(date, date, 'online');
   const openingCash = Number(ds.openingCash)||0;
-  // Own Money Added now auto-fetches from Shop Expenses entries tagged "Own Money" for this
-  // date, instead of needing manual entry. Any OLD manually-entered value (from before this
-  // auto-fetch existed) is still added on top, so past records aren't silently changed.
   const ownMoneyAddedManualLegacy = Number(ds.ownMoneyAdded)||0;
   const ownMoneyAdded = ownMoneyAddedManualLegacy + expensesOwnMoney + staffSalaryOwnMoney;
   const closingCashActual = (ds.closingCashActual===null || ds.closingCashActual===undefined || ds.closingCashActual==='') ? null : Number(ds.closingCashActual);
 
-  // Cash Sales: use the manually entered figure if there is one. Otherwise, if a Closing
-  // Cash count was entered, work backwards from the cash count — using only cash-paid
-  // expenses/salary, since online-paid ones never touched the till.
   const cashSalesManual = (ds.cashSales===null || ds.cashSales===undefined || ds.cashSales==='') ? null : Number(ds.cashSales);
   let cashSales, cashSalesIsDerived;
   if(cashSalesManual!==null){
@@ -2612,20 +2659,11 @@ function computeDayMetrics(date){
   }
 
   const totalSales = cashSales + onlineSales;
-  // Overall Profit = actual sales performance minus ALL expenses, regardless of how each was
-  // paid. Own Money Added does NOT affect this — it only affects In Hand Profit below.
   const estimatedProfit = totalSales - expenses - staffSalary;
-  // Expected Closing Cash uses sales-cash and cash-paid costs only — owner's personal top-up
-  // is tracked separately (ownMoneyAdded) so a shortfall always shows honestly in Cash Difference.
   const expectedClosingCash = openingCash + cashSales + custCash - expensesCash - staffSalaryCash;
   const cashDifference = (closingCashActual===null) ? null : (closingCashActual - expectedClosingCash);
-  // Split of profit by where the money sits: cash-side profit stays in the till (never withdrawn
-  // here), online-side profit is what actually gets taken out. cashProfit + onlineProfit = estimatedProfit.
   const cashProfit = cashSales - expensesCash - staffSalaryCash;
   const onlineProfit = onlineSales - expensesOnline - staffSalaryOnline;
-  // True when there's real cost logged for this day but genuinely NO sales information yet —
-  // no manual Cash Sales, no Closing Cash count (so nothing to derive from), no Online Sales.
-  // In that case any "profit" number is meaningless, not a real loss — just missing data.
   const dataIncomplete = (expenses>0 || staffSalary>0)
     && cashSalesManual===null && closingCashActual===null && onlineSales===0;
   return {
@@ -2638,8 +2676,7 @@ function computeDayMetrics(date){
     recorded: hasDailyRecord(date)
   };
 }
-// All-time running total of ONLINE-side profit, minus any of your own money ever put into
-// the shop — this is the real money you actually hold, after accounting for personal top-ups.
+
 function computeInHandProfitAllTime(){
   const dailyDates = Object.keys(loadDailySalesAll());
   const expenseDates = loadExpenses().map(e=>e.date);
@@ -2648,7 +2685,7 @@ function computeInHandProfitAllTime(){
   return dateRangeArray(allDates[0], allDates[allDates.length-1])
     .reduce((s,d)=>{
       const m = computeDayMetrics(d);
-      return s + m.onlineProfit - m.ownMoneyAdded; // ownMoneyAdded already folds in expensesOwnMoney + staffSalaryOwnMoney
+      return s + m.onlineProfit - m.ownMoneyAdded;
     }, 0);
 }
 
@@ -2737,7 +2774,6 @@ function currentDashRange(){
 
 function buildBarChart(days){
   const w = Math.max(360, days.length*44);
-  const h = 160;
   const maxVal = Math.max(1, ...days.map(d=>Math.max(d.totalSales, d.estimatedProfit, 0)));
   const barW = 14;
   let bars = '';
@@ -2771,7 +2807,7 @@ function renderDashboard(){
   const singleDayIncomplete = (dashRangeType==='daily' && m.days[0] && m.days[0].dataIncomplete);
   if(singleDayIncomplete){
     document.getElementById('db-profit').textContent = '⏳ —';
-    document.getElementById('db-profitLabel').textContent = 'No sales entered yet for this day — profit will show once you add Cash/Online Sales';
+    document.getElementById('db-profitLabel').textContent = 'No sales entered yet for this day';
   } else {
     document.getElementById('db-profit').textContent = fmtMoney(m.totalProfit);
     document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
@@ -2782,7 +2818,7 @@ function renderDashboard(){
   if(m.incompleteDaysCount>0){
     html += `<div style="background:rgba(192,57,43,0.12); border:1px solid var(--owe); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
       <b>⚠️ ${m.incompleteDaysCount} day(s) in this period have no sales entered</b><br>
-      <span style="font-size:0.85rem;">Contributing ₹${Math.round(m.incompleteDaysShortfall).toLocaleString('en-IN')} to the figure above — not a real loss, just missing data. Go to Daily Sales for that date and fill in the real numbers.</span>
+      <span style="font-size:0.85rem;">Contributing ₹${Math.round(m.incompleteDaysShortfall).toLocaleString('en-IN')} to the figure above.</span>
     </div>`;
   }
   html += metricRow('Profit this period — Cash side (stays in till)', fmtMoney(m.totalCashProfit));
@@ -2799,18 +2835,18 @@ function renderDashboard(){
   html += metricRow('— paid by Cash', fmtMoney(m.totalStaffSalaryCash));
   html += metricRow('— paid Online', fmtMoney(m.totalStaffSalaryOnline));
   html += metricRow('— paid by Own Money', fmtMoney(m.totalStaffSalaryOwnMoney));
-  html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Customer A/c collections (already-recorded sales, not added again)</div>';
+  html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Customer A/c collections</div>';
   html += metricRow('Customer A/c Cash Collection', fmtMoney(m.totalCustCash));
   html += metricRow('Customer A/c Online Collection', fmtMoney(m.totalCustOnline));
   if(m.totalOwnMoneyAdded>0){
-    html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Your own money (already subtracted from the profit above)</div>';
+    html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Your own money</div>';
     html += metricRow('Own Money Added', fmtMoney(m.totalOwnMoneyAdded));
   }
 
   if(dashRangeType==='daily'){
     const d = m.days[0];
     if(d.dataIncomplete){
-      html += metricRow('Status', '⏳ Awaiting sales entry — not a loss, just no data yet');
+      html += metricRow('Status', '⏳ Awaiting sales entry');
     }
     html += metricRow('Closing Cash (entered)', d.closingCashActual===null?'—':fmtMoney(d.closingCashActual));
     html += metricRow('Expected Closing Cash', fmtMoney(d.expectedClosingCash));
@@ -2829,7 +2865,7 @@ function renderDashboard(){
   document.getElementById('db-metrics').innerHTML = html;
   document.getElementById('db-chartTitle').textContent = 'Sales & Profit — ' + label;
   document.getElementById('db-chart').innerHTML = buildBarChart(m.days);
-  window.__lastDashMetrics = m; // used by report export
+  window.__lastDashMetrics = m;
   renderDetailedReportTables(m);
 }
 
@@ -2920,10 +2956,10 @@ function renderDailySummary(date){
   if(m.dataIncomplete){
     html += `<div style="background:rgba(192,57,43,0.12); border:1px solid var(--owe); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
       <b>⏳ No sales entered yet for this day</b><br>
-      <span style="font-size:0.85rem;">You've logged ₹${Math.round(m.expenses+m.staffSalary)} in expenses but no Cash/Online Sales — enter them above to see real profit. This is not a loss, just missing data.</span>
+      <span style="font-size:0.85rem;">You've logged ₹${Math.round(m.expenses+m.staffSalary)} in expenses but no Cash/Online Sales.</span>
     </div>`;
   }
-  html += metricRow('Estimated Profit' + (m.dataIncomplete ? ' (incomplete — see note above)' : ''), fmtMoney(m.estimatedProfit));
+  html += metricRow('Estimated Profit' + (m.dataIncomplete ? ' (incomplete)' : ''), fmtMoney(m.estimatedProfit));
   html += metricRow('🤲 In Hand Profit (all-time)', fmtMoney(computeInHandProfitAllTime()));
   html += metricRow('Total Sales', fmtMoney(m.totalSales));
   html += metricRow('— Cash Sales' + (m.cashSalesIsDerived ? ' (auto-calculated)' : ''), fmtMoney(m.cashSales));
@@ -2936,11 +2972,11 @@ function renderDailySummary(date){
   html += metricRow('— paid by Cash', fmtMoney(m.staffSalaryCash));
   html += metricRow('— paid Online', fmtMoney(m.staffSalaryOnline));
   html += metricRow('— paid by Own Money', fmtMoney(m.staffSalaryOwnMoney));
-  html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Customer A/c collections (already-recorded sales, not added again)</div>';
+  html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Customer A/c collections</div>';
   html += metricRow('Customer A/c Cash Collection', fmtMoney(m.custCash));
   html += metricRow('Customer A/c Online Collection', fmtMoney(m.custOnline));
   if(m.ownMoneyAdded>0){
-    html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Your own money (already subtracted from the profit above)</div>';
+    html += '<div style="font-size:0.75rem; color:var(--muted); margin:10px 0 4px;">Your own money</div>';
     html += metricRow('Own Money Added', fmtMoney(m.ownMoneyAdded));
   }
   html += metricRow('Expected Closing Cash', fmtMoney(m.expectedClosingCash));
@@ -2957,8 +2993,6 @@ function saveDailySales(){
   const opening = numOrNull(document.getElementById('ds-opening').value);
   const cash = numOrNull(document.getElementById('ds-cash').value);
   const online = numOrNull(document.getElementById('ds-online').value);
-  // Own Money is no longer saved from this form — it's now auto-fetched (at display/calc time)
-  // from Shop Expenses entries tagged "Own Money" for this date, so there's nothing to persist here.
   const closing = numOrNull(document.getElementById('ds-closing').value);
   upsertDailySales(date, {
     openingCash: opening||0,
@@ -2978,18 +3012,17 @@ function saveDailySales(){
     }
   }
 
-  showBanner(carried ? ('✅ Day saved — carried ₹'+closing+' forward into next day opening cash') : '✅ Day saved');
+  showBanner(carried ? ('✅ Day saved — carried forward into next day opening') : '✅ Day saved');
   loadDailySalesForm();
   afterDataChange();
 }
 
-/* ---------- report export ---------- */
+/* ---------- reports ---------- */
 function onExpenseFilterChange(){
   if(window.__lastDashMetrics) renderDetailedReportTables(window.__lastDashMetrics);
 }
 
 let chosenReportMode = null;
-
 function openReportModal(){
   chosenReportMode = null;
   document.getElementById('reportModal').classList.add('hidden');
@@ -3022,10 +3055,9 @@ function buildSummaryRows(m, mode){
       ['Online Sales', m.onlineSales],
       ['Online Expenses', m.totalExpensesOnline],
       ['Online Staff Salary', m.totalStaffSalaryOnline],
-      ['Own Money Added via Daily Sales (all-time, subtracted below)', m.totalOwnMoneyAdded],
-      ['Own Money spent via Shop Expenses (all-time, subtracted below)', m.totalExpensesOwnMoney + m.totalStaffSalaryOwnMoney],
+      ['Own Money Added via Daily Sales', m.totalOwnMoneyAdded],
+      ['Own Money spent via Shop Expenses', m.totalExpensesOwnMoney + m.totalStaffSalaryOwnMoney],
       ['🤲 In Hand Profit (all-time)', computeInHandProfitAllTime()],
-      ['— For reference —', ''],
       ['Cash Sales', m.cashSales],
       ['Total Sales (Cash+Online)', m.totalSales],
       ['Expenses/Purchases (all)', m.totalExpenses],
@@ -3039,13 +3071,7 @@ function buildSummaryRows(m, mode){
       ['Customer A/c Cash Collection', m.totalCustCash],
       ['Customer A/c Online Collection', m.totalCustOnline],
       ['Expenses/Purchases', m.totalExpenses],
-      ['  paid by Cash', m.totalExpensesCash],
-      ['  paid Online', m.totalExpensesOnline],
-      ['  paid by Own Money', m.totalExpensesOwnMoney],
       ['Staff Salary', m.totalStaffSalary],
-      ['  paid by Cash', m.totalStaffSalaryCash],
-      ['  paid Online', m.totalStaffSalaryOnline],
-      ['  paid by Own Money', m.totalStaffSalaryOwnMoney],
       ['🏛️ Estimated Profit', m.totalProfit],
       ['Average Daily Sales', Math.round(m.avgDailySales)],
       ['Average Daily Profit', Math.round(m.avgDailyProfit)]
@@ -3069,7 +3095,6 @@ function buildExpenseDetailRows(fromDate, toDate, categoryFilter){
     }));
 }
 
-// Non-salary expenses only — for the "Expenses" report section (Staff Salary has its own section)
 function buildExpensesSectionRows(fromDate, toDate){
   return buildExpenseDetailRows(fromDate, toDate).filter(r=>r.Category!==STAFF_SALARY_CAT);
 }
@@ -3126,30 +3151,6 @@ function getSelectedReportSections(){
   };
 }
 
-function buildDailyDetailRows(m){
-  return m.days.map(d=>({
-    Date: d.date,
-    'Cash Sales': d.cashSales,
-    'Online Sales': d.onlineSales,
-    'Customer Cash Collection': d.custCash,
-    'Customer Online Collection': d.custOnline,
-    'Expenses/Purchases': d.expenses,
-    'Expenses (Cash)': d.expensesCash,
-    'Expenses (Online)': d.expensesOnline,
-    'Staff Salary': d.staffSalary,
-    'Staff Salary (Cash)': d.staffSalaryCash,
-    'Staff Salary (Online)': d.staffSalaryOnline,
-    'Total Sales': d.totalSales,
-    'Estimated Profit': d.estimatedProfit,
-    'Opening Cash': d.openingCash,
-    'Own Money Added': d.ownMoneyAdded,
-    'Closing Cash (actual)': d.closingCashActual===null?'':d.closingCashActual,
-    'Expected Closing Cash': d.expectedClosingCash,
-    'Cash Difference': d.cashDifference===null?'':d.cashDifference,
-    'Status': d.cashDifference===null ? '' : (d.needsReview ? 'Needs Review' : 'OK')
-  }));
-}
-
 function downloadReport(format){
   const m = window.__lastDashMetrics;
   if(!m){ showBanner('Open the dashboard first'); return; }
@@ -3163,8 +3164,6 @@ function downloadReport(format){
   else generateExcelReport(m, sections, mode);
 }
 
-// Draws a simple table starting at startY. Returns the Y position after the table.
-// columns: [{header, key, width, maxChars}]. Handles page breaks, re-printing the header on each new page.
 function openPlExportModal(){ document.getElementById('plExportModal').classList.remove('hidden'); }
 function closePlExportModal(){ document.getElementById('plExportModal').classList.add('hidden'); }
 
@@ -3185,12 +3184,12 @@ function exportMasterSheet(format){
   if(!rows.length){ showBanner('Master Sheet is empty'); return; }
   closePlExportModal();
   if(format==='excel'){
-    if(!window.XLSX){ showBanner('⚠️ Excel library not loaded — check your internet connection'); return; }
+    if(!window.XLSX){ showBanner('⚠️ Excel library not loaded'); return; }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Master Sheet');
     XLSX.writeFile(wb, 'Master-Sheet-'+todayStr()+'.xlsx');
   } else {
-    if(!(window.jspdf && window.jspdf.jsPDF)){ showBanner('⚠️ PDF library not loaded — check your internet connection'); return; }
+    if(!(window.jspdf && window.jspdf.jsPDF)){ showBanner('⚠️ PDF library not loaded'); return; }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     const upi = loadUpi();
@@ -3246,7 +3245,7 @@ function pdfDrawTable(doc, startY, columns, rows, title){
 function generatePdfReport(m, sections, mode){
   sections = sections || {summary:true, sales:true, expenses:true, salary:true, customers:true, cash:true};
   mode = mode || 'official';
-  if(!(window.jspdf && window.jspdf.jsPDF)){ showBanner('⚠️ PDF library not loaded — check your internet connection'); return; }
+  if(!(window.jspdf && window.jspdf.jsPDF)){ showBanner('⚠️ PDF library not loaded'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const upi = loadUpi();
@@ -3282,7 +3281,7 @@ function generatePdfReport(m, sections, mode){
     });
     y += chartH + 10;
     doc.setFontSize(9); doc.setTextColor(100);
-    doc.text('Blue = Sales, Green/Red = Profit (red = loss day)', 14, y);
+    doc.text('Blue = Sales, Green/Red = Profit', 14, y);
     doc.setTextColor(0);
   }
 
@@ -3360,7 +3359,7 @@ function generatePdfReport(m, sections, mode){
 function generateExcelReport(m, sections, mode){
   sections = sections || {summary:true, sales:true, expenses:true, salary:true, customers:true, cash:true};
   mode = mode || 'official';
-  if(!window.XLSX){ showBanner('⚠️ Excel library not loaded — check your internet connection'); return; }
+  if(!window.XLSX){ showBanner('⚠️ Excel library not loaded'); return; }
   const wb = XLSX.utils.book_new();
   const addSheet = (rows, emptyRow, name) => {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length?rows:[emptyRow]), name);
@@ -3374,20 +3373,16 @@ function generateExcelReport(m, sections, mode){
     addSheet(buildSalesRows(m), {Date:'',Note:'No data'}, 'Sales');
   }
   if(sections.expenses){
-    addSheet(buildExpensesSectionRows(m.fromDate, m.toDate), {Date:'',Category:'',Note:'No expenses in this period'}, 'Expenses');
+    addSheet(buildExpensesSectionRows(m.fromDate, m.toDate), {Date:'',Category:'',Note:'No expenses'}, 'Expenses');
   }
   if(sections.salary){
-    addSheet(buildStaffSalaryRows(m.fromDate, m.toDate), {Date:'',Note:'No salary entries in this period'}, 'Staff Salary');
+    addSheet(buildStaffSalaryRows(m.fromDate, m.toDate), {Date:'',Note:'No salary entries'}, 'Staff Salary');
   }
   if(sections.customers){
-    addSheet(buildCustomerAccountRows(m.fromDate, m.toDate), {Date:'',Customer:'',Note:'No activity in this period'}, 'Customer Accounts');
+    addSheet(buildCustomerAccountRows(m.fromDate, m.toDate), {Date:'',Customer:'',Note:'No activity'}, 'Customer Accounts');
   }
   if(sections.cash){
     addSheet(buildCashReconciliationRows(m), {Date:'',Status:'No data'}, 'Cash Reconciliation');
-  }
-  // Keep the full daily totals sheet only when the full picture is wanted (summary+sales+expenses+salary all on)
-  if(sections.summary && sections.sales && sections.expenses && sections.salary){
-    addSheet(buildDailyDetailRows(m), {Date:'',Status:'No data'}, 'Daily Details (All)');
   }
 
   const safePeriod = reportPeriodLabel(m).replace(/[^a-zA-Z0-9]+/g,'_');
