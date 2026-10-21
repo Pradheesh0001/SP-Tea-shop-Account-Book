@@ -854,6 +854,7 @@ window.addEventListener('error', function(e){
     <p class="hint" style="margin-bottom:10px;">Paste your Google Client ID, then connect.</p>
     <input id="s-gClientId" placeholder="Google OAuth Client ID">
     <button style="background:#4285F4;" onclick="connectGoogleDrive()">🔗 Connect to Server</button>
+    <button class="ghost" onclick="syncDiagnose()">🔍 Check Sync Status</button>
     <p class="hint" id="driveStatus">Not connected</p>
 
     <h3>Backup</h3>
@@ -1104,7 +1105,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v55-fast-sync';
+const APP_VERSION = '2026-10-21-v57-sync-check';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1122,41 +1123,83 @@ function handleDriveAuthError(res){
   return false;
 }
 
-function connectGoogleDrive(){
+let driveTokenAt = 0, driveReconnecting = false;
+function connectGoogleDrive(_statusId, silent){
   const typed = (document.getElementById('s-gClientId') && document.getElementById('s-gClientId').value.trim()) || '';
   const clientId = BAKED_CLIENT_ID || typed || localStorage.getItem('udhar_gdrive_clientid') || '';
-  if(!clientId){ showBanner('Google Client ID missing'); return; }
-  if(!window.google || !google.accounts){ showBanner('Google sign-in still loading, try again in a moment'); return; }
+  if(!clientId){ if(!silent) showBanner('Google Client ID missing'); return; }
+  if(!window.google || !google.accounts){ if(!silent) showBanner('Google sign-in still loading, try again in a moment'); return; }
   localStorage.setItem('udhar_gdrive_clientid', clientId);
   const tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: clientId,
     scope: 'https://www.googleapis.com/auth/drive.file',
     callback: async (resp)=>{
+      driveReconnecting = false;
       if(resp && resp.access_token){
         gDriveToken = resp.access_token;
+        driveTokenAt = Date.now();
         driveConnectedThisSession = true;
+        localStorage.setItem('udhar_drive_was_connected', '1');
         setDriveStatus('✅ Connected');
-        showBanner('✅ Connected to server');
+        showBanner(silent ? '✅ Live sync resumed' : '✅ Connected to server');
         const ok = await syncToDrive();
-        if(ok) showBanner('✅ Shared data loaded & synced');
-      } else {
+        if(ok && !silent) showBanner('✅ Shared data loaded & synced');
+      } else if(!silent){
         showBanner('⚠️ Google sign-in failed or was cancelled');
       }
-    }
+    },
+    error_callback: ()=>{ driveReconnecting = false; }
   });
-  tokenClient.requestAccessToken();
+  tokenClient.requestAccessToken(silent ? { prompt: '' } : {});
+}
+
+/* auto-resume live sync: the first tap after opening the app (or after the Google token ages) re-links silently */
+['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev, function(){
+  if(!currentUser || driveReconnecting) return;
+  if(localStorage.getItem('udhar_drive_was_connected')!=='1') return;
+  const stale = !gDriveToken || (Date.now() - driveTokenAt > 50*60*1000);
+  if(!stale || !window.google || !google.accounts) return;
+  driveReconnecting = true;
+  setTimeout(()=>{ driveReconnecting = false; }, 20000);
+  connectGoogleDrive(null, true);
+}, true));
+
+async function syncDiagnose(){
+  if(!gDriveToken){ alert('Not connected. Tap "Connect to Server" first.'); return; }
+  const H = { cache:'no-store', headers:{ 'Authorization':'Bearer '+gDriveToken } };
+  let out = 'SYNC CHECK\n';
+  try{
+    const who = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', H);
+    out += 'Google account: ' + (who.ok ? ((await who.json()).user||{}).emailAddress : 'unknown (code '+who.status+')') + '\n';
+    const q = encodeURIComponent("name='udhar-book-data.json' and trashed=false");
+    const lr = await fetch('https://www.googleapis.com/drive/v3/files?q='+q+'&fields=files(id,createdTime,modifiedTime)', H);
+    if(!lr.ok){ alert(out + 'Could not list files (code '+lr.status+')'); return; }
+    const files = (await lr.json()).files || [];
+    out += 'Data files this account can see: ' + files.length + '\n';
+    out += 'File used by this phone: ...' + String(gDriveFileId||'none').slice(-6) + '\n';
+    for(const f of files){
+      const r = await fetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?alt=media', H);
+      if(r.ok){
+        const d = await r.json();
+        out += '• ...'+f.id.slice(-6)+': saved '+(d.exportedAt||'?')+', expenses '+(d.expenses||[]).length+', customers '+(d.customers||[]).length+'\n';
+      }
+    }
+    out += 'This phone: expenses '+loadExpenses().length+', customers '+loadCustomers().length+'\n';
+    out += '\nBoth phones must show the SAME Google account and the SAME file.';
+  }catch(e){ out += 'Error: ' + (e.message||e); }
+  alert(out);
 }
 
 async function pullFromDrive(quick){
   if(!gDriveToken) return 'error';
   try{
     if(quick && gDriveFileId){
-      const r0 = await fetch(`https://www.googleapis.com/drive/v3/files/${gDriveFileId}?alt=media`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
+      const r0 = await fetch(`https://www.googleapis.com/drive/v3/files/${gDriveFileId}?alt=media`, { cache:'no-store', headers:{ 'Authorization':'Bearer '+gDriveToken } });
       if(r0.ok){ try{ mergeRemoteData(await r0.json()); }catch(e){} return 'ok'; }
       if(handleDriveAuthError(r0)) return 'error';
     }
     const q = encodeURIComponent("name='udhar-book-data.json' and trashed=false");
-    const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime&fields=files(id,createdTime)`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
+    const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime&fields=files(id,createdTime)`, { cache:'no-store', headers:{ 'Authorization':'Bearer '+gDriveToken } });
     if(!listRes.ok){
       if(!handleDriveAuthError(listRes)) setDriveStatus('⚠️ Could not read Drive (code '+listRes.status+')');
       return 'error';
@@ -1171,7 +1214,7 @@ async function pullFromDrive(quick){
     gDriveFileId = files[0].id;
     localStorage.setItem('udhar_gdrive_fileid', gDriveFileId);
     for(const f of files){
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, { cache:'no-store', headers:{ 'Authorization':'Bearer '+gDriveToken } });
       if(res.ok){
         try{ mergeRemoteData(await res.json()); }catch(e){}
       }
@@ -1373,13 +1416,14 @@ async function pollDrive(){
     if(syncDirty){ await syncToDrive(); return; }
     const before = dataSnapshot();
     const r = await pullFromDrive(true);
-    if(r==='ok' && dataSnapshot()!==before){
-      refreshCurrentView();
-      setDriveStatus('✅ Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}));
+    if(r==='ok'){
+      const changed = dataSnapshot()!==before;
+      if(changed) refreshCurrentView();
+      setDriveStatus('🟢 Live · ' + (changed ? 'updated ' : 'checked ') + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}));
     }
   } finally { pollBusy = false; }
 }
-setInterval(pollDrive, 3000);
+setInterval(pollDrive, 1000);
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pollDrive(); });
 
 if(window.claude && claude.use){ claude.use('downloads').then(d=>{ downloadsCap = d; }).catch(()=>{ downloadsCap = null; }); }
