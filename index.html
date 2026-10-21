@@ -493,6 +493,8 @@ window.addEventListener('error', function(e){
         <div class="sub">🤲 In Hand Profit — Online Sales − Online Expenses − Own Money Added (all-time)</div>
       </div>
 
+      <div class="card" id="db-insights"></div>
+
       <div class="card">
         <div id="db-metrics"></div>
       </div>
@@ -531,12 +533,21 @@ window.addEventListener('error', function(e){
 
       <div id="reportModal" class="hidden card">
         <h3 style="margin-top:0;">Choose report sections</h3>
+        <div style="display:flex; gap:8px; margin-bottom:6px;">
+          <button type="button" class="ghost" style="margin:0; padding:8px; font-size:0.8rem;" onclick="toggleAllReportSections(true)">☑️ Select All</button>
+          <button type="button" class="ghost" style="margin:0; padding:8px; font-size:0.8rem;" onclick="toggleAllReportSections(false)">⏹️ Clear</button>
+        </div>
+        <label class="checkrow"><input type="checkbox" id="sec-insights" checked> 📈 Smart Dashboard (KPIs, charts, insights)</label>
         <label class="checkrow"><input type="checkbox" id="sec-summary" checked> Profit Summary</label>
         <label class="checkrow"><input type="checkbox" id="sec-sales" checked> Sales</label>
         <label class="checkrow"><input type="checkbox" id="sec-expenses" checked> Expenses</label>
         <label class="checkrow"><input type="checkbox" id="sec-salary" checked> Staff Salary</label>
         <label class="checkrow"><input type="checkbox" id="sec-customers" checked> Customer Accounts</label>
         <label class="checkrow"><input type="checkbox" id="sec-cash" checked> Cash Reconciliation</label>
+        <label class="checkrow"><input type="checkbox" id="sec-personal" checked> 🧍 Personal Expenses &amp; Cycles</label>
+        <label class="checkrow"><input type="checkbox" id="sec-balances" checked> 💰 Customer Outstanding Balances</label>
+        <label class="checkrow"><input type="checkbox" id="sec-purchase" checked> 🛒 Master Sheet (Purchase List)</label>
+        <label class="checkrow"><input type="checkbox" id="sec-po" checked> 📜 Purchase Orders in Period</label>
 
         <h3>Choose format</h3>
         <button style="background:var(--owe);" onclick="downloadReport('pdf')">📄 PDF</button>
@@ -1105,7 +1116,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v57-sync-check';
+const APP_VERSION = '2026-10-21-v59-powerbi-pdf';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -3498,6 +3509,7 @@ function renderDashboard(){
   document.getElementById('db-chartTitle').textContent = 'Sales & Profit — ' + label;
   document.getElementById('db-chart').innerHTML = buildBarChart(m.days);
   window.__lastDashMetrics = m;
+  renderInsights(m);
   renderDetailedReportTables(m);
 }
 
@@ -3786,8 +3798,9 @@ function buildCashReconciliationRows(m){
 function getSelectedReportSections(){
   const on = id => { const el=document.getElementById(id); return el ? el.checked : true; };
   return {
-    summary: on('sec-summary'), sales: on('sec-sales'), expenses: on('sec-expenses'),
-    salary: on('sec-salary'), customers: on('sec-customers'), cash: on('sec-cash')
+    insights: on('sec-insights'), summary: on('sec-summary'), sales: on('sec-sales'), expenses: on('sec-expenses'),
+    salary: on('sec-salary'), customers: on('sec-customers'), cash: on('sec-cash'),
+    personal: on('sec-personal'), balances: on('sec-balances'), purchase: on('sec-purchase'), po: on('sec-po')
   };
 }
 
@@ -3795,7 +3808,7 @@ async function downloadReport(format){
   const m = window.__lastDashMetrics;
   if(!m){ showBanner('Open the dashboard first'); return; }
   const sections = getSelectedReportSections();
-  if(!sections.summary && !sections.sales && !sections.expenses && !sections.salary && !sections.customers && !sections.cash){
+  if(!Object.values(sections).some(Boolean)){
     showBanner('Select at least one section first'); return;
   }
   const mode = chosenReportMode || 'official';
@@ -3855,21 +3868,23 @@ function pdfDrawTable(doc, startY, columns, rows, title){
   let y = startY;
   const rowH = 6;
   const pageBottom = 280;
+  const tw = columns.reduce((t,c)=>t+c.width,0);
 
   function drawHeader(){
     if(title){ doc.setFontSize(12); doc.setTextColor(0); doc.text(title, 14, y); y += 7; }
     doc.setFontSize(8); doc.setFont(undefined, 'bold');
+    doc.setFillColor(55,70,73); doc.rect(13, y-4, tw+2, 6, 'F'); doc.setTextColor(255);
     let x = 14;
     columns.forEach(c=>{ doc.text(c.header, x, y); x += c.width; });
-    y += 1;
-    doc.setDrawColor(180); doc.line(14, y, x, y);
-    y += 4.5;
+    doc.setTextColor(0);
+    y += 5;
     doc.setFont(undefined, 'normal');
   }
 
   drawHeader();
-  rows.forEach(row=>{
+  rows.forEach((row, ri)=>{
     if(y > pageBottom){ doc.addPage(); y = 16; drawHeader(); }
+    if(ri%2===1){ doc.setFillColor(246,246,245); doc.rect(13, y-4, tw+2, rowH, 'F'); }
     let x = 14;
     columns.forEach(c=>{
       let val = row[c.key];
@@ -3884,6 +3899,254 @@ function pdfDrawTable(doc, startY, columns, rows, title){
   return y + 4;
 }
 
+
+/* ---------- smart analytics + report helpers ---------- */
+function customerBalances(){
+  const bm = {};
+  loadTxns().forEach(t=>{ bm[t.customerId] = (bm[t.customerId]||0) + (t.type==='credit' ? t.amount : -t.amount); });
+  return loadCustomers().map(c=>({ name:c.name, phone:c.phone||'', bal: bm[c.id]||0 })).sort((a,b)=>b.bal-a.bal);
+}
+function categoryTotals(from, to){
+  const colors = {}; allCategories().forEach(c=>{ colors[c.name] = c.color; });
+  const t = {};
+  loadExpenses().filter(e=>e.date>=from && e.date<=to).forEach(e=>{ t[e.category] = (t[e.category]||0) + (Number(e.amount)||0); });
+  return Object.keys(t).map(n=>({ name:n, total:t[n], color: colors[n]||'#94a3b8' })).sort((a,b)=>b.total-a.total);
+}
+function computeKpis(m){
+  const rec = m.days.filter(d=>d.totalSales>0);
+  const best = rec.slice().sort((a,b)=>b.estimatedProfit-a.estimatedProfit)[0] || null;
+  const worst = rec.slice().sort((a,b)=>a.estimatedProfit-b.estimatedProfit)[0] || null;
+  const spend = m.totalExpenses + m.totalStaffSalary;
+  const ts = m.totalSales;
+  return { best, worst, spend,
+    margin: ts>0 ? m.totalProfit/ts*100 : 0,
+    expRatio: ts>0 ? spend/ts*100 : 0,
+    cashPct: ts>0 ? m.cashSales/ts*100 : 0,
+    outstanding: customerBalances().reduce((s,c)=>s+Math.max(0,c.bal),0) };
+}
+function rs(n){ return 'Rs. ' + Math.round(n||0).toLocaleString('en-IN'); }
+function insightLines(m){
+  const k = computeKpis(m), cats = categoryTotals(m.fromDate, m.toDate), L = [];
+  if(m.totalSales>0) L.push('Expenses and salary use '+k.expRatio.toFixed(0)+'% of sales; profit margin is '+k.margin.toFixed(1)+'%.');
+  if(cats[0] && k.spend>0) L.push('Biggest cost: '+cats[0].name+' - '+rs(cats[0].total)+' ('+(cats[0].total/k.spend*100).toFixed(0)+'% of spend).');
+  if(k.best) L.push('Best day: '+k.best.date+' with profit '+rs(k.best.estimatedProfit)+((k.worst && k.worst.date!==k.best.date) ? '; weakest day: '+k.worst.date+' ('+rs(k.worst.estimatedProfit)+').' : '.'));
+  if(m.totalSales>0) L.push('Cash is '+k.cashPct.toFixed(0)+'% of sales and online is '+(100-k.cashPct).toFixed(0)+'%.');
+  if(m.incompleteDaysCount>0) L.push(m.incompleteDaysCount+' day(s) have expenses but no sales entered, so profit may look lower than real.');
+  if(m.daysNeedingReview>0) L.push(m.daysNeedingReview+' day(s) show a cash shortfall and need review.');
+  if(k.outstanding>0) L.push('Customers owe '+rs(k.outstanding)+' in total.');
+  return L;
+}
+function personalRows(from, to){
+  return loadPersonalExpenses().filter(e=>e.date>=from && e.date<=to).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0)
+    .map(e=>({ Date:e.date, Category:e.category, 'Amount (₹)':Number(e.amount)||0, Note:e.note||'' }));
+}
+function personalCycleRows(){
+  return loadPeCycles().map(c=>({ 'Start':c.startDate, 'End':c.endDate, 'Online Profit (₹)':Math.round(c.inHandProfit), 'Expenses (₹)':Math.round(c.totalExpenses), 'Balance (₹)':Math.round(c.balance) }));
+}
+function balanceRows(){
+  return customerBalances().filter(c=>c.bal!==0).map(c=>({ Customer:c.name, Phone:c.phone, 'Outstanding (₹)':c.bal }));
+}
+function poRowsRange(from, to){
+  const out = [];
+  loadPoHistory().filter(o=>o.date>=from && o.date<=to).sort((a,b)=>a.date<b.date?-1:1).forEach(o=>{
+    (o.items||[]).forEach(it=>{
+      const rate = Number(it.price)||0, qty = Number(it.qty)||0;
+      out.push({ Date:o.date, Supplier:o.supplier||'', Item:it.name, Qty:qty, Unit:unitLabel(it.unit), 'Rate (₹)':rate, 'Total (₹)':rate*qty });
+    });
+  });
+  return out;
+}
+function kpiSheetRows(m, mode){
+  const k = computeKpis(m);
+  const rows = [
+    {Metric:'Period', Value:reportPeriodLabel(m)},
+    {Metric:'Total Sales', Value:Math.round(m.totalSales)},
+    {Metric:'Cash Sales', Value:Math.round(m.cashSales)},
+    {Metric:'Online Sales', Value:Math.round(m.onlineSales)},
+    {Metric:'Expenses + Salary', Value:Math.round(k.spend)},
+    {Metric:(mode==='personal'?'In-Hand Profit (all-time)':'Net Profit'), Value:Math.round(mode==='personal'?computeInHandProfitAllTime():m.totalProfit)},
+    {Metric:'Profit Margin %', Value:Number(k.margin.toFixed(1))},
+    {Metric:'Expense Ratio %', Value:Number(k.expRatio.toFixed(1))},
+    {Metric:'Average Daily Sales', Value:Math.round(m.avgDailySales)},
+    {Metric:'Customer Outstanding', Value:Math.round(k.outstanding)},
+    {Metric:'', Value:''}, {Metric:'KEY INSIGHTS', Value:''}
+  ];
+  insightLines(m).forEach(t=>rows.push({Metric:t, Value:''}));
+  rows.push({Metric:'', Value:''}, {Metric:'COST BY CATEGORY', Value:''});
+  categoryTotals(m.fromDate, m.toDate).forEach(c=>rows.push({Metric:c.name, Value:Math.round(c.total)}));
+  return rows;
+}
+function toggleAllReportSections(on){
+  document.querySelectorAll('#reportModal input[type=checkbox]').forEach(cb=>{ cb.checked = on; });
+}
+
+function renderInsights(m){
+  const el = document.getElementById('db-insights'); if(!el) return;
+  const k = computeKpis(m), cats = categoryTotals(m.fromDate, m.toDate);
+  const pc = m.totalProfit>=0 ? 'var(--paid)' : 'var(--owe)';
+  const card = (l,v,c)=>`<div style="flex:1 1 130px; background:var(--brand-light); border-radius:14px; padding:12px;"><div style="font-size:0.68rem; color:var(--muted); font-weight:700; letter-spacing:.04em;">${l}</div><div style="font-size:1.1rem; font-weight:800; color:${c||'var(--text)'};">${v}</div></div>`;
+  let h = '<h3 style="margin-top:0;">📈 Smart Insights</h3><div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">'
+    + card('NET PROFIT', fmtMoney(m.totalProfit), pc)
+    + card('MARGIN', k.margin.toFixed(1)+'%', pc)
+    + card('EXPENSE RATIO', k.expRatio.toFixed(0)+'%', k.expRatio>85?'var(--owe)':'var(--text)')
+    + card('AVG DAILY SALES', fmtMoney(m.avgDailySales))
+    + card('CUSTOMER DUES', fmtMoney(k.outstanding), k.outstanding>0?'var(--owe)':'var(--text)')
+    + '</div>';
+  if(m.totalSales>0){
+    h += `<div style="font-size:0.8rem; font-weight:600; margin-bottom:4px;">Cash vs Online sales</div>
+      <div style="display:flex; height:14px; border-radius:8px; overflow:hidden; margin-bottom:4px;"><div style="width:${k.cashPct}%; background:#64748b;"></div><div style="flex:1; background:var(--brand);"></div></div>
+      <div style="font-size:0.72rem; color:var(--muted); margin-bottom:14px;">Cash ${k.cashPct.toFixed(0)}% · Online ${(100-k.cashPct).toFixed(0)}%</div>`;
+  }
+  if(cats.length){
+    const max = cats[0].total || 1;
+    h += '<div style="font-size:0.8rem; font-weight:600; margin-bottom:6px;">Where the money goes</div>';
+    cats.slice(0,8).forEach(c=>{
+      h += `<div style="margin-bottom:6px;"><div style="display:flex; justify-content:space-between; font-size:0.78rem;"><span>${esc(c.name)}</span><span style="font-weight:700;">${fmtMoney(c.total)}</span></div>
+        <div style="height:8px; border-radius:6px; background:rgba(128,128,128,0.15);"><div style="height:8px; border-radius:6px; width:${(c.total/max*100).toFixed(1)}%; background:${esc(c.color)};"></div></div></div>`;
+    });
+  }
+  const tops = customerBalances().filter(c=>c.bal>0).slice(0,5);
+  if(tops.length){
+    h += '<div style="font-size:0.8rem; font-weight:600; margin:12px 0 4px;">Top customer dues</div>';
+    tops.forEach(c=>{ h += `<div class="paidRow"><span>${esc(c.name)}</span><span style="color:var(--owe); font-weight:700;">${fmtMoney(c.bal)}</span></div>`; });
+  }
+  const lines = insightLines(m);
+  if(lines.length){
+    h += '<div style="margin-top:12px; padding:12px; border-radius:12px; background:var(--brand-light); font-size:0.82rem; line-height:1.5;">'
+      + lines.map(t=>'💡 '+esc(t)).join('<br>') + '</div>';
+  }
+  el.innerHTML = h;
+}
+
+/* ---------- professional PDF dashboard ---------- */
+function hexRgb(h){ h=(h||'#64748b').replace('#',''); return [parseInt(h.slice(0,2),16)||0, parseInt(h.slice(2,4),16)||0, parseInt(h.slice(4,6),16)||0]; }
+function drawPdfHeader(doc, m, mode){
+  const upi = loadUpi();
+  doc.setFillColor(37,36,35); doc.rect(0,0,210,20,'F');
+  doc.setFillColor(242,200,15); doc.rect(0,20,210,1.4,'F');
+  doc.setTextColor(255); doc.setFontSize(15); doc.setFont(undefined,'bold'); doc.text(upi.shopName||'SP Tea Shop', 8, 9);
+  doc.setFontSize(8); doc.setFont(undefined,'normal'); doc.setTextColor(200);
+  doc.text('Business Performance Report  |  '+reportPeriodLabel(m)+'  |  '+(mode==='personal'?'Personal':'Official')+' mode', 8, 15.5);
+  doc.text('Generated '+todayStr(), 202, 15.5, {align:'right'});
+  doc.setTextColor(0);
+}
+const PBI = ['#01B8AA','#374649','#FD625E','#F2C80F','#5F6B6D','#8AD4EB','#FE9666','#A66999'];
+function pdfTile(doc, x, y, w, h, title){
+  doc.setFillColor(255,255,255); doc.setDrawColor(225,223,222); doc.setLineWidth(0.2); doc.roundedRect(x, y, w, h, 1.5, 1.5, 'FD');
+  if(title){ doc.setFontSize(8); doc.setFont(undefined,'bold'); doc.setTextColor(50,49,48); doc.text(title, x+3, y+6); doc.setFont(undefined,'normal'); }
+  doc.setTextColor(0);
+}
+function pdfDonut(doc, cx, cy, r, parts){
+  const tot = parts.reduce((t,p)=>t+p.v,0); if(tot<=0) return;
+  let a = -Math.PI/2;
+  parts.forEach(p=>{
+    if(p.v<=0) return;
+    const rgb = hexRgb(p.color); doc.setFillColor(rgb[0],rgb[1],rgb[2]);
+    const sweep = p.v/tot*2*Math.PI, steps = Math.max(2, Math.ceil(sweep/0.06));
+    for(let i=0;i<steps;i++){
+      const a1 = a+sweep*i/steps, a2 = a+sweep*(i+1)/steps+0.012;
+      doc.triangle(cx, cy, cx+r*Math.cos(a1), cy+r*Math.sin(a1), cx+r*Math.cos(a2), cy+r*Math.sin(a2), 'F');
+    }
+    a += sweep;
+  });
+  doc.setFillColor(255,255,255); doc.circle(cx, cy, r*0.58, 'F');
+}
+function pdfLegend(doc, x, y, parts, total){
+  parts.forEach(p=>{
+    const rgb = hexRgb(p.color);
+    doc.setFillColor(rgb[0],rgb[1],rgb[2]); doc.rect(x, y-2.2, 2.4, 2.4, 'F');
+    doc.setFontSize(6.5); doc.setTextColor(60); doc.text(String(p.name).slice(0,11)+'  '+(total>0?Math.round(p.v/total*100):0)+'%', x+3.6, y);
+    y += 5;
+  });
+  doc.setTextColor(0);
+}
+function drawPdfDashboard(doc, m, mode, y0){
+  const k = computeKpis(m);
+  const pv = mode==='personal' ? computeInHandProfitAllTime() : m.totalProfit;
+  const dark = [166,124,0], red = [220,60,58], teal = [1,150,140], slate = [55,70,73];
+  const tiles = [
+    ['Total Sales', rs(m.totalSales), m.daysRecorded+' days recorded', teal],
+    ['Expenses + Salary', rs(k.spend), k.expRatio.toFixed(0)+'% of sales', red],
+    [mode==='personal'?'In-Hand Profit':'Net Profit', rs(pv), 'Margin '+k.margin.toFixed(1)+'%', pv>=0?teal:red],
+    ['Customer Dues', rs(k.outstanding), 'to collect', dark],
+    ['Cash Sales', rs(m.cashSales), k.cashPct.toFixed(0)+'% of sales', slate],
+    ['Online Sales', rs(m.onlineSales), (m.totalSales>0?(100-k.cashPct).toFixed(0):0)+'% of sales', slate],
+    ['Avg Daily Sales', rs(m.avgDailySales), 'per recorded day', slate],
+    ['Avg Daily Profit', rs(m.avgDailyProfit), 'per recorded day', m.avgDailyProfit>=0?teal:red]
+  ];
+  let y = 26;
+  tiles.forEach((t,i)=>{
+    const x = 8 + (i%4)*48.25, yy = y + Math.floor(i/4)*22;
+    pdfTile(doc, x, yy, 46.25, 19, '');
+    doc.setFillColor(t[3][0],t[3][1],t[3][2]); doc.rect(x, yy+2, 1.1, 15, 'F');
+    doc.setFontSize(6.5); doc.setTextColor(110); doc.text(t[0].toUpperCase(), x+4, yy+5.5);
+    doc.setFontSize(12.5); doc.setFont(undefined,'bold'); doc.setTextColor(t[3][0],t[3][1],t[3][2]); doc.text(t[1], x+4, yy+12);
+    doc.setFont(undefined,'normal'); doc.setFontSize(6); doc.setTextColor(130); doc.text(t[2], x+4, yy+16.5);
+  });
+  doc.setTextColor(0);
+  y += 47;
+
+  /* trend combo chart */
+  pdfTile(doc, 8, y, 124, 62, 'Sales (bars) and Profit (line) by day');
+  const x0 = 24, cw = 104, ch = 40, top = y+12, n = Math.max(1, m.days.length);
+  const maxV = Math.max(1, ...m.days.map(d=>Math.max(d.totalSales, d.estimatedProfit, 0)));
+  doc.setDrawColor(235); doc.setLineWidth(0.2);
+  for(let g=0; g<=4; g++){
+    const gy = top + ch - ch*g/4;
+    doc.line(x0, gy, x0+cw, gy);
+    doc.setFontSize(5.5); doc.setTextColor(140); doc.text(Math.round(maxV*g/4).toLocaleString('en-IN'), x0-1.5, gy+1, {align:'right'});
+  }
+  const slot = cw/n, bw = Math.max(0.5, Math.min(5, slot*0.6));
+  let prev = null;
+  m.days.forEach((d,i)=>{
+    const cx = x0 + i*slot + slot/2, sH = d.totalSales/maxV*ch;
+    doc.setFillColor(1,184,170); doc.rect(cx-bw/2, top+ch-sH, bw, sH, 'F');
+    const py = top + ch - Math.max(d.estimatedProfit,0)/maxV*ch;
+    if(prev){ doc.setDrawColor(55,70,73); doc.setLineWidth(0.5); doc.line(prev[0], prev[1], cx, py); }
+    prev = [cx, py];
+  });
+  doc.setLineWidth(0.2); doc.setFontSize(5.5); doc.setTextColor(140);
+  doc.text(m.fromDate, x0, top+ch+5); doc.text(m.toDate, x0+cw, top+ch+5, {align:'right'});
+  doc.setTextColor(0);
+
+  /* category donut */
+  const cats = categoryTotals(m.fromDate, m.toDate);
+  const catParts = cats.slice(0,6).map((c,i)=>({ name:c.name, v:c.total, color:PBI[i%PBI.length] }));
+  if(cats.length>6) catParts.push({ name:'Others', v:cats.slice(6).reduce((t,c)=>t+c.total,0), color:'#A0A0A0' });
+  const catTot = cats.reduce((t,c)=>t+c.total,0);
+  pdfTile(doc, 135, y, 67, 62, 'Expense share by category');
+  if(catTot>0){ pdfDonut(doc, 135+19, y+36, 15, catParts); pdfLegend(doc, 135+37, y+16, catParts, catTot); }
+  else { doc.setFontSize(7); doc.setTextColor(140); doc.text('No expenses', 140, y+30); doc.setTextColor(0); }
+  y += 65;
+
+  /* top expense bars */
+  pdfTile(doc, 8, y, 124, 56, 'Top expenses');
+  const mx = (cats[0] && cats[0].total) || 1;
+  cats.slice(0,7).forEach((c,i)=>{
+    const yy = y + 12 + i*6;
+    const rgb = hexRgb(PBI[i%PBI.length]);
+    doc.setFontSize(7); doc.setTextColor(60); doc.text(String(c.name).slice(0,16), 12, yy+3);
+    doc.setFillColor(rgb[0],rgb[1],rgb[2]); doc.rect(46, yy, Math.max(1, c.total/mx*58), 4, 'F');
+    doc.setTextColor(0); doc.text(rs(c.total), 107, yy+3);
+  });
+
+  /* payment mix donut */
+  pdfTile(doc, 135, y, 67, 56, 'Sales mix: cash vs online');
+  const mix = [{ name:'Cash', v:Math.max(0,m.cashSales), color:'#374649' }, { name:'Online', v:Math.max(0,m.onlineSales), color:'#01B8AA' }];
+  if(m.totalSales>0){ pdfDonut(doc, 135+19, y+32, 14, mix); pdfLegend(doc, 135+37, y+28, mix, mix[0].v+mix[1].v); }
+  else { doc.setFontSize(7); doc.setTextColor(140); doc.text('No sales', 140, y+30); doc.setTextColor(0); }
+  y += 59;
+
+  /* insights */
+  const lines = insightLines(m).slice(0,6);
+  pdfTile(doc, 8, y, 194, 8 + Math.max(1,lines.length)*9, 'Key insights');
+  let ly = y + 12;
+  doc.setFontSize(7.5); doc.setTextColor(50,49,48);
+  lines.forEach(t=>{ doc.splitTextToSize('- '+t, 184).slice(0,2).forEach(ln=>{ doc.text(ln, 12, ly); ly += 4.2; }); ly += 1; });
+  doc.setTextColor(0);
+  return Math.min(ly + 6, 285);
+}
+
 function generatePdfReport(m, sections, mode){
   sections = sections || {summary:true, sales:true, expenses:true, salary:true, customers:true, cash:true};
   mode = mode || 'official';
@@ -3891,10 +4154,12 @@ function generatePdfReport(m, sections, mode){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const upi = loadUpi();
-  let y = 16;
-  doc.setFontSize(16); doc.text((upi.shopName||'SP Tea Shop'), 14, y); y+=8;
-  doc.setFontSize(11); doc.text('Report period: '+reportPeriodLabel(m), 14, y); y+=6;
-  doc.text('Mode: ' + (mode==='personal' ? 'Personal' : 'Official'), 14, y); y+=8;
+  let y = 36;
+  if(sections.insights){ doc.setFillColor(243,242,241); doc.rect(0,0,210,297,'F'); }
+  drawPdfHeader(doc, m, mode);
+  let pageUsed = !!(sections.summary || sections.insights);
+  const newPg = function(){ if(pageUsed){ doc.addPage(); y = 16; } else { y = 36; } pageUsed = true; };
+  if(sections.insights){ y = drawPdfDashboard(doc, m, mode, y); if(sections.summary){ doc.addPage(); y = 16; } }
 
   if(sections.summary){
     doc.setFontSize(12); doc.text('Profit Summary', 14, y); y+=6;
@@ -3928,7 +4193,7 @@ function generatePdfReport(m, sections, mode){
   }
 
   if(sections.sales){
-    doc.addPage(); y = 16;
+    newPg();
     const salesCols = [
       {header:'Date', key:'Date', width:30, maxChars:12},
       {header:'Cash Sales', key:'Cash Sales', width:40, maxChars:12},
@@ -3939,7 +4204,7 @@ function generatePdfReport(m, sections, mode){
   }
 
   if(sections.expenses){
-    doc.addPage(); y = 16;
+    newPg();
     const expCols = [
       {header:'Date', key:'Date', width:20, maxChars:12},
       {header:'Category', key:'Category', width:28, maxChars:16},
@@ -3952,7 +4217,7 @@ function generatePdfReport(m, sections, mode){
   }
 
   if(sections.salary){
-    doc.addPage(); y = 16;
+    newPg();
     const salCols = [
       {header:'Date', key:'Date', width:20, maxChars:12},
       {header:'Amount', key:'Amount (₹)', width:24, maxChars:8},
@@ -3964,7 +4229,7 @@ function generatePdfReport(m, sections, mode){
   }
 
   if(sections.customers){
-    doc.addPage(); y = 16;
+    newPg();
     const custCols = [
       {header:'Date', key:'Date', width:20, maxChars:12},
       {header:'Customer', key:'Customer', width:30, maxChars:18},
@@ -3978,7 +4243,7 @@ function generatePdfReport(m, sections, mode){
   }
 
   if(sections.cash){
-    doc.addPage(); y = 16;
+    newPg();
     const cashCols = [
       {header:'Date', key:'Date', width:18, maxChars:12},
       {header:'Opening', key:'Opening Cash', width:17, maxChars:8},
@@ -3994,6 +4259,54 @@ function generatePdfReport(m, sections, mode){
     pdfDrawTable(doc, y, cashCols, buildCashReconciliationRows(m), 'Cash Reconciliation');
   }
 
+
+  if(sections.personal){
+    newPg();
+    const pr = personalRows(m.fromDate, m.toDate);
+    const ptot = pr.reduce((t,r)=>t+r['Amount (₹)'],0);
+    y = pdfDrawTable(doc, y, [
+      {header:'Date', key:'Date', width:26, maxChars:12}, {header:'Category', key:'Category', width:38, maxChars:20},
+      {header:'Amount', key:'Amount (₹)', width:26, maxChars:10}, {header:'Note', key:'Note', width:88, maxChars:50}
+    ], pr.length?pr:[{Date:'',Category:'(none)'}], 'Personal Expenses - total '+rs(ptot));
+    const cy = personalCycleRows();
+    if(cy.length){
+      pdfDrawTable(doc, y+4, [
+        {header:'Start', key:'Start', width:32, maxChars:12}, {header:'End', key:'End', width:32, maxChars:12},
+        {header:'Online Profit', key:'Online Profit (₹)', width:40, maxChars:12}, {header:'Expenses', key:'Expenses (₹)', width:36, maxChars:12},
+        {header:'Balance', key:'Balance (₹)', width:36, maxChars:12}
+      ], cy, 'Closed Personal Cycles');
+    }
+  }
+  if(sections.balances){
+    newPg();
+    const br = balanceRows();
+    pdfDrawTable(doc, y, [
+      {header:'Customer', key:'Customer', width:80, maxChars:36}, {header:'Phone', key:'Phone', width:50, maxChars:16},
+      {header:'Outstanding', key:'Outstanding (₹)', width:40, maxChars:12}
+    ], br.length?br:[{Customer:'(no balances)'}], 'Customer Outstanding Balances');
+  }
+  if(sections.purchase){
+    newPg();
+    const pm = buildMasterSheetRows();
+    pdfDrawTable(doc, y, [
+      {header:'Name', key:'Name', width:50, maxChars:30}, {header:'Qty', key:'Qty', width:16, maxChars:6}, {header:'Unit', key:'Unit', width:18, maxChars:8},
+      {header:'Price', key:'Price (₹)', width:18, maxChars:8}, {header:'MRP', key:'MRP (₹)', width:18, maxChars:8}, {header:'Supplier', key:'Supplier', width:50, maxChars:28}
+    ], pm.length?pm:[{Name:'(empty)'}], 'Master Sheet');
+  }
+  if(sections.po){
+    newPg();
+    const po = poRowsRange(m.fromDate, m.toDate);
+    pdfDrawTable(doc, y, [
+      {header:'Date', key:'Date', width:24, maxChars:12}, {header:'Supplier', key:'Supplier', width:36, maxChars:20}, {header:'Item', key:'Item', width:50, maxChars:28},
+      {header:'Qty', key:'Qty', width:14, maxChars:6}, {header:'Unit', key:'Unit', width:16, maxChars:8}, {header:'Rate', key:'Rate (₹)', width:18, maxChars:8}, {header:'Total', key:'Total (₹)', width:20, maxChars:10}
+    ], po.length?po:[{Date:'',Supplier:'(no purchase orders)'}], 'Purchase Orders');
+  }
+  const pages = doc.getNumberOfPages();
+  for(let p=1; p<=pages; p++){
+    doc.setPage(p); doc.setFontSize(7); doc.setTextColor(140);
+    doc.text((upi.shopName||'SP Tea Shop')+' - Page '+p+' of '+pages, 105, 292, {align:'center'});
+  }
+  doc.setTextColor(0);
   const safePeriod = reportPeriodLabel(m).replace(/[^a-zA-Z0-9]+/g,'_');
   doc.save('SP-Tea-Shop-Report-'+safePeriod+'.pdf');
 }
@@ -4004,8 +4317,14 @@ function generateExcelReport(m, sections, mode){
   if(!window.XLSX){ showBanner('⚠️ Excel library not loaded — check your internet connection'); return; }
   const wb = XLSX.utils.book_new();
   const addSheet = (rows, emptyRow, name) => {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length?rows:[emptyRow]), name);
+    const ws = XLSX.utils.json_to_sheet(rows.length?rows:[emptyRow]);
+    const keys = Object.keys((rows.length?rows:[emptyRow])[0]||{});
+    ws['!cols'] = keys.map(k=>({ wch: Math.min(60, Math.max(k.length+2, ...rows.slice(0,200).map(r=>String(r[k]===undefined?'':r[k]).length+2))) }));
+    XLSX.utils.book_append_sheet(wb, ws, name);
   };
+  if(sections.insights){
+    addSheet(kpiSheetRows(m, mode), {Metric:'',Value:''}, 'Dashboard');
+  }
 
   if(sections.summary){
     const summaryRows = buildSummaryRows(m, mode).map(r=>({Field:r[0], Value:r[1]}));
@@ -4028,6 +4347,13 @@ function generateExcelReport(m, sections, mode){
   }
 
   const safePeriod = reportPeriodLabel(m).replace(/[^a-zA-Z0-9]+/g,'_');
+  if(sections.personal){
+    addSheet(personalRows(m.fromDate, m.toDate), {Date:'',Note:'No personal expenses in this period'}, 'Personal Expenses');
+    addSheet(personalCycleRows(), {Start:'',End:''}, 'Personal Cycles');
+  }
+  if(sections.balances) addSheet(balanceRows(), {Customer:'',Note:'No balances'}, 'Customer Balances');
+  if(sections.purchase) addSheet(buildMasterSheetRows(), {Name:'',Qty:''}, 'Master Sheet');
+  if(sections.po) addSheet(poRowsRange(m.fromDate, m.toDate), {Date:'',Supplier:'No purchase orders'}, 'Purchase Orders');
   XLSX.writeFile(wb, 'SP-Tea-Shop-Report-'+safePeriod+'.xlsx');
 }
 
