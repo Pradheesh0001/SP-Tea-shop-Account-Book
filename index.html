@@ -982,7 +982,8 @@ const _libP = {};
 const LIB_URLS = {
   jspdf: ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', ()=>window.jspdf && window.jspdf.jsPDF],
   xlsx: ['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', ()=>window.XLSX],
-  tess: ['https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js', ()=>window.Tesseract]
+  tess: ['https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js', ()=>window.Tesseract],
+  exceljs: ['https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js', ()=>window.ExcelJS]
 };
 function loadLib(name){
   const [url, ready] = LIB_URLS[name];
@@ -1116,7 +1117,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v59-powerbi-pdf';
+const APP_VERSION = '2026-10-21-v60-powerbi-excel';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -3813,6 +3814,10 @@ async function downloadReport(format){
   }
   const mode = chosenReportMode || 'official';
   closeReportModal();
+  if(format==='excel'){
+    try{ await loadLib('exceljs'); await generateExcelPro(m, sections, mode); return; }
+    catch(e){ console.error(e); showBanner('⚠️ Pro Excel could not be built — making a basic Excel instead'); }
+  }
   try{ await loadLib(format==='pdf'?'jspdf':'xlsx'); }catch(e){ showBanner('⚠️ Could not load export library — check your internet connection'); return; }
   if(format==='pdf') generatePdfReport(m, sections, mode);
   else generateExcelReport(m, sections, mode);
@@ -4309,6 +4314,272 @@ function generatePdfReport(m, sections, mode){
   doc.setTextColor(0);
   const safePeriod = reportPeriodLabel(m).replace(/[^a-zA-Z0-9]+/g,'_');
   doc.save('SP-Tea-Shop-Report-'+safePeriod+'.pdf');
+}
+
+
+/* ---------- Power BI style Excel (ExcelJS) ---------- */
+function cvMake(w, h, title){
+  const c = document.createElement('canvas'); c.width = w*2; c.height = h*2;
+  const g = c.getContext('2d'); g.scale(2,2);
+  g.fillStyle = '#ffffff'; g.fillRect(0,0,w,h);
+  g.strokeStyle = '#E1DFDD'; g.lineWidth = 1; g.strokeRect(0.5,0.5,w-1,h-1);
+  g.fillStyle = '#323130'; g.font = 'bold 14px Segoe UI, Arial, sans-serif'; g.textBaseline = 'alphabetic'; g.fillText(title, 14, 24);
+  return { c, g };
+}
+function cvB64(c){ return c.toDataURL('image/png').split(',')[1]; }
+function cvCombo(m, w, h){
+  const { c, g } = cvMake(w, h, 'Sales (bars) and Profit (line) by day');
+  const x0 = 64, y0 = 46, cw = w-x0-20, ch = h-y0-36, n = Math.max(1, m.days.length);
+  const maxV = Math.max(1, ...m.days.map(d=>Math.max(d.totalSales, d.estimatedProfit, 0)));
+  g.font = '10px Segoe UI, Arial, sans-serif'; g.fillStyle = '#8a8886'; g.strokeStyle = '#EDEBE9'; g.lineWidth = 1;
+  for(let i=0;i<=4;i++){
+    const gy = y0 + ch - ch*i/4;
+    g.beginPath(); g.moveTo(x0, gy); g.lineTo(x0+cw, gy); g.stroke();
+    g.textAlign = 'right'; g.fillText(Math.round(maxV*i/4).toLocaleString('en-IN'), x0-6, gy+3);
+  }
+  const slot = cw/n, bw = Math.max(2, Math.min(34, slot*0.6)), step = Math.max(1, Math.ceil(n/8));
+  g.textAlign = 'center';
+  m.days.forEach((d,i)=>{
+    const cx = x0 + i*slot + slot/2, sH = d.totalSales/maxV*ch;
+    g.fillStyle = '#01B8AA'; g.fillRect(cx-bw/2, y0+ch-sH, bw, sH);
+    if(i%step===0){ g.fillStyle = '#8a8886'; g.fillText(d.date.slice(5), cx, y0+ch+16); }
+  });
+  g.strokeStyle = '#374649'; g.lineWidth = 2; g.beginPath();
+  m.days.forEach((d,i)=>{
+    const cx = x0 + i*slot + slot/2, py = y0 + ch - Math.max(d.estimatedProfit,0)/maxV*ch;
+    if(i===0) g.moveTo(cx, py); else g.lineTo(cx, py);
+  });
+  g.stroke();
+  g.fillStyle = '#374649';
+  m.days.forEach((d,i)=>{ const cx = x0 + i*slot + slot/2, py = y0 + ch - Math.max(d.estimatedProfit,0)/maxV*ch; g.beginPath(); g.arc(cx, py, 3, 0, 6.2832); g.fill(); });
+  return cvB64(c);
+}
+function cvDonut(title, parts, w, h, centerText){
+  const { c, g } = cvMake(w, h, title);
+  const tot = parts.reduce((t,p)=>t+p.v,0);
+  const cx = 130, cy = h/2 + 12, r = Math.min(100, h/2-34);
+  if(tot<=0){ g.fillStyle = '#8a8886'; g.font = '12px Segoe UI, Arial'; g.fillText('No data in this period', 14, 60); return cvB64(c); }
+  let a = -Math.PI/2;
+  parts.forEach(p=>{
+    if(p.v<=0) return;
+    const sw = p.v/tot*2*Math.PI;
+    g.fillStyle = p.color; g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, r, a, a+sw); g.closePath(); g.fill(); a += sw;
+  });
+  g.fillStyle = '#ffffff'; g.beginPath(); g.arc(cx, cy, r*0.6, 0, 6.2832); g.fill();
+  g.fillStyle = '#323130'; g.textAlign = 'center'; g.font = 'bold 15px Segoe UI, Arial'; g.fillText(centerText||'', cx, cy+5);
+  g.textAlign = 'left'; let ly = 54;
+  parts.forEach(p=>{
+    g.fillStyle = p.color; g.fillRect(270, ly-9, 11, 11);
+    g.fillStyle = '#323130'; g.font = '12px Segoe UI, Arial'; g.fillText(String(p.name).slice(0,18), 288, ly);
+    g.fillStyle = '#605e5c'; g.fillText(Math.round(p.v/tot*100)+'%  ('+Math.round(p.v).toLocaleString('en-IN')+')', 400, ly);
+    ly += 24;
+  });
+  return cvB64(c);
+}
+function cvBars(title, items, w, h){
+  const { c, g } = cvMake(w, h, title);
+  if(!items.length){ g.fillStyle = '#8a8886'; g.font = '12px Segoe UI, Arial'; g.fillText('No data in this period', 14, 60); return cvB64(c); }
+  const mx = items[0].v || 1; let y = 46;
+  items.slice(0,8).forEach((it,i)=>{
+    g.fillStyle = '#323130'; g.font = '12px Segoe UI, Arial'; g.textAlign = 'left'; g.fillText(String(it.name).slice(0,20), 14, y+13);
+    g.fillStyle = PBI[i%PBI.length]; g.fillRect(150, y, Math.max(2, it.v/mx*400), 18);
+    g.fillStyle = '#605e5c'; g.fillText(Math.round(it.v).toLocaleString('en-IN'), 160+it.v/mx*400, y+13);
+    y += 29;
+  });
+  return cvB64(c);
+}
+
+const XL = { ink:'FF252423', slate:'FF374649', yellow:'FFF2C80F', canvas:'FFF3F2F1', line:'FFE1DFDD', zebra:'FFF8F8F8', teal:'FF01B8AA', red:'FFFD625E', white:'FFFFFFFF' };
+const XL_MONEY = '#,##0;[Red]-#,##0';
+function xlFill(c){ return { type:'pattern', pattern:'solid', fgColor:{ argb:c } }; }
+function xlBand(ws, title, sub, cols){
+  const last = Math.max(1, cols);
+  if(last>1) ws.mergeCells(1,1,1,last);
+  const c = ws.getCell(1,1); c.value = title;
+  c.font = { name:'Segoe UI', size:18, bold:true, color:{argb:XL.white} };
+  c.alignment = { vertical:'middle', indent:1 };
+  for(let i=1;i<=last;i++) ws.getCell(1,i).fill = xlFill(XL.ink);
+  ws.getRow(1).height = 32;
+  for(let i=1;i<=last;i++) ws.getCell(2,i).fill = xlFill(XL.yellow);
+  ws.getRow(2).height = 4;
+}
+function xlSheet(wb, name, rows, empty, opt){
+  opt = opt || {};
+  const data = rows.length ? rows : [empty];
+  const keys = Object.keys(data[0]);
+  const ws = wb.addWorksheet(name.slice(0,31), { views:[{ state:'frozen', ySplit:3, showGridLines:false }], properties:{ tabColor:{ argb:opt.tab||XL.slate } } });
+  xlBand(ws, (loadUpi().shopName||'SP Tea Shop') + '  |  ' + name, '', Math.max(keys.length, 5));
+  const isMoney = k => /₹|Sales|Cash|Online|Amount|Profit|Total|Rate|Price|MRP|Expected|Closing|Opening|Difference|Collections|Expenses|Salary|Own Money|Balance|Outstanding|Value/i.test(k);
+  const isPct = k => (opt.pct||[]).indexOf(k) > -1;
+  const hr = ws.getRow(3); hr.height = 22;
+  keys.forEach((k,i)=>{
+    const c = hr.getCell(i+1); c.value = k; c.fill = xlFill(XL.slate);
+    c.font = { name:'Segoe UI', size:10, bold:true, color:{argb:XL.white} };
+    c.alignment = { vertical:'middle', horizontal:(isMoney(k)||isPct(k))?'right':'left', indent:1, wrapText:true };
+  });
+  const thin = { style:'thin', color:{argb:XL.line} };
+  data.forEach((row, ri)=>{
+    const r = ws.getRow(4+ri);
+    keys.forEach((k,i)=>{
+      const v = row[k]; const c = r.getCell(i+1);
+      c.value = (v===undefined||v===null) ? '' : v;
+      c.font = { name:'Segoe UI', size:10 };
+      c.fill = xlFill(ri%2 ? XL.zebra : XL.white);
+      c.border = { bottom:thin, left:thin, right:thin };
+      if(typeof v==='number'){
+        c.numFmt = isPct(k) ? '0.0%' : (isMoney(k) ? XL_MONEY : '#,##0.##');
+        c.alignment = { horizontal:'right' };
+      } else c.alignment = { horizontal:'left', indent:1, wrapText: String(v||'').length>40 };
+    });
+  });
+  const last = 3 + data.length;
+  keys.forEach((k,i)=>{
+    const w = Math.min(46, Math.max(k.length+4, ...data.slice(0,300).map(r=>String(r[k]===undefined?'':r[k]).length+3)));
+    ws.getColumn(i+1).width = Math.max(11, w);
+  });
+  ws.autoFilter = { from:{row:3, column:1}, to:{row:last, column:keys.length} };
+  const sums = (opt.sum||[]).filter(k=>keys.indexOf(k)>-1);
+  if(sums.length && rows.length){
+    const tr = ws.getRow(last+1); tr.height = 20;
+    keys.forEach((k,i)=>{
+      const c = tr.getCell(i+1);
+      c.fill = xlFill('FFFFF4CE'); c.font = { name:'Segoe UI', size:10, bold:true };
+      c.border = { top:{ style:'medium', color:{argb:XL.slate} } };
+      if(i===0) c.value = 'Total (filtered)';
+      if(sums.indexOf(k)>-1){
+        const col = ws.getColumn(i+1).letter;
+        const tot = rows.reduce((t,r)=>t+(Number(r[k])||0),0);
+        c.value = { formula:'SUBTOTAL(109,'+col+'4:'+col+last+')', result:tot };
+        c.numFmt = XL_MONEY; c.alignment = { horizontal:'right' };
+      }
+    });
+  }
+  if(opt.scale && keys.indexOf(opt.scale)>-1 && rows.length){
+    const col = ws.getColumn(keys.indexOf(opt.scale)+1).letter;
+    ws.addConditionalFormatting({ ref: col+'4:'+col+last, rules:[{ type:'colorScale', cfvo:[{type:'min'},{type:'percentile',value:50},{type:'max'}], color:[{argb:'FFF8696B'},{argb:'FFFFEB84'},{argb:'FF63BE7B'}] }] });
+  }
+  return ws;
+}
+function xlTile(ws, r, sc, title, val, fmt, sub, color){
+  for(let i=0;i<3;i++) ws.mergeCells(r+i, sc, r+i, sc+3);
+  const thin = { style:'thin', color:{argb:XL.line} };
+  for(let i=0;i<3;i++) for(let j=0;j<4;j++){
+    const c = ws.getCell(r+i, sc+j);
+    c.fill = xlFill(XL.white);
+    const b = {}; if(i===0) b.top = thin; if(i===2) b.bottom = thin; if(j===3) b.right = thin; if(j===0) b.left = { style:'thick', color:{argb:color} };
+    c.border = b;
+  }
+  const t = ws.getCell(r, sc); t.value = title.toUpperCase(); t.font = { name:'Segoe UI', size:8, bold:true, color:{argb:'FF605E5C'} }; t.alignment = { vertical:'middle', indent:1 };
+  const v = ws.getCell(r+1, sc); v.value = val; v.numFmt = fmt; v.font = { name:'Segoe UI', size:20, bold:true, color:{argb:color} }; v.alignment = { vertical:'middle', horizontal:'left', indent:1 };
+  const u = ws.getCell(r+2, sc); u.value = sub; u.font = { name:'Segoe UI', size:8, color:{argb:'FF8A8886'} }; u.alignment = { vertical:'top', indent:1 };
+  ws.getRow(r).height = 18; ws.getRow(r+1).height = 34; ws.getRow(r+2).height = 16;
+}
+function xlSaveBuffer(buf, filename){
+  const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+
+async function generateExcelPro(m, sections, mode){
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Udhar Book'; wb.created = new Date();
+  const shop = loadUpi().shopName || 'SP Tea Shop';
+  const k = computeKpis(m);
+  const pv = mode==='personal' ? computeInHandProfitAllTime() : m.totalProfit;
+  const cats = categoryTotals(m.fromDate, m.toDate);
+
+  if(sections.insights){
+    const lines = insightLines(m).slice(0,7);
+    const lastRow = 47 + Math.max(1,lines.length) + 1;
+    const ws = wb.addWorksheet('Dashboard', { views:[{ showGridLines:false }], properties:{ tabColor:{ argb:XL.yellow } } });
+    for(let i=1;i<=16;i++) ws.getColumn(i).width = 11.5;
+    for(let r=1;r<=lastRow;r++) for(let i=1;i<=16;i++) ws.getCell(r,i).fill = xlFill(r<=2?(r===1?XL.ink:XL.ink):XL.canvas);
+    ws.mergeCells('A1:P2');
+    const t = ws.getCell('A1'); t.value = shop + '  —  Business Performance Report';
+    t.font = { name:'Segoe UI', size:20, bold:true, color:{argb:XL.white} }; t.alignment = { vertical:'middle', indent:1 };
+    for(let i=1;i<=16;i++) ws.getCell(3,i).fill = xlFill(XL.yellow);
+    ws.getRow(1).height = 22; ws.getRow(2).height = 22; ws.getRow(3).height = 4;
+    ws.mergeCells('A4:P4');
+    const st = ws.getCell('A4'); st.value = 'Period: ' + reportPeriodLabel(m) + '   |   Mode: ' + (mode==='personal'?'Personal':'Official') + '   |   Generated: ' + todayStr();
+    st.font = { name:'Segoe UI', size:10, color:{argb:'FF605E5C'} }; st.alignment = { vertical:'middle', indent:1 };
+    ws.getRow(4).height = 22; ws.getRow(5).height = 6;
+    const tealC = 'FF01968C', redC = 'FFDC3C3A', slateC = 'FF374649', goldC = 'FFA67C00';
+    const tiles = [
+      ['Total Sales', m.totalSales, '"₹"#,##0', m.daysRecorded+' days recorded', tealC],
+      ['Expenses + Salary', k.spend, '"₹"#,##0', k.expRatio.toFixed(0)+'% of sales', redC],
+      [mode==='personal'?'In-Hand Profit':'Net Profit', pv, '"₹"#,##0;[Red]-"₹"#,##0', 'Margin '+k.margin.toFixed(1)+'%', pv>=0?tealC:redC],
+      ['Customer Dues', k.outstanding, '"₹"#,##0', 'to collect', goldC],
+      ['Cash Sales', m.cashSales, '"₹"#,##0', k.cashPct.toFixed(0)+'% of sales', slateC],
+      ['Online Sales', m.onlineSales, '"₹"#,##0', (m.totalSales>0?(100-k.cashPct).toFixed(0):0)+'% of sales', slateC],
+      ['Avg Daily Sales', m.avgDailySales, '"₹"#,##0', 'per recorded day', slateC],
+      ['Avg Daily Profit', m.avgDailyProfit, '"₹"#,##0;[Red]-"₹"#,##0', 'per recorded day', m.avgDailyProfit>=0?tealC:redC]
+    ];
+    tiles.forEach((tl,i)=>{ xlTile(ws, 6+Math.floor(i/4)*4, 1+(i%4)*4, tl[0], Math.round(tl[1]), tl[2], tl[3], tl[4]); });
+    ws.getRow(9).height = 6; ws.getRow(13).height = 6;
+
+    let imgsOk = true;
+    try{
+      const catParts = cats.slice(0,6).map((c,i)=>({ name:c.name, v:c.total, color:PBI[i%PBI.length] }));
+      if(cats.length>6) catParts.push({ name:'Others', v:cats.slice(6).reduce((a,c)=>a+c.total,0), color:'#A0A0A0' });
+      const catTot = cats.reduce((a,c)=>a+c.total,0);
+      const mix = [{ name:'Cash', v:Math.max(0,m.cashSales), color:'#374649' }, { name:'Online', v:Math.max(0,m.onlineSales), color:'#01B8AA' }];
+      const W = 672, H = 290;
+      const imgs = [
+        [cvCombo(m, W, H), 0, 13],
+        [cvDonut('Expense share by category', catParts, W, H, rs(catTot).replace('Rs. ','₹')), 8.04, 13],
+        [cvBars('Top expenses', cats.map(c=>({ name:c.name, v:c.total })), W, H), 0, 29],
+        [cvDonut('Sales mix: cash vs online', mix, W, H, rs(m.totalSales).replace('Rs. ','₹')), 8.04, 29]
+      ];
+      imgs.forEach(im=>{
+        const id = wb.addImage({ base64: im[0], extension:'png' });
+        ws.addImage(id, { tl:{ col:im[1], row:im[2] }, ext:{ width:W, height:H } });
+      });
+    }catch(e){ imgsOk = false; console.error('charts skipped', e); }
+
+    const hr = 46;
+    ws.mergeCells(hr,1,hr,16);
+    const ih = ws.getCell(hr,1); ih.value = '  KEY INSIGHTS'; ih.font = { name:'Segoe UI', size:11, bold:true, color:{argb:XL.white} };
+    for(let i=1;i<=16;i++) ws.getCell(hr,i).fill = xlFill(XL.slate);
+    ws.getRow(hr).height = 22;
+    (lines.length?lines:['Add sales and expenses to see insights.']).forEach((ln,i)=>{
+      const r = hr+1+i; ws.mergeCells(r,1,r,16);
+      const c = ws.getCell(r,1); c.value = '   •  ' + ln; c.font = { name:'Segoe UI', size:10, color:{argb:'FF323130'} };
+      c.alignment = { vertical:'middle', wrapText:true };
+      for(let j=1;j<=16;j++) ws.getCell(r,j).fill = xlFill(XL.white);
+      ws.getRow(r).height = 22;
+    });
+
+    const daily = m.days.map(d=>({
+      'Date':d.date, 'Cash Sales':Math.round(d.cashSales), 'Online Sales':Math.round(d.onlineSales), 'Total Sales':Math.round(d.totalSales),
+      'Expenses':Math.round(d.expenses), 'Salary':Math.round(d.staffSalary), 'Profit':Math.round(d.estimatedProfit),
+      'Margin %': d.totalSales>0 ? Math.round(d.estimatedProfit/d.totalSales*1000)/1000 : '',
+      'Cash Diff': d.cashDifference===null ? '' : Math.round(d.cashDifference),
+      'Status': d.cashDifference===null ? '' : (d.needsReview ? 'Needs Review' : 'OK')
+    }));
+    xlSheet(wb, 'Daily Performance', daily, {Date:''}, { tab:XL.teal, sum:['Cash Sales','Online Sales','Total Sales','Expenses','Salary','Profit'], scale:'Profit', pct:['Margin %'] });
+    const ct = cats.reduce((a,c)=>a+c.total,0);
+    xlSheet(wb, 'Category Summary', cats.map(c=>({ 'Category':c.name, 'Amount (₹)':Math.round(c.total), 'Share %': ct>0 ? Math.round(c.total/ct*1000)/1000 : 0 })), {Category:''}, { tab:XL.red, sum:['Amount (₹)'], pct:['Share %'], scale:'Amount (₹)' });
+  }
+
+  if(sections.summary) xlSheet(wb, 'Summary', buildSummaryRows(m, mode).map(r=>({ Field:r[0], Value:r[1] })), {Field:''}, {});
+  if(sections.sales) xlSheet(wb, 'Sales', buildSalesRows(m), {Date:''}, { sum:['Cash Sales','Online Sales','Total Sales'] });
+  if(sections.expenses) xlSheet(wb, 'Expenses', buildExpensesSectionRows(m.fromDate, m.toDate), {Date:'',Category:'',Note:'No expenses in this period'}, { tab:XL.red, sum:['Amount (₹)'] });
+  if(sections.salary) xlSheet(wb, 'Staff Salary', buildStaffSalaryRows(m.fromDate, m.toDate), {Date:'',Note:'No salary entries in this period'}, { sum:['Amount (₹)'] });
+  if(sections.customers) xlSheet(wb, 'Customer Accounts', buildCustomerAccountRows(m.fromDate, m.toDate), {Date:'',Customer:'',Note:'No activity in this period'}, { sum:['Amount (₹)'] });
+  if(sections.cash) xlSheet(wb, 'Cash Reconciliation', buildCashReconciliationRows(m), {Date:''}, { sum:['Cash Sales','Cash Collections','Cash Expenses','Cash Salary'], scale:'Difference' });
+  if(sections.personal){
+    xlSheet(wb, 'Personal Expenses', personalRows(m.fromDate, m.toDate), {Date:'',Note:'No personal expenses in this period'}, { tab:XL.yellow, sum:['Amount (₹)'] });
+    xlSheet(wb, 'Personal Cycles', personalCycleRows(), {Start:'',End:''}, { tab:XL.yellow, scale:'Balance (₹)' });
+  }
+  if(sections.balances) xlSheet(wb, 'Customer Balances', balanceRows(), {Customer:''}, { sum:['Outstanding (₹)'], scale:'Outstanding (₹)' });
+  if(sections.purchase) xlSheet(wb, 'Master Sheet', buildMasterSheetRows(), {Name:''}, {});
+  if(sections.po) xlSheet(wb, 'Purchase Orders', poRowsRange(m.fromDate, m.toDate), {Date:'',Supplier:'No purchase orders'}, { sum:['Total (₹)'] });
+
+  const buf = await wb.xlsx.writeBuffer();
+  const safePeriod = reportPeriodLabel(m).replace(/[^a-zA-Z0-9]+/g,'_');
+  xlSaveBuffer(buf, 'SP-Tea-Shop-Report-'+safePeriod+'.xlsx');
+  showBanner('✅ Excel report ready');
 }
 
 function generateExcelReport(m, sections, mode){
