@@ -15,9 +15,6 @@ window.addEventListener('error', function(e){
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <style>
@@ -364,6 +361,10 @@ window.addEventListener('error', function(e){
     box-shadow: var(--shadow-lg);
     border: 1px solid rgba(255, 255, 255, 0.15);
   }
+  .muted { color: var(--muted); }
+  .loadbtn { padding: 12px 6px; border-radius: 12px; color: #fff; text-align: center; font-size: 0.8rem; font-weight: 600; cursor: pointer; user-select: none; transition: opacity .15s ease, transform .1s ease; }
+  .loadbtn:active { transform: scale(0.97); }
+  .custrow:focus-visible, .loadbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
   .paidRow { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; font-size: 0.9rem; border-bottom: 1px solid var(--card-border); }
   .loadgrid { display: grid; gap: 10px; }
 </style>
@@ -856,7 +857,9 @@ window.addEventListener('error', function(e){
     <p class="hint" id="driveStatus">Not connected</p>
 
     <h3>Backup</h3>
-    <button style="background:var(--paid);" id="backupBtn" onclick="backupData()">💾 Save Backup File</button>
+    <button style="background:var(--paid);" id="backupBtn" onclick="backupData()">💾 Save Full Backup File</button>
+    <label style="margin-top:14px;">Restore from a backup file (merges into current data)</label>
+    <input id="s-restoreFile" type="file" accept="application/json,.json" onchange="restoreBackup(event)">
     <button class="ghost" onclick="showDashboard()">Back</button>
   </div>
 
@@ -895,7 +898,7 @@ window.addEventListener('error', function(e){
       <button type="button" id="cd-method-cash" style="width:auto; flex:1; padding:10px; margin:0; background:var(--paid);" onclick="setPayMethod('cash')">💵 Cash</button>
       <button type="button" id="cd-method-online" class="ghost" style="width:auto; flex:1; margin:0; padding:10px;" onclick="setPayMethod('online')">📲 Online/UPI</button>
     </div>
-    <div class="card" style="background:#f0edfb; padding:14px; margin-bottom:12px;">
+    <div class="card" style="background:var(--brand-light); padding:14px; margin-bottom:12px;">
       <div style="font-size:0.8rem; color:var(--muted);">Pay via UPI to</div>
       <div style="font-size:1.1rem; font-weight:700;" id="cd-upiIdText">—</div>
       <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
@@ -946,21 +949,94 @@ const PE_CYCLES_KEY = 'udhar_pe_cycles_v1';
 const PL_KEY = 'udhar_purchase_list_v1';
 const PL_DELETED_KEY = 'udhar_purchase_list_deleted_v1';
 const PL_TRASH_KEY = 'udhar_purchase_trash_v1';
+const PL_TRASH_DEL_KEY = 'udhar_purchase_trash_deleted_v1';
 const PO_HISTORY_KEY = 'udhar_purchase_order_history_v1';
 
-function loadUsers(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'{}'); }catch(e){ return {}; } }
+const _jc = {};
+function jload(key, fb){
+  const raw = localStorage.getItem(key);
+  if(raw===null) return JSON.parse(fb);
+  const c = _jc[key];
+  if(c && c.raw===raw) return c.val;
+  const val = JSON.parse(raw);
+  _jc[key] = { raw, val };
+  return val;
+}
+function esc(v){
+  return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function eid(v){ return String(v===null||v===undefined?'':v).replace(/[^\w.\-]/g,''); }
+const _libP = {};
+const LIB_URLS = {
+  jspdf: ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', ()=>window.jspdf && window.jspdf.jsPDF],
+  xlsx: ['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', ()=>window.XLSX],
+  tess: ['https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js', ()=>window.Tesseract]
+};
+function loadLib(name){
+  const [url, ready] = LIB_URLS[name];
+  if(ready()) return Promise.resolve();
+  if(_libP[name]) return _libP[name];
+  _libP[name] = new Promise((resolve, reject)=>{
+    const el = document.createElement('script');
+    el.src = url;
+    el.onload = ()=> ready() ? resolve() : reject(new Error('lib not ready'));
+    el.onerror = ()=>{ delete _libP[name]; reject(new Error('lib failed')); };
+    document.head.appendChild(el);
+  });
+  return _libP[name];
+}
+
+/* compact SHA-256 (works on http/file, where crypto.subtle is unavailable) */
+function sha256(ascii){
+  function rr(v,a){ return (v>>>a)|(v<<(32-a)); }
+  const mp=Math.pow, mw=mp(2,32); let result='';
+  const words=[]; const abl=ascii.length*8;
+  let hash=sha256.h=sha256.h||[]; const k=sha256.k=sha256.k||[]; let pc=k.length;
+  const ic={};
+  for(let c=2;pc<64;c++){ if(!ic[c]){ for(let i=0;i<313;i+=c) ic[i]=c; hash[pc]=(mp(c,.5)*mw)|0; k[pc++]=(mp(c,1/3)*mw)|0; } }
+  ascii+='\x80'; while(ascii.length%64-56) ascii+='\x00';
+  for(let i=0;i<ascii.length;i++){ const j=ascii.charCodeAt(i); words[i>>2]|=j<<((3-i)%4)*8; }
+  words[words.length]=((abl/mw)|0); words[words.length]=abl;
+  for(let j=0;j<words.length;){
+    const w=words.slice(j,j+=16); const oldHash=hash; hash=hash.slice(0,8);
+    for(let i=0;i<64;i++){
+      const w15=w[i-15], w2=w[i-2]; const a=hash[0], e=hash[4];
+      const t1=hash[7]+(rr(e,6)^rr(e,11)^rr(e,25))+((e&hash[5])^((~e)&hash[6]))+k[i]+(w[i]=(i<16)?w[i]:(w[i-16]+(rr(w15,7)^rr(w15,18)^(w15>>>3))+w[i-7]+(rr(w2,17)^rr(w2,19)^(w2>>>10)))|0);
+      const t2=(rr(a,2)^rr(a,13)^rr(a,22))+((a&hash[1])^(a&hash[2])^(hash[1]&hash[2]));
+      hash=[(t1+t2)|0].concat(hash); hash[4]=(hash[4]+t1)|0;
+    }
+    for(let i=0;i<8;i++) hash[i]=(hash[i]+oldHash[i])|0;
+  }
+  for(let i=0;i<8;i++) for(let j=3;j+1;j--){ const b=(hash[i]>>(j*8))&255; result+=((b<16)?0:'')+b.toString(16); }
+  return result;
+}
+function hashPass(pass, salt){ return sha256(unescape(encodeURIComponent(salt+':'+pass))); }
+function migrateUsers(){
+  const users = loadUsers(); let changed = false;
+  Object.keys(users).forEach(u=>{
+    const r = users[u];
+    if(r && typeof r.password==='string'){
+      r.salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      r.hash = hashPass(r.password, r.salt);
+      delete r.password; changed = true;
+    }
+  });
+  if(changed) saveUsers(users);
+}
+
+function loadUsers(){ try{ return jload(USERS_KEY,'{}'); }catch(e){ return {}; } }
 function saveUsers(o){ localStorage.setItem(USERS_KEY, JSON.stringify(o)); }
-function loadCustomers(){ try{ return JSON.parse(localStorage.getItem(CUST_KEY)||'[]'); }catch(e){ return []; } }
+function loadCustomers(){ try{ return jload(CUST_KEY,'[]'); }catch(e){ return []; } }
 function saveCustomers(a){ localStorage.setItem(CUST_KEY, JSON.stringify(a)); }
-function loadTxns(){ try{ return JSON.parse(localStorage.getItem(TXN_KEY)||'[]'); }catch(e){ return []; } }
+function loadTxns(){ try{ return jload(TXN_KEY,'[]'); }catch(e){ return []; } }
 function saveTxns(a){ localStorage.setItem(TXN_KEY, JSON.stringify(a)); }
-function loadExpenses(){ try{ return JSON.parse(localStorage.getItem(EXP_KEY)||'[]'); }catch(e){ return []; } }
+function loadExpenses(){ try{ return jload(EXP_KEY,'[]'); }catch(e){ return []; } }
 function saveExpenses(a){ localStorage.setItem(EXP_KEY, JSON.stringify(a)); }
-function loadDeletedExpenseIds(){ try{ return JSON.parse(localStorage.getItem(EXP_DELETED_KEY)||'{}'); }catch(e){ return {}; } }
+function loadDeletedExpenseIds(){ try{ return jload(EXP_DELETED_KEY,'{}'); }catch(e){ return {}; } }
 function saveDeletedExpenseIds(o){ localStorage.setItem(EXP_DELETED_KEY, JSON.stringify(o)); }
-function loadCustomCats(){ try{ return JSON.parse(localStorage.getItem(CATS_KEY)||'[]'); }catch(e){ return []; } }
+function loadCustomCats(){ try{ return jload(CATS_KEY,'[]'); }catch(e){ return []; } }
 function saveCustomCats(a){ localStorage.setItem(CATS_KEY, JSON.stringify(a)); }
-function loadDailySalesAll(){ try{ return JSON.parse(localStorage.getItem(DAILY_KEY)||'{}'); }catch(e){ return {}; } }
+function loadDailySalesAll(){ try{ return jload(DAILY_KEY,'{}'); }catch(e){ return {}; } }
 function saveDailySalesAll(o){ localStorage.setItem(DAILY_KEY, JSON.stringify(o)); }
 
 function getDailySales(date){
@@ -978,27 +1054,29 @@ function hasDailyRecord(date){
   return !!(d.openingCash || d.cashSales || d.onlineSales || d.ownMoneyAdded || d.closingCashActual!==null);
 }
 
-function loadPersonalExpenses(){ try{ return JSON.parse(localStorage.getItem(PE_KEY)||'[]'); }catch(e){ return []; } }
+function loadPersonalExpenses(){ try{ return jload(PE_KEY,'[]'); }catch(e){ return []; } }
 function savePersonalExpenses(a){ localStorage.setItem(PE_KEY, JSON.stringify(a)); }
-function loadPeDeletedIds(){ try{ return JSON.parse(localStorage.getItem(PE_DELETED_KEY)||'{}'); }catch(e){ return {}; } }
+function loadPeDeletedIds(){ try{ return jload(PE_DELETED_KEY,'{}'); }catch(e){ return {}; } }
 function savePeDeletedIds(o){ localStorage.setItem(PE_DELETED_KEY, JSON.stringify(o)); }
-function loadPeCustomCats(){ try{ return JSON.parse(localStorage.getItem(PE_CATS_KEY)||'[]'); }catch(e){ return []; } }
+function loadPeCustomCats(){ try{ return jload(PE_CATS_KEY,'[]'); }catch(e){ return []; } }
 function savePeCustomCats(a){ localStorage.setItem(PE_CATS_KEY, JSON.stringify(a)); }
-function loadPeReset(){ try{ return JSON.parse(localStorage.getItem(PE_RESET_KEY)||'{}'); }catch(e){ return {}; } }
+function loadPeReset(){ try{ return jload(PE_RESET_KEY,'{}'); }catch(e){ return {}; } }
 function savePeReset(o){ localStorage.setItem(PE_RESET_KEY, JSON.stringify(o)); }
-function loadPeCycles(){ try{ return JSON.parse(localStorage.getItem(PE_CYCLES_KEY)||'[]'); }catch(e){ return []; } }
+function loadPeCycles(){ try{ return jload(PE_CYCLES_KEY,'[]'); }catch(e){ return []; } }
 function savePeCycles(a){ localStorage.setItem(PE_CYCLES_KEY, JSON.stringify(a)); }
 
-function loadPurchaseList(){ try{ return JSON.parse(localStorage.getItem(PL_KEY)||'[]'); }catch(e){ return []; } }
+function loadPurchaseList(){ try{ return jload(PL_KEY,'[]'); }catch(e){ return []; } }
 function savePurchaseList(a){ localStorage.setItem(PL_KEY, JSON.stringify(a)); }
-function loadPlDeletedIds(){ try{ return JSON.parse(localStorage.getItem(PL_DELETED_KEY)||'{}'); }catch(e){ return {}; } }
+function loadPlDeletedIds(){ try{ return jload(PL_DELETED_KEY,'{}'); }catch(e){ return {}; } }
 function savePlDeletedIds(o){ localStorage.setItem(PL_DELETED_KEY, JSON.stringify(o)); }
-function loadPlTrash(){ try{ return JSON.parse(localStorage.getItem(PL_TRASH_KEY)||'[]'); }catch(e){ return []; } }
+function loadPlTrash(){ try{ return jload(PL_TRASH_KEY,'[]'); }catch(e){ return []; } }
 function savePlTrash(a){ localStorage.setItem(PL_TRASH_KEY, JSON.stringify(a)); }
-function loadPoHistory(){ try{ return JSON.parse(localStorage.getItem(PO_HISTORY_KEY)||'[]'); }catch(e){ return []; } }
+function loadPlTrashDeleted(){ try{ return jload(PL_TRASH_DEL_KEY,'{}'); }catch(e){ return {}; } }
+function savePlTrashDeleted(o){ localStorage.setItem(PL_TRASH_DEL_KEY, JSON.stringify(o)); }
+function loadPoHistory(){ try{ return jload(PO_HISTORY_KEY,'[]'); }catch(e){ return []; } }
 function savePoHistory(a){ localStorage.setItem(PO_HISTORY_KEY, JSON.stringify(a)); }
 
-function loadUpi(){ try{ return JSON.parse(localStorage.getItem(UPI_KEY)||'{}'); }catch(e){ return {}; } }
+function loadUpi(){ try{ return jload(UPI_KEY,'{}'); }catch(e){ return {}; } }
 function saveUpi(o){ localStorage.setItem(UPI_KEY, JSON.stringify(o)); }
 
 function normUser(u){ return (u||'').trim().toLowerCase().replace(/\s+/g,'_'); }
@@ -1026,7 +1104,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v53-full-restored-verified';
+const APP_VERSION = '2026-10-21-v54-secure-patched';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1101,15 +1179,16 @@ async function pullFromDrive(){
 }
 
 function mergeRemoteData(remote){
-  saveUsers(Object.assign({}, loadUsers(), remote.users || {}));
+  saveUsers(Object.assign({}, remote.users || {}, loadUsers()));
+  migrateUsers();
   const custMap = {};
   loadCustomers().forEach(c=>custMap[c.id]=c);
-  (remote.customers||[]).forEach(c=>custMap[c.id]=c);
+  (remote.customers||[]).forEach(c=>{ const ex=custMap[c.id]; if(!ex || (c.updatedAt||c.createdAt||0) >= (ex.updatedAt||ex.createdAt||0)) custMap[c.id]=c; });
   saveCustomers(Object.values(custMap));
 
   const txnMap = {};
   loadTxns().forEach(t=>txnMap[t.id]=t);
-  (remote.transactions||[]).forEach(t=>txnMap[t.id]=t);
+  (remote.transactions||[]).forEach(t=>{ const ex=txnMap[t.id]; if(!ex || (t.updatedAt||t.date||0) >= (ex.updatedAt||ex.date||0)) txnMap[t.id]=t; });
   saveTxns(Object.values(txnMap));
 
   const mergedDeleted = Object.assign({}, loadDeletedExpenseIds(), remote.deletedExpenseIds || {});
@@ -1174,12 +1253,18 @@ function mergeRemoteData(remote){
   });
   savePurchaseList(Object.values(plMap));
 
-  if(remote.purchaseTrash){
-    const trashMap = {};
-    loadPlTrash().forEach(it=>{ trashMap[it.id] = it; });
-    remote.purchaseTrash.forEach(it=>{ trashMap[it.id] = it; });
-    savePlTrash(Object.values(trashMap));
-  }
+  const mergedTrashDeleted = Object.assign({}, loadPlTrashDeleted(), remote.deletedTrashIds || {});
+  savePlTrashDeleted(mergedTrashDeleted);
+  const trashMap = {};
+  loadPlTrash().forEach(it=>{ trashMap[it.id] = it; });
+  (remote.purchaseTrash||[]).forEach(it=>{ if(!trashMap[it.id]) trashMap[it.id] = it; });
+  Object.keys(trashMap).forEach(id=>{
+    const t = trashMap[id];
+    const gone = mergedTrashDeleted[id] && mergedTrashDeleted[id] >= (t.deletedAt||0);
+    const restored = plMap[id] && stampOf(plMap[id]) > (t.deletedAt||0);
+    if(gone || restored) delete trashMap[id];
+  });
+  savePlTrash(Object.values(trashMap).sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0)));
 
   const localReset = loadPeReset();
   const remoteReset = remote.peReset || {};
@@ -1198,12 +1283,22 @@ function mergeRemoteData(remote){
   savePoHistory(Object.values(poMap).sort((a,b)=>b.createdAt-a.createdAt).slice(0,100));
 }
 
+function buildPayload(){
+  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory() };
+}
+let syncDirty = false, syncBusy = false;
 async function syncToDrive(){
   if(!gDriveToken) return false;
+  if(syncBusy){ syncDirty = true; return false; }
+  syncBusy = true;
+  try{ return await _syncToDrive(); } finally { syncBusy = false; }
+}
+async function _syncToDrive(){
+  syncDirty = false;
   setDriveStatus('🔄 Syncing…');
   const pulled = await pullFromDrive();
   if(pulled==='error') return false;
-  const payload = { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory() };
+  const payload = buildPayload();
   const content = JSON.stringify(payload, null, 2);
   try{
     let res;
@@ -1257,16 +1352,20 @@ async function syncNow(){
 }
 
 function afterDataChange(){
+  syncDirty = true;
   if(gDriveToken && driveConnectedThisSession){ syncToDrive(); }
   else { showBanner('⚠️ Saved on this phone only — connect to the server to share it'); }
 }
 
 setInterval(async ()=>{
-  if(gDriveToken && driveConnectedThisSession && !document.hidden){
-    await syncToDrive();
-    refreshCurrentView();
+  if(gDriveToken && driveConnectedThisSession && !document.hidden && !syncBusy){
+    if(syncDirty){ await syncToDrive(); }
+    else {
+      const r = await pullFromDrive();
+      if(r==='ok'){ refreshCurrentView(); setDriveStatus('✅ Synced ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})); }
+    }
   }
-}, 10000);
+}, 30000);
 
 if(window.claude && claude.use){ claude.use('downloads').then(d=>{ downloadsCap = d; }).catch(()=>{ downloadsCap = null; }); }
 
@@ -1283,7 +1382,8 @@ function doRegister(){
   if(!user || !pass || pass.length<4){ setErr('regError','Enter a Login ID and password (min 4 chars)'); return; }
   const users = loadUsers();
   if(users[user]){ setErr('regError','That Login ID is already taken.'); return; }
-  users[user] = { displayName: raw, password: pass, createdAt: Date.now() };
+  const salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  users[user] = { displayName: raw, salt, hash: hashPass(pass, salt), createdAt: Date.now() };
   saveUsers(users);
   currentUser = user; currentDisplayName = raw;
   localStorage.setItem('udhar_current', user);
@@ -1301,7 +1401,7 @@ function doLogin(){
   const users = loadUsers();
   const rec = users[user];
   if(!rec){ setErr('loginError','No account found. Register first.'); return; }
-  if(rec.password !== pass){ setErr('loginError','Wrong password.'); return; }
+  if(!rec.hash || rec.hash !== hashPass(pass, rec.salt||'')){ setErr('loginError','Wrong password.'); return; }
   currentUser = user; currentDisplayName = rec.displayName || raw;
   localStorage.setItem('udhar_current', user);
   localStorage.setItem('udhar_current_display', currentDisplayName);
@@ -1445,7 +1545,7 @@ function renderCategoryButtons(){
   grid.innerHTML = '';
   allCategories().forEach(c=>{
     const div = document.createElement('div');
-    div.className = 'loadbtn exp-cat';
+    div.className = 'loadbtn exp-cat'; div.setAttribute('role','button'); div.tabIndex = 0;
     div.setAttribute('data-cat', c.name);
     div.style.background = c.color;
     div.style.opacity = (c.name===selectedExpCat) ? '1' : '0.55';
@@ -1570,12 +1670,12 @@ function renderExpenses(){
       row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
       const methodBadge = e.method==='online' ? '📲 Online' : e.method==='ownmoney' ? '🤲 Own Money' : '💵 Cash';
       row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-          <span>${e.category}${e.note?(' · '+e.note):''} <span style="font-size:0.72rem; color:var(--muted);">(${methodBadge})</span></span>
+          <span>${esc(e.category)}${e.note?(' · '+esc(e.note)):''} <span style="font-size:0.72rem; color:var(--muted);">(${methodBadge})</span></span>
           <span style="font-weight:700; white-space:nowrap;">₹${e.amount}</span>
         </div>
         <div style="display:flex; gap:10px; margin-top:6px;">
-          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editExpense('${e.id}')">✏️ Edit</button>
-          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deleteExpense('${e.id}')">🗑️ Delete</button>
+          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editExpense('${eid(e.id)}')">✏️ Edit</button>
+          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deleteExpense('${eid(e.id)}')">🗑️ Delete</button>
         </div>`;
       listEl.appendChild(row);
     });
@@ -1591,7 +1691,7 @@ function renderExpenses(){
     cats.forEach(c=>{
       const row = document.createElement('div');
       row.className = 'paidRow';
-      row.innerHTML = `<span>${c}</span><span>₹${catTotals[c]}</span>`;
+      row.innerHTML = `<span>${esc(c)}</span><span>₹${catTotals[c]}</span>`;
       catEl.appendChild(row);
     });
   }
@@ -1637,7 +1737,7 @@ function renderPeCategoryButtons(){
   grid.innerHTML = '';
   allPeCategories().forEach(c=>{
     const div = document.createElement('div');
-    div.className = 'loadbtn';
+    div.className = 'loadbtn'; div.setAttribute('role','button'); div.tabIndex = 0;
     div.style.background = c.color;
     div.style.opacity = (c.name===selectedPeCat) ? '1' : '0.55';
     div.textContent = c.emoji + ' ' + c.name;
@@ -1793,12 +1893,12 @@ function renderPersonalTab(){
       const row = document.createElement('div');
       row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
       row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-          <span>${e.date} · ${e.category}${e.note?(' · '+e.note):''}</span>
+          <span>${esc(e.date)} · ${esc(e.category)}${e.note?(' · '+esc(e.note)):''}</span>
           <span style="font-weight:700; white-space:nowrap;">₹${e.amount}</span>
         </div>
         <div style="display:flex; gap:10px; margin-top:6px;">
-          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPersonalExpense('${e.id}')">✏️ Edit</button>
-          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePersonalExpense('${e.id}')">🗑️ Delete</button>
+          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPersonalExpense('${eid(e.id)}')">✏️ Edit</button>
+          <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePersonalExpense('${eid(e.id)}')">🗑️ Delete</button>
         </div>`;
       histEl.appendChild(row);
     });
@@ -1821,7 +1921,7 @@ function renderPastPeCycles(){
     card.style.cssText = 'padding:10px; border-radius:10px; margin-bottom:8px; border:1px solid rgba(128,128,128,0.2); background:rgba(128,128,128,0.04);';
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; font-weight:700;">
-        <span>📅 ${c.startDate} to ${c.endDate}</span>
+        <span>📅 ${esc(c.startDate)} to ${esc(c.endDate)}</span>
         <span style="color:${c.balance>=0?'var(--paid)':'var(--owe)'};">Bal: ${fmtMoney(c.balance)}</span>
       </div>
       <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--muted); margin-top:4px;">
@@ -1952,10 +2052,7 @@ function restorePurchaseItem(id){
   if(!it) return;
 
   savePlTrash(trash.filter(x=>String(x.id)!==String(id)));
-
-  const deleted = loadPlDeletedIds();
-  delete deleted[String(id)];
-  savePlDeletedIds(deleted);
+  const td = loadPlTrashDeleted(); td[String(id)] = Date.now(); savePlTrashDeleted(td);
 
   const list = loadPurchaseList();
   const cleanItem = Object.assign({}, it);
@@ -1973,6 +2070,7 @@ function restorePurchaseItem(id){
 function permanentDeletePurchaseItem(id){
   if(!confirm("Permanently delete this item? This cannot be undone.")) return;
   savePlTrash(loadPlTrash().filter(x=>String(x.id)!==String(id)));
+  const td = loadPlTrashDeleted(); td[String(id)] = Date.now(); savePlTrashDeleted(td);
   showBanner("🗑️ Item permanently deleted");
   renderPlTrash();
   afterDataChange();
@@ -1982,6 +2080,7 @@ function emptyPlTrash(){
   const trash = loadPlTrash();
   if(!trash.length){ showBanner("Recycle Bin is already empty"); return; }
   if(!confirm(`Permanently delete all ${trash.length} item(s) in the Recycle Bin?`)) return;
+  const td = loadPlTrashDeleted(); trash.forEach(x=>{ td[String(x.id)] = Date.now(); }); savePlTrashDeleted(td);
   savePlTrash([]);
   showBanner("🗑️ Recycle Bin emptied");
   renderPlTrash();
@@ -2003,12 +2102,12 @@ function renderPlTrash(){
     const deletedDate = it.deletedAt ? new Date(it.deletedAt).toLocaleDateString('en-IN') : '';
     row.innerHTML = `
       <div>
-        <div style="font-weight:600;">${it.name}</div>
-        <div style="font-size:0.75rem; color:var(--muted);">${it.qty} ${unitLabel(it.unit)}${it.price!==null&&it.price!==undefined?' · ₹'+it.price:''}${it.supplier?' · 🚚 '+it.supplier:''}${deletedDate?' · Deleted: '+deletedDate:''}</div>
+        <div style="font-weight:600;">${esc(it.name)}</div>
+        <div style="font-size:0.75rem; color:var(--muted);">${esc(it.qty)} ${unitLabel(it.unit)}${it.price!==null&&it.price!==undefined?' · ₹'+esc(it.price):''}${it.supplier?' · 🚚 '+esc(it.supplier):''}${deletedDate?' · Deleted: '+deletedDate:''}</div>
       </div>
       <div style="display:flex; gap:6px;">
-        <button type="button" style="width:auto; padding:6px 12px; font-size:0.8rem; background:var(--paid);" onclick="restorePurchaseItem('${it.id}')">♻️ Restore</button>
-        <button type="button" style="width:auto; padding:6px 12px; font-size:0.8rem; background:var(--owe);" onclick="permanentDeletePurchaseItem('${it.id}')">🗑️ Delete</button>
+        <button type="button" style="width:auto; padding:6px 12px; font-size:0.8rem; background:var(--paid);" onclick="restorePurchaseItem('${eid(it.id)}')">♻️ Restore</button>
+        <button type="button" style="width:auto; padding:6px 12px; font-size:0.8rem; background:var(--owe);" onclick="permanentDeletePurchaseItem('${eid(it.id)}')">🗑️ Delete</button>
       </div>
     `;
     wrap.appendChild(row);
@@ -2186,10 +2285,10 @@ function buildPurchaseRow(it){
       + (checked ? ' background:rgba(31,111,235,0.12); border-color:var(--brand);' : '');
     row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <span style="display:flex; align-items:center; gap:8px;">
-          <span class="pl-reassign-box" data-id="${it.id}" style="cursor:pointer; font-size:1.2rem;">${checked?'☑️':'⬜'}</span>
-          <span>${it.name}</span>
+          <span class="pl-reassign-box" data-id="${eid(it.id)}" style="cursor:pointer; font-size:1.2rem;">${checked?'☑️':'⬜'}</span>
+          <span>${esc(it.name)}</span>
         </span>
-        <span style="color:var(--muted); font-size:0.78rem;">${it.supplier ? ('🚚 '+it.supplier) : 'No Supplier'}</span>
+        <span style="color:var(--muted); font-size:0.78rem;">${it.supplier ? ('🚚 '+esc(it.supplier)) : 'No Supplier'}</span>
       </div>`;
     const box = row.querySelector('.pl-reassign-box');
     if(box) box.addEventListener('click', ()=>toggleReassignSelect(it.id));
@@ -2202,7 +2301,7 @@ function buildPurchaseRow(it){
   row.style.cssText = 'padding:10px; border-radius:10px; margin-bottom:6px; border:1px solid rgba(128,128,128,0.2);'
     + (isSelected ? ' background:rgba(31,111,235,0.12); border-color:var(--brand);' : '');
   const mrpBit = (it.mrp!==null && it.mrp!==undefined) ? ` · MRP ₹${it.mrp}` : '';
-  const supplierBit = it.supplier ? ` · 🚚 ${it.supplier}` : '';
+  const supplierBit = it.supplier ? ` · 🚚 ${esc(it.supplier)}` : '';
   const rate = (it.price!==null && it.price!==undefined) ? it.price : 0;
   const lineTotal = rate * orderQty;
 
@@ -2212,24 +2311,24 @@ function buildPurchaseRow(it){
 
   const stepper = isSelected ? `
     <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
-      <button type="button" class="pl-dec" data-id="${it.id}" style="width:40px; height:40px; padding:0; margin:0; background:var(--owe); font-size:1.2rem;">−</button>
+      <button type="button" class="pl-dec" data-id="${eid(it.id)}" style="width:40px; height:40px; padding:0; margin:0; background:var(--owe); font-size:1.2rem;">−</button>
       <span style="font-weight:700; min-width:30px; text-align:center;">${orderQty}</span>
-      <button type="button" class="pl-inc" data-id="${it.id}" style="width:40px; height:40px; padding:0; margin:0; background:var(--paid); font-size:1.2rem;">+</button>
+      <button type="button" class="pl-inc" data-id="${eid(it.id)}" style="width:40px; height:40px; padding:0; margin:0; background:var(--paid); font-size:1.2rem;">+</button>
       <span style="color:var(--muted); font-size:0.8rem;">${unitLabel(it.unit)}</span>
     </div>` : '';
 
   row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
       <span style="display:flex; align-items:center; gap:8px;">
-        <span class="pl-select-dot" data-id="${it.id}" style="cursor:pointer; font-size:1.2rem;">${isSelected?'✅':'⭕'}</span>
-        <span>${it.name}</span>
+        <span class="pl-select-dot" data-id="${eid(it.id)}" style="cursor:pointer; font-size:1.2rem;">${isSelected?'✅':'⭕'}</span>
+        <span>${esc(it.name)}</span>
       </span>
       <span style="font-weight:700; white-space:nowrap; color:var(--muted); font-size:0.8rem;">in catalog: ${it.qty} ${unitLabel(it.unit)}</span>
     </div>
     ${priceDisplay}
     ${stepper}
     <div style="display:flex; gap:10px; margin-top:8px;">
-      <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPurchaseItem('${it.id}')">✏️ Edit</button>
-      <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePurchaseItem('${it.id}')">🗑️ Delete</button>
+      <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--brand);" onclick="editPurchaseItem('${eid(it.id)}')">✏️ Edit</button>
+      <button type="button" style="width:auto; min-width:76px; min-height:38px; margin:0; padding:8px 14px; font-size:0.85rem; background:var(--owe);" onclick="deletePurchaseItem('${eid(it.id)}')">🗑️ Delete</button>
     </div>`;
 
   const dot = row.querySelector('.pl-select-dot');
@@ -2260,7 +2359,7 @@ function renderPurchaseList(){
   const hasUnassigned = list.some(it=>!it.supplier);
   if(supplierFilterEl){
     const prevVal = supplierFilterEl.value;
-    let opts = '<option value="">All Suppliers</option>' + suppliers.map(s=>`<option value="${s}">${s}</option>`).join('');
+    let opts = '<option value="">All Suppliers</option>' + suppliers.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
     if(hasUnassigned) opts += '<option value="No Supplier">No Supplier</option>';
     supplierFilterEl.innerHTML = opts;
     supplierFilterEl.value = (prevVal && (suppliers.includes(prevVal) || prevVal==='No Supplier')) ? prevVal : '';
@@ -2269,7 +2368,7 @@ function renderPurchaseList(){
   const displayList = filterAndSortPurchaseList(list, query, sortKey, supplierFilter);
 
   const datalist = document.getElementById('pl-supplierOptions');
-  if(datalist) datalist.innerHTML = suppliers.map(s=>`<option value="${s}">`).join('');
+  if(datalist) datalist.innerHTML = suppliers.map(s=>`<option value="${esc(s)}">`).join('');
 
   if(!list.length){ wrap.innerHTML = '<p style="color:var(--muted);">No items yet</p>'; renderSelectedSummary(); return; }
   if(!displayList.length){ wrap.innerHTML = '<p style="color:var(--muted);">No items match your search</p>'; renderSelectedSummary(); return; }
@@ -2386,7 +2485,7 @@ function openPoInvoiceModal(orderId){
     div.style.padding = '8px 0';
     div.innerHTML = `
       <div>
-        <div style="font-weight:600;">${it.name}</div>
+        <div style="font-weight:600;">${esc(it.name)}</div>
         <div style="font-size:0.75rem; color:var(--muted);">${qty} ${unitLabel(it.unit)} × ₹${rate}</div>
       </div>
       <div style="font-weight:700;">₹${lineTotal.toLocaleString('en-IN')}</div>
@@ -2429,8 +2528,8 @@ function renderPoHistory(){
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:flex-start;">
         <div>
-          <div style="font-weight:700; font-size:1rem; color:var(--text);">🚚 ${order.supplier || 'Supplier Order'}</div>
-          <div style="font-size:0.8rem; color:var(--muted); margin-top:2px;">${order.items.length} item(s) · ${order.date}</div>
+          <div style="font-weight:700; font-size:1rem; color:var(--text);">🚚 ${esc(order.supplier || 'Supplier Order')}</div>
+          <div style="font-size:0.8rem; color:var(--muted); margin-top:2px;">${order.items.length} item(s) · ${esc(order.date)}</div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:1.15rem; font-weight:800; color:var(--brand);">₹${Number(orderTotal).toLocaleString('en-IN')}</div>
@@ -2451,7 +2550,7 @@ function levenshtein(a, b){
   for(let j=0;j<=n;j++) dp[0][j]=j;
   for(let i=1;i<=m;i++){
     for(let j=1;j<=n;j++){
-      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1], dp[i-1][j], dp[i-1][j-1]);
+      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
     }
   }
   return dp[m][n];
@@ -2544,7 +2643,8 @@ async function scanPurchaseBill(event){
   const file = event.target.files && event.target.files[0];
   if(!file) return;
   const statusEl = document.getElementById('pl-scanStatus');
-  if(!window.Tesseract){ statusEl.textContent = '⚠️ OCR library failed to load — check your internet connection'; return; }
+  statusEl.textContent = '🔄 Loading scanner…';
+  try{ await loadLib('tess'); }catch(e){ statusEl.textContent = '⚠️ OCR library failed to load — check your internet connection'; return; }
   statusEl.textContent = '🔄 Scanning bill… this can take 10–30 seconds';
   try{
     const result = await Tesseract.recognize(file, 'eng+tam', {
@@ -2568,10 +2668,10 @@ function showReviewItems(items){
   items.forEach((it,i)=>{
     const row = document.createElement('div');
     row.style.cssText = 'padding:10px 0; border-bottom:1px dashed rgba(128,128,128,0.2);';
-    const correctedNote = it.autoCorrected ? `<div style="font-size:0.72rem; color:var(--muted);">auto-corrected from "${it.originalName}"</div>` : '';
+    const correctedNote = it.autoCorrected ? `<div style="font-size:0.72rem; color:var(--muted);">auto-corrected from "${esc(it.originalName)}"</div>` : '';
     const priceLine = (it.price!==null && it.price!==undefined) ? `<div style="font-size:0.72rem; color:var(--muted);">Price ₹${it.price}${it.mrp?(' · MRP ₹'+it.mrp):''}</div>` : '';
     row.innerHTML = `
-      <input data-idx="${i}" data-field="name" value="${(it.name||'').replace(/"/g,'&quot;')}" style="margin-bottom:6px;">
+      <input data-idx="${i}" data-field="name" value="${esc(it.name||'')}" style="margin-bottom:6px;">
       ${correctedNote}${priceLine}
       <div class="twocol" style="margin-top:4px;">
         <input data-idx="${i}" data-field="qty" type="number" value="${it.qty}" placeholder="Qty">
@@ -2643,7 +2743,7 @@ function renderInvoiceSummary(items){
   items.forEach(it=>{
     const rate = it.price||0;
     const lineTotal = rate * (it.qty||0);
-    html += `<div class="paidRow"><span>${it.name} (${it.qty} ${unitLabel(it.unit)})</span><span>${rate?('₹'+lineTotal):'—'}</span></div>`;
+    html += `<div class="paidRow"><span>${esc(it.name)} (${esc(it.qty)} ${unitLabel(it.unit)})</span><span>${rate?('₹'+lineTotal):'—'}</span></div>`;
   });
   html += `<div class="paidRow" style="font-weight:700; border-top:2px solid var(--muted); margin-top:6px; padding-top:8px;"><span>Invoice Total</span><span>₹${Math.round(total).toLocaleString('en-IN')}</span></div>`;
   listEl.innerHTML = html;
@@ -2662,7 +2762,7 @@ function renderTodayPaid(){
     total += t.amount;
     const row = document.createElement('div');
     row.className = 'paidRow';
-    row.innerHTML = `<span>${c?c.name:'Unknown'}</span><span style="color:var(--paid); font-weight:600;">₹${t.amount}</span>`;
+    row.innerHTML = `<span>${esc(c?c.name:'Unknown')}</span><span style="color:var(--paid); font-weight:600;">₹${t.amount}</span>`;
     wrap.appendChild(row);
   });
   const totalRow = document.createElement('div');
@@ -2676,10 +2776,12 @@ function renderCustomers(){
   const q = (document.getElementById('searchBox').value||'').toLowerCase();
   const customers = loadCustomers();
   let total = 0;
-  const rows = customers.map(c=>({...c, bal: balanceFor(c.id)}))
+  const balMap = {};
+  loadTxns().forEach(t=>{ balMap[t.customerId] = (balMap[t.customerId]||0) + (t.type==='credit' ? t.amount : -t.amount); });
+  const rows = customers.map(c=>({...c, bal: balMap[c.id]||0}))
     .filter(c=> c.name.toLowerCase().includes(q))
     .sort((a,b)=> b.bal - a.bal);
-  customers.forEach(c=> total += balanceFor(c.id));
+  customers.forEach(c=> total += (balMap[c.id]||0));
   document.getElementById('totalOut').textContent = '₹' + total;
 
   const wrap = document.getElementById('custListCard');
@@ -2687,9 +2789,9 @@ function renderCustomers(){
   wrap.innerHTML = '';
   rows.forEach(c=>{
     const div = document.createElement('div');
-    div.className = 'custrow';
+    div.className = 'custrow'; div.setAttribute('role','button'); div.tabIndex = 0;
     div.onclick = ()=> openCustomer(c.id);
-    div.innerHTML = `<div><div class="name">${c.name}</div><div class="phone">${c.phone||''}</div></div>
+    div.innerHTML = `<div><div class="name">${esc(c.name)}</div><div class="phone">${esc(c.phone||'')}</div></div>
       <div class="bal ${c.bal>0?'owe':'clear'}">${c.bal>0 ? '₹'+c.bal : 'Clear'}</div>`;
     wrap.appendChild(div);
   });
@@ -2731,7 +2833,7 @@ function renderQrPreview(){
   const img = localStorage.getItem('udhar_upi_qr_img');
   const box = document.getElementById('qrPreviewBox');
   box.innerHTML = img
-    ? `<img src="${img}" style="max-width:180px; border-radius:10px; margin-top:8px;"><br><button class="ghost" style="width:auto; margin-top:8px;" onclick="removeQrImage()">Remove QR</button>`
+    ? `<img src="${esc(img)}" style="max-width:180px; border-radius:10px; margin-top:8px;"><br><button class="ghost" style="width:auto; margin-top:8px;" onclick="removeQrImage()">Remove QR</button>`
     : '';
 }
 
@@ -2740,9 +2842,20 @@ function uploadQrImage(e){
   if(!file) return;
   const reader = new FileReader();
   reader.onload = function(ev){
-    localStorage.setItem('udhar_upi_qr_img', ev.target.result);
-    renderQrPreview();
-    showBanner('✅ QR code saved');
+    const img = new Image();
+    img.onload = function(){
+      const scale = Math.min(1, 640 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width*scale); c.height = Math.round(img.height*scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      try{
+        localStorage.setItem('udhar_upi_qr_img', c.toDataURL('image/jpeg', 0.85));
+        renderQrPreview();
+        showBanner('✅ QR code saved');
+      }catch(err){ showBanner('⚠️ Could not save QR (storage full)'); }
+    };
+    img.onerror = function(){ showBanner('⚠️ Could not read that image'); };
+    img.src = ev.target.result;
   };
   reader.readAsDataURL(file);
 }
@@ -2763,20 +2876,15 @@ function saveUpiSettings(){
 }
 
 async function backupData(){
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    customers: loadCustomers(),
-    transactions: loadTxns()
-  };
-  const json = JSON.stringify(payload, null, 2);
+  const json = JSON.stringify(buildPayload(), null, 2);
   const filename = 'udhar-backup-' + todayStr() + '.json';
-  if(!downloadsCap){
+  if(!downloadsCap && window.claude && claude.use){
     try{ downloadsCap = await claude.use('downloads'); }catch(e){ downloadsCap = null; }
   }
   if(downloadsCap){
     try{
       await downloadsCap.save({ filename, data: json });
-      showBanner('✅ Backup saved');
+      showBanner('✅ Full backup saved');
     }catch(e){
       showBanner('Backup was not saved (cancelled or unavailable)');
     }
@@ -2785,8 +2893,28 @@ async function backupData(){
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
-    showBanner('✅ Backup downloaded');
+    setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+    showBanner('✅ Full backup downloaded');
   }
+}
+
+function restoreBackup(e){
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    let data;
+    try{ data = JSON.parse(ev.target.result); }catch(err){ showBanner('⚠️ That is not a valid backup file'); return; }
+    if(!data || typeof data!=='object' || Array.isArray(data)){ showBanner('⚠️ That is not a valid backup file'); return; }
+    if(!confirm('Merge this backup into the current data? Existing entries are kept; newer entries win.')) return;
+    try{
+      mergeRemoteData(data);
+      showBanner('✅ Backup restored');
+      e.target.value = '';
+      afterDataChange();
+    }catch(err){ showBanner('⚠️ Restore failed: ' + (err.message||'bad file')); }
+  };
+  reader.readAsText(file);
 }
 
 /* ---------- customer detail ---------- */
@@ -2830,7 +2958,7 @@ function renderCustomerDetail(){
     const row = document.createElement('div');
     row.className = 'txnrow';
     const d = new Date(t.date);
-    row.innerHTML = `<span>${d.toLocaleDateString()} ${t.note?('· '+t.note):''}</span>
+    row.innerHTML = `<span>${d.toLocaleDateString()} ${t.note?('· '+esc(t.note)):''}</span>
       <span class="${t.type}">${t.type==='credit'?'+':'-'}₹${t.amount} <span style="color:var(--muted); font-weight:400;">(bal ₹${running})</span></span>`;
     hist.appendChild(row);
   });
@@ -3322,7 +3450,7 @@ function renderDetailedReportTables(m){
   m.days.forEach(d=>{
     const status = d.cashDifference===null ? '—' : (d.needsReview ? '⚠️ Review' : '✅ OK');
     dailyRowsHtml += `<tr style="border-bottom:1px solid rgba(128,128,128,0.15);">
-      <td style="padding:4px 6px;">${d.date}</td>
+      <td style="padding:4px 6px;">${esc(d.date)}</td>
       <td style="padding:4px 6px;">₹${Math.round(d.cashSales)}${d.cashSalesIsDerived?' *':''}</td>
       <td style="padding:4px 6px;">₹${Math.round(d.onlineSales)}</td>
       <td style="padding:4px 6px;">₹${Math.round(d.expenses)}</td>
@@ -3343,7 +3471,7 @@ function renderDetailedReportTables(m){
     const prevVal = catSelect.value;
     const cats = allCategories();
     catSelect.innerHTML = '<option value="">All Categories</option>' +
-      cats.map(c=>`<option value="${c.name}">${c.emoji} ${c.name}</option>`).join('');
+      cats.map(c=>`<option value="${esc(c.name)}">${c.emoji} ${esc(c.name)}</option>`).join('');
     catSelect.value = cats.find(c=>c.name===prevVal) ? prevVal : '';
   }
   const selectedCat = catSelect ? catSelect.value : '';
@@ -3365,11 +3493,11 @@ function renderDetailedReportTables(m){
   } else {
     expenseRows.forEach(e=>{
       expRowsHtml += `<tr style="border-bottom:1px solid rgba(128,128,128,0.15);">
-        <td style="padding:4px 6px;">${e.Date}</td>
-        <td style="padding:4px 6px;">${e.Category}</td>
-        <td style="padding:4px 6px;">₹${e['Amount (₹)']}</td>
+        <td style="padding:4px 6px;">${esc(e.Date)}</td>
+        <td style="padding:4px 6px;">${esc(e.Category)}</td>
+        <td style="padding:4px 6px;">₹${esc(e['Amount (₹)'])}</td>
         <td style="padding:4px 6px;">${e['Paid Using']}</td>
-        <td style="padding:4px 6px;">${e.Note||'—'}</td>
+        <td style="padding:4px 6px;">${esc(e.Note||'—')}</td>
       </tr>`;
     });
   }
@@ -3604,7 +3732,7 @@ function getSelectedReportSections(){
   };
 }
 
-function downloadReport(format){
+async function downloadReport(format){
   const m = window.__lastDashMetrics;
   if(!m){ showBanner('Open the dashboard first'); return; }
   const sections = getSelectedReportSections();
@@ -3613,6 +3741,7 @@ function downloadReport(format){
   }
   const mode = chosenReportMode || 'official';
   closeReportModal();
+  try{ await loadLib(format==='pdf'?'jspdf':'xlsx'); }catch(e){ showBanner('⚠️ Could not load export library — check your internet connection'); return; }
   if(format==='pdf') generatePdfReport(m, sections, mode);
   else generateExcelReport(m, sections, mode);
 }
@@ -3632,10 +3761,11 @@ function buildMasterSheetRows(){
   }));
 }
 
-function exportMasterSheet(format){
+async function exportMasterSheet(format){
   const rows = buildMasterSheetRows();
   if(!rows.length){ showBanner('Master Sheet is empty'); return; }
   closePlExportModal();
+  try{ await loadLib(format==='excel'?'xlsx':'jspdf'); }catch(e){ showBanner('⚠️ Could not load export library — check your internet connection'); return; }
   if(format==='excel'){
     if(!window.XLSX){ showBanner('⚠️ Excel library not loaded — check your internet connection'); return; }
     const wb = XLSX.utils.book_new();
@@ -3842,40 +3972,23 @@ function generateExcelReport(m, sections, mode){
   XLSX.writeFile(wb, 'SP-Tea-Shop-Report-'+safePeriod+'.xlsx');
 }
 
-/* ---------- safe dashboard mode ---------- */
-function setDashMode(mode){
-  dashMode = mode;
-  localStorage.setItem('udhar_dash_mode', mode);
-  const officialBtn = document.getElementById('mode-official-btn');
-  const personalBtn = document.getElementById('mode-personal-btn');
-  const officialBox = document.getElementById('db-officialBox');
-  const personalBox = document.getElementById('db-personalBox');
-
-  if(officialBtn && personalBtn){
-    if(mode==='official'){
-      officialBtn.style.background = 'var(--brand)'; officialBtn.classList.remove('ghost');
-      personalBtn.style.background = 'transparent'; personalBtn.classList.add('ghost');
-    } else {
-      personalBtn.style.background = 'var(--paid)'; personalBtn.classList.remove('ghost');
-      officialBtn.style.background = 'transparent'; officialBtn.classList.add('ghost');
-    }
-  }
-
-  if(officialBox && personalBox){
-    if(mode==='official'){
-      officialBox.classList.remove('hidden'); personalBox.classList.add('hidden');
-    } else {
-      personalBox.classList.remove('hidden'); officialBox.classList.add('hidden');
-    }
-  }
-}
-
 /* ---------- init ---------- */
+document.addEventListener('keydown', function(e){
+  if((e.key==='Enter' || e.key===' ') && e.target && e.target.getAttribute && e.target.getAttribute('role')==='button' && e.target.tagName==='DIV'){
+    e.preventDefault(); e.target.click();
+  }
+});
+document.querySelectorAll('label').forEach(function(l){
+  if(l.htmlFor || l.querySelector('input')) return;
+  const n = l.nextElementSibling;
+  if(n && /^(INPUT|SELECT|TEXTAREA)$/.test(n.tagName) && n.id) l.htmlFor = n.id;
+});
 (function(){
+  migrateUsers();
   ['versionStamp','versionStamp2'].forEach(id=>{ const v=document.getElementById(id); if(v) v.textContent = 'v: ' + APP_VERSION; });
   const p = new URLSearchParams(location.search);
   if(p.get('pa') && p.get('am')){ renderPayPage(p); return; }
-  if(currentUser){ enterApp(); }
+  if(currentUser && loadUsers()[currentUser]){ enterApp(); }
 })();
 </script>
 </body>
