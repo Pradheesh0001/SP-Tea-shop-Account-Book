@@ -1104,7 +1104,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v54-secure-patched';
+const APP_VERSION = '2026-10-21-v55-fast-sync';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1147,9 +1147,14 @@ function connectGoogleDrive(){
   tokenClient.requestAccessToken();
 }
 
-async function pullFromDrive(){
+async function pullFromDrive(quick){
   if(!gDriveToken) return 'error';
   try{
+    if(quick && gDriveFileId){
+      const r0 = await fetch(`https://www.googleapis.com/drive/v3/files/${gDriveFileId}?alt=media`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
+      if(r0.ok){ try{ mergeRemoteData(await r0.json()); }catch(e){} return 'ok'; }
+      if(handleDriveAuthError(r0)) return 'error';
+    }
     const q = encodeURIComponent("name='udhar-book-data.json' and trashed=false");
     const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime&fields=files(id,createdTime)`, { headers:{ 'Authorization':'Bearer '+gDriveToken } });
     if(!listRes.ok){
@@ -1357,15 +1362,25 @@ function afterDataChange(){
   else { showBanner('⚠️ Saved on this phone only — connect to the server to share it'); }
 }
 
-setInterval(async ()=>{
-  if(gDriveToken && driveConnectedThisSession && !document.hidden && !syncBusy){
-    if(syncDirty){ await syncToDrive(); }
-    else {
-      const r = await pullFromDrive();
-      if(r==='ok'){ refreshCurrentView(); setDriveStatus('✅ Synced ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})); }
+function dataSnapshot(){
+  return Object.keys(localStorage).filter(k=>k.indexOf('udhar_')===0 && k!=='udhar_upi_qr_img').sort().map(k=>localStorage.getItem(k)).join('|');
+}
+let pollBusy = false;
+async function pollDrive(){
+  if(!gDriveToken || !driveConnectedThisSession || document.hidden || syncBusy || pollBusy) return;
+  pollBusy = true;
+  try{
+    if(syncDirty){ await syncToDrive(); return; }
+    const before = dataSnapshot();
+    const r = await pullFromDrive(true);
+    if(r==='ok' && dataSnapshot()!==before){
+      refreshCurrentView();
+      setDriveStatus('✅ Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}));
     }
-  }
-}, 30000);
+  } finally { pollBusy = false; }
+}
+setInterval(pollDrive, 3000);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pollDrive(); });
 
 if(window.claude && claude.use){ claude.use('downloads').then(d=>{ downloadsCap = d; }).catch(()=>{ downloadsCap = null; }); }
 
