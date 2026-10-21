@@ -1042,7 +1042,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v44-pro-ui-ux';
+const APP_VERSION = '2026-10-21-v45-fix-pe-cats';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1608,7 +1608,19 @@ function renderExpenses(){
   }
 }
 
-/* ---------- PERSONAL EXPENSES & CYCLE ARCHIVE ---------- */
+/* ========================================================================
+   PERSONAL EXPENSES & CYCLE ARCHIVE — DECLARATIONS RESTORED
+   ======================================================================== */
+const BUILTIN_PE_CATS = [
+  {name:'Shop Rent', emoji:'🏠', color:'#8D6E63'},
+  {name:'Personal Spend', emoji:'🛍️', color:'#EC407A'},
+  {name:'EB Bill', emoji:'💡', color:'#FFCA28'},
+  {name:'Loan', emoji:'🏦', color:'#5C6BC0'},
+  {name:'Jewel Loan', emoji:'💍', color:'#AB47BC'},
+  {name:'Other', emoji:'📦', color:'#78909C'}
+];
+const PE_COLOR_PALETTE = ['#0d9488','#9333ea','#4f46e5','#65a30d','#e11d48','#d97706','#0284c7','#16a34a','#ea580c','#475569'];
+
 function allPeCategories(){
   return BUILTIN_PE_CATS.concat(loadPeCustomCats().map(c=>({name:c.name, emoji:'🏷️', color:c.color})));
 }
@@ -2442,7 +2454,7 @@ function levenshtein(a, b){
   for(let j=0;j<=n;j++) dp[0][j]=j;
   for(let i=1;i<=m;i++){
     for(let j=1;j<=n;j++){
-      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1], dp[i-1][j], dp[i-1][j-1]);
     }
   }
   return dp[m][n];
