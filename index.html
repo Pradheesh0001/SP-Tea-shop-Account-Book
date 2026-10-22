@@ -362,6 +362,8 @@ window.addEventListener('error', function(e){
     border: 1px solid rgba(255, 255, 255, 0.15);
   }
   .muted { color: var(--muted); }
+  button.homeBtn { background: var(--brand-light); color: var(--brand); border: 1.5px solid var(--brand); box-shadow: none; font-weight: 700; }
+  button.homeBtn:hover { filter: none; background: var(--brand); color: #fff; }
   .qtyBadge { display:inline-block; background:var(--brand); color:#fff; font-weight:800; font-size:1rem; line-height:1.2; padding:4px 11px; border-radius:10px; letter-spacing:0.01em; white-space:nowrap; }
   .qtyBadge small { font-weight:600; font-size:0.72rem; opacity:0.92; margin-left:3px; }
   .invRow { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--card-border); }
@@ -453,13 +455,13 @@ window.addEventListener('error', function(e){
 
     <div class="appShell">
     <nav class="sideNav tabGrid">
-      <button id="tab-dashboard-btn" onclick="showDashboardTab()" style="background:var(--brand);">📊 Dashboard</button>
+      <button id="tab-machine-btn" onclick="showMachineTab()" style="background:var(--brand);">🏠 Home</button>
+      <button id="tab-dashboard-btn" onclick="showDashboardTab()" class="ghost" style="margin-top:0;">📊 Dashboard</button>
       <button id="tab-sales-btn" onclick="showSalesTab()" class="ghost" style="margin-top:0;">💵 Daily Sales</button>
       <button id="tab-expenses-btn" onclick="showExpensesTab()" class="ghost" style="margin-top:0;">💸 Shop Expenses</button>
       <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Customer Accounts</button>
       <button id="tab-personal-btn" onclick="showPersonalTab()" class="ghost" style="margin-top:0;">🧍 Personal Expenses</button>
       <button id="tab-purchase-btn" onclick="showPurchaseTab()" class="ghost" style="margin-top:0;">🛒 Master Sheet</button>
-      <button id="tab-machine-btn" onclick="showMachineTab()" class="ghost" style="margin-top:0;">💰 Money Machine</button>
       <button class="ghost sideNavSettings" onclick="showSettings()">⚙️ Settings</button>
     </nav>
     <div class="mainContent">
@@ -874,7 +876,7 @@ window.addEventListener('error', function(e){
     <!-- MONEY MACHINE TAB -->
     <div id="machineTab" class="hidden">
       <div class="card">
-        <h3 style="margin-top:0;">💰 Money Machine</h3>
+        <h3 style="margin-top:0;">🏠 Home — Money Machine</h3>
         <div style="display:flex; gap:8px; margin-bottom:10px;">
           <button id="mm-daily" onclick="setMmRange('daily')" style="width:auto; flex:1; padding:10px; font-size:0.85rem;">Day</button>
           <button id="mm-weekly" onclick="setMmRange('weekly')" class="ghost" style="width:auto; flex:1; margin:0; padding:10px; font-size:0.85rem;">Week</button>
@@ -1184,7 +1186,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v67-drag-fix';
+const APP_VERSION = '2026-10-21-v68-home';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1586,10 +1588,10 @@ function showDashboard(){
   document.getElementById('custDetailView').classList.add('hidden');
   document.getElementById('settingsView').classList.add('hidden');
   document.getElementById('dashView').classList.remove('hidden');
-  showDashboardTab();
+  showMachineTab();
 }
 
-const TABS = ['dashboard','sales','expenses','customers','personal','purchase','machine'];
+const TABS = ['machine','dashboard','sales','expenses','customers','personal','purchase'];
 function activateTab(name){
   TABS.forEach(t=>{
     const panel = document.getElementById(t+'Tab');
@@ -2872,6 +2874,30 @@ document.addEventListener('touchmove', function(e){ if(plDrag && e.cancelable) e
   w.addEventListener('contextmenu', function(e){ if(e.target.closest && e.target.closest('[data-pid]') && !e.target.closest('input,textarea')) e.preventDefault(); });
   w.style.webkitUserSelect = 'none'; w.style.userSelect = 'none'; w.style.webkitTouchCallout = 'none';
 })();
+
+
+/* ---------- Home button at top and bottom of every section ---------- */
+function goHome(){
+  showDashboard();
+  window.scrollTo(0, 0);
+}
+function addHomeButtons(){
+  ['dashboardTab','salesTab','expensesTab','customersTab','personalTab','purchaseTab','addCustView','settingsView','custDetailView'].forEach(id=>{
+    const panel = document.getElementById(id);
+    if(!panel || panel.getAttribute('data-home')) return;
+    panel.setAttribute('data-home','1');
+    const mk = pos => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'homeBtn'; b.textContent = '🏠 Home';
+      b.style.margin = pos==='top' ? '0 0 14px' : '14px 0 0';
+      b.addEventListener('click', goHome);
+      return b;
+    };
+    panel.insertBefore(mk('top'), panel.firstChild);
+    panel.appendChild(mk('bottom'));
+  });
+}
+addHomeButtons();
 
 function copyPurchaseListNameQtyOnly(){
   const list = loadPurchaseList();
