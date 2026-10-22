@@ -389,7 +389,7 @@ window.addEventListener('error', function(e){
       <input id="loginPass" placeholder="Password" type="password" autocomplete="current-password">
       <div class="error hidden" id="loginError"></div>
       <button style="background:var(--brand)" onclick="doLogin()">Log In</button>
-      <p class="hint">New here? <button class="link" style="display:inline;width:auto;" onclick="showRegister()">Register</button></p>
+      <p class="hint">New here? <button class="link" style="display:inline;width:auto;" onclick="showRegister()">Register</button> &nbsp;·&nbsp; <button class="link" style="display:inline;width:auto;" onclick="showForgot()">Forgot password?</button></p>
     </div>
     <div id="registerForm" class="hidden">
       <input id="regUser" placeholder="Choose a Login ID" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -397,6 +397,15 @@ window.addEventListener('error', function(e){
       <div class="error hidden" id="regError"></div>
       <button style="background:var(--paid)" onclick="doRegister()">Register</button>
       <p class="hint">Already registered? <button class="link" style="display:inline;width:auto;" onclick="showLogin()">Log In</button></p>
+    </div>
+    <div id="forgotForm" class="hidden">
+      <p class="hint" style="margin-bottom:10px;">Enter your Login ID, the recovery word you saved in Settings, and a new password.</p>
+      <input id="fUser" placeholder="Login ID" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <input id="fWord" placeholder="Recovery word" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <input id="fPass" placeholder="New password" type="password" autocomplete="new-password">
+      <div class="error hidden" id="fError"></div>
+      <button style="background:var(--brand)" onclick="doForgot()">Reset Password</button>
+      <p class="hint"><button class="link" style="display:inline;width:auto;" onclick="showLogin()">Back to Log In</button></p>
     </div>
   </div>
 
@@ -491,6 +500,7 @@ window.addEventListener('error', function(e){
         <button id="mode-official-btn" onclick="setDashMode('official')" style="width:auto; flex:1; padding:12px; font-size:0.9rem;">🏛️ Official Mode</button>
         <button id="mode-personal-btn" onclick="setDashMode('personal')" class="ghost" style="width:auto; flex:1; margin:0; padding:12px; font-size:0.9rem;">🤲 Personal Mode</button>
       </div>
+      <p class="hint" style="margin:-4px 0 12px;">🏛️ Official = total sales − expenses − salary (the shop's real profit). 🤲 Personal = only online money you can withdraw, after the cash you put in.</p>
 
       <div class="totalbox" id="db-officialBox">
         <div class="amt" id="db-profit">₹0</div>
@@ -531,6 +541,7 @@ window.addEventListener('error', function(e){
       </div>
 
       <button style="background:var(--brand);" onclick="openReportModal()">⬇️ Download Report</button>
+      <button class="ghost" onclick="sendOwnerReport()" style="margin-top:10px;">📤 Send weekly report to my WhatsApp</button>
 
       <div id="reportModeModal" class="hidden card">
         <h3 style="margin-top:0;">Choose report mode</h3>
@@ -569,6 +580,7 @@ window.addEventListener('error', function(e){
     <div id="salesTab" class="hidden">
       <div class="card">
         <h3 style="margin-top:0;">Daily Sales / Cash</h3>
+        <div id="ds-closedBadge" class="hint" style="margin:-6px 0 10px; text-align:left;"></div>
         <label>Date</label>
         <input id="ds-date" type="date" onchange="loadDailySalesForm()">
         <label>Opening Cash (₹) — optional</label>
@@ -582,6 +594,7 @@ window.addEventListener('error', function(e){
         <label>Actual Closing Cash counted (₹) — optional</label>
         <input id="ds-closing" type="number" min="0">
         <button style="background:var(--brand);" onclick="saveDailySales()">💾 Save Day</button>
+        <button id="ds-closeBtn" class="ghost" onclick="toggleCloseDay()">🔒 Close Day</button>
       </div>
       <div class="card" id="ds-summaryCard"></div>
     </div>
@@ -688,6 +701,17 @@ window.addEventListener('error', function(e){
       <div class="card">
         <h3 style="margin-top:0;" id="peCurrentCycleTitle">Current Cycle Personal Expense History</h3>
         <div id="peHistoryList"></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">📊 Monthly Budgets</h3>
+        <p class="hint" style="margin-bottom:10px;">Set a monthly limit per category. Bars show this month's spending.</p>
+        <div id="peBudgetList"></div>
+        <div class="twocol">
+          <div><label>Category</label><select id="peb-cat"></select></div>
+          <div><label>Monthly limit (₹)</label><input id="peb-amt" type="number" min="0"></div>
+        </div>
+        <button style="background:var(--brand);" onclick="savePeBudget()">💾 Save Budget</button>
       </div>
 
       <div class="card">
@@ -823,6 +847,8 @@ window.addEventListener('error', function(e){
       </div>
 
       <!-- PURCHASE ORDER HISTORY & MODAL -->
+      <div class="card" id="po-payableCard"></div>
+
       <div class="card">
         <div class="toprow" style="margin-bottom:10px;">
           <h3 style="margin:0;">📜 Purchase Order History</h3>
@@ -853,8 +879,23 @@ window.addEventListener('error', function(e){
           <button style="background:var(--brand); flex:1; margin:0;" id="poModalEditBtn">✏️ Edit Invoice</button>
           <button style="background:var(--owe); flex:1; margin:0;" id="poModalDeleteBtn">🗑️ Delete Invoice</button>
         </div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button class="ghost" style="flex:1; margin:0;" id="poModalPaidBtn">✅ Mark as Paid</button>
+        </div>
       </div>
     </div>
+    <div id="editModal" class="hidden card" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:92%; max-width:480px; max-height:88vh; overflow-y:auto; z-index:1100; box-shadow:0 10px 30px rgba(0,0,0,0.4); border:1px solid rgba(128,128,128,0.3);">
+      <div class="toprow" style="margin-bottom:10px;">
+        <h3 id="em-title" style="margin:0;">Edit</h3>
+        <button class="ghost" style="width:auto; margin:0; padding:4px 10px;" onclick="closeEditModal()">✕</button>
+      </div>
+      <div id="em-fields"></div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button style="background:var(--paid); flex:1; margin:0;" onclick="submitEditModal()">💾 Save</button>
+        <button class="ghost" style="flex:1; margin:0;" onclick="closeEditModal()">Cancel</button>
+      </div>
+    </div>
+
     <div id="poEditModal" class="hidden card" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:92%; max-width:520px; max-height:88vh; overflow-y:auto; z-index:1001; box-shadow:0 10px 30px rgba(0,0,0,0.35); border:1px solid rgba(128,128,128,0.3);">
       <div class="toprow" style="margin-bottom:10px;">
         <h3 style="margin:0;">✏️ Edit Purchase Invoice</h3>
@@ -875,6 +916,7 @@ window.addEventListener('error', function(e){
 
     <!-- MONEY MACHINE TAB -->
     <div id="machineTab" class="hidden">
+      <div class="card" id="homeTodayCard"></div>
       <div class="card">
         <h3 style="margin-top:0;">🏠 Home — Money Machine</h3>
         <div style="display:flex; gap:8px; margin-bottom:10px;">
@@ -934,6 +976,15 @@ window.addEventListener('error', function(e){
     <button class="ghost" onclick="syncDiagnose()">🔍 Check Sync Status</button>
     <p class="hint" id="driveStatus">Not connected</p>
 
+    <h3>🔐 Security</h3>
+    <label>Current password</label>
+    <input id="s-curPass" type="password" autocomplete="current-password">
+    <label>New password</label>
+    <input id="s-newPass" type="password" autocomplete="new-password">
+    <button style="background:var(--brand);" onclick="changePassword()">Change Password</button>
+    <label style="margin-top:14px;">Recovery word (used by “Forgot password?”)</label>
+    <input id="s-recWord" placeholder="a word only you know" autocapitalize="off">
+    <button class="ghost" onclick="saveRecoveryWord()">Save Recovery Word</button>
     <h3>Backup</h3>
     <button style="background:var(--paid);" id="backupBtn" onclick="backupData()">💾 Save Full Backup File</button>
     <label style="margin-top:14px;">Restore from a backup file (merges into current data)</label>
@@ -946,6 +997,11 @@ window.addEventListener('error', function(e){
     <button class="ghost" style="width:auto; margin-top:0; margin-bottom:14px;" onclick="showDashboard()">← Back</button>
     <h2 style="margin-top:0;" id="cd-name"></h2>
     <div style="color:var(--muted); font-size:0.85rem;" id="cd-phone"></div>
+    <div id="cd-meta" class="hint" style="text-align:left; margin-top:4px;"></div>
+    <div style="display:flex; gap:8px; margin:10px 0;">
+      <button type="button" class="ghost" style="margin:0; padding:9px; font-size:0.85rem;" onclick="editCustomer()">✏️ Edit Customer</button>
+      <button type="button" class="ghost" style="margin:0; padding:9px; font-size:0.85rem; color:var(--owe); border-color:var(--owe);" onclick="deleteCustomer()">🗑️ Delete Customer</button>
+    </div>
     <div class="balbig" id="cd-balance">₹0</div>
     <div style="text-align:center; color:var(--muted); font-size:0.8rem; margin-bottom:14px;" id="cd-status"></div>
 
@@ -1000,6 +1056,7 @@ window.addEventListener('error', function(e){
       <button class="ghost" onclick="clearDateFilter()">All Time</button>
     </div>
     <button class="ghost" onclick="shareStatement()">📤 Share This Statement</button>
+    <button class="ghost" onclick="downloadStatementPdf()">📄 Download Statement PDF</button>
 
     <h3>History</h3>
     <div id="cd-history"></div>
@@ -1028,6 +1085,10 @@ const PL_KEY = 'udhar_purchase_list_v1';
 const PL_DELETED_KEY = 'udhar_purchase_list_deleted_v1';
 const PL_TRASH_KEY = 'udhar_purchase_trash_v1';
 const PL_TRASH_DEL_KEY = 'udhar_purchase_trash_deleted_v1';
+const TXN_DEL_KEY = 'udhar_txn_deleted_v1';
+const CUST_DEL_KEY = 'udhar_cust_deleted_v1';
+const CYCLE_DEL_KEY = 'udhar_cycle_deleted_v1';
+const PE_BUDGET_KEY = 'udhar_pe_budgets_v1';
 const PO_DELETED_KEY = 'udhar_po_deleted_v1';
 const PO_HISTORY_KEY = 'udhar_purchase_order_history_v1';
 
@@ -1153,6 +1214,14 @@ function loadPlTrash(){ try{ return jload(PL_TRASH_KEY,'[]'); }catch(e){ return 
 function savePlTrash(a){ localStorage.setItem(PL_TRASH_KEY, JSON.stringify(a)); }
 function loadPlTrashDeleted(){ try{ return jload(PL_TRASH_DEL_KEY,'{}'); }catch(e){ return {}; } }
 function savePlTrashDeleted(o){ localStorage.setItem(PL_TRASH_DEL_KEY, JSON.stringify(o)); }
+function loadTxnDeleted(){ try{ return jload(TXN_DEL_KEY,'{}'); }catch(e){ return {}; } }
+function saveTxnDeleted(o){ localStorage.setItem(TXN_DEL_KEY, JSON.stringify(o)); }
+function loadCustDeleted(){ try{ return jload(CUST_DEL_KEY,'{}'); }catch(e){ return {}; } }
+function saveCustDeleted(o){ localStorage.setItem(CUST_DEL_KEY, JSON.stringify(o)); }
+function loadCycleDeleted(){ try{ return jload(CYCLE_DEL_KEY,'{}'); }catch(e){ return {}; } }
+function saveCycleDeleted(o){ localStorage.setItem(CYCLE_DEL_KEY, JSON.stringify(o)); }
+function loadPeBudgets(){ try{ return jload(PE_BUDGET_KEY,'{}'); }catch(e){ return {}; } }
+function savePeBudgets(o){ localStorage.setItem(PE_BUDGET_KEY, JSON.stringify(o)); }
 function loadPoDeleted(){ try{ return jload(PO_DELETED_KEY,'{}'); }catch(e){ return {}; } }
 function savePoDeleted(o){ localStorage.setItem(PO_DELETED_KEY, JSON.stringify(o)); }
 function loadPoHistory(){ try{ return jload(PO_HISTORY_KEY,'[]'); }catch(e){ return []; } }
@@ -1160,6 +1229,7 @@ function savePoHistory(a){ localStorage.setItem(PO_HISTORY_KEY, JSON.stringify(a
 
 function loadUpi(){ try{ return jload(UPI_KEY,'{}'); }catch(e){ return {}; } }
 function saveUpi(o){ localStorage.setItem(UPI_KEY, JSON.stringify(o)); }
+function patchUpi(p){ saveUpi(Object.assign({}, loadUpi(), p, { updatedAt: Date.now() })); }
 
 function normUser(u){ return (u||'').trim().toLowerCase().replace(/\s+/g,'_'); }
 function uid(){ return Date.now() + '-' + Math.random().toString(36).slice(2,8); }
@@ -1186,7 +1256,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v68-home';
+const APP_VERSION = '2026-10-21-v69-requested-only';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1308,16 +1378,25 @@ async function pullFromDrive(quick){
 }
 
 function mergeRemoteData(remote){
-  saveUsers(Object.assign({}, remote.users || {}, loadUsers()));
+  { const lu = loadUsers(), mu = Object.assign({}, lu);
+    Object.keys(remote.users||{}).forEach(k=>{ const r = remote.users[k], l = lu[k]; if(!l || (r.updatedAt||0) > (l.updatedAt||0)) mu[k] = r; });
+    saveUsers(mu); }
   migrateUsers();
+  if(remote.upi && (remote.upi.updatedAt||0) > (loadUpi().updatedAt||0)) saveUpi(remote.upi);
   const custMap = {};
   loadCustomers().forEach(c=>custMap[c.id]=c);
   (remote.customers||[]).forEach(c=>{ const ex=custMap[c.id]; if(!ex || (c.updatedAt||c.createdAt||0) >= (ex.updatedAt||ex.createdAt||0)) custMap[c.id]=c; });
+  const mergedCustDel = Object.assign({}, loadCustDeleted(), remote.deletedCustomerIds || {});
+  saveCustDeleted(mergedCustDel);
+  Object.keys(mergedCustDel).forEach(id=>{ const c = custMap[id]; if(c && mergedCustDel[id] >= (c.updatedAt||c.createdAt||0)) delete custMap[id]; });
   saveCustomers(Object.values(custMap));
 
   const txnMap = {};
   loadTxns().forEach(t=>txnMap[t.id]=t);
   (remote.transactions||[]).forEach(t=>{ const ex=txnMap[t.id]; if(!ex || (t.updatedAt||t.date||0) >= (ex.updatedAt||ex.date||0)) txnMap[t.id]=t; });
+  const mergedTxnDel = Object.assign({}, loadTxnDeleted(), remote.deletedTxnIds || {});
+  saveTxnDeleted(mergedTxnDel);
+  Object.keys(mergedTxnDel).forEach(id=>{ const t = txnMap[id]; if(t && mergedTxnDel[id] >= (t.updatedAt||t.date||0)) delete txnMap[id]; });
   saveTxns(Object.values(txnMap));
 
   const mergedDeleted = Object.assign({}, loadDeletedExpenseIds(), remote.deletedExpenseIds || {});
@@ -1399,12 +1478,16 @@ function mergeRemoteData(remote){
   const remoteReset = remote.peReset || {};
   if((remoteReset.resetAt||0) > (localReset.resetAt||0)) savePeReset(remoteReset);
 
-  if(remote.peCycles){
-    const cMap = {};
+  const mergedCycDel = Object.assign({}, loadCycleDeleted(), remote.deletedCycleIds || {});
+  saveCycleDeleted(mergedCycDel);
+  { const cMap = {};
     loadPeCycles().forEach(c=>{ cMap[c.id]=c; });
-    remote.peCycles.forEach(c=>{ cMap[c.id]=c; });
-    savePeCycles(Object.values(cMap).sort((a,b)=>b.resetAt-a.resetAt));
-  }
+    (remote.peCycles||[]).forEach(c=>{ cMap[c.id]=c; });
+    Object.keys(mergedCycDel).forEach(id=>{ delete cMap[id]; });
+    savePeCycles(Object.values(cMap).sort((a,b)=>b.resetAt-a.resetAt)); }
+  { const lb = loadPeBudgets(), mb = Object.assign({}, lb), rb = remote.peBudgets || {};
+    Object.keys(rb).forEach(k=>{ if(!lb[k] || (rb[k].updatedAt||0) > (lb[k].updatedAt||0)) mb[k] = rb[k]; });
+    savePeBudgets(mb); }
 
   const mergedPoDeleted = Object.assign({}, loadPoDeleted(), remote.deletedPoIds || {});
   savePoDeleted(mergedPoDeleted);
@@ -1416,7 +1499,7 @@ function mergeRemoteData(remote){
 }
 
 function buildPayload(){
-  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory(), deletedPoIds: loadPoDeleted() };
+  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory(), deletedPoIds: loadPoDeleted(), deletedTxnIds: loadTxnDeleted(), deletedCustomerIds: loadCustDeleted(), deletedCycleIds: loadCycleDeleted(), peBudgets: loadPeBudgets(), upi: loadUpi() };
 }
 let syncDirty = false, syncBusy = false;
 async function syncToDrive(){
@@ -1517,7 +1600,8 @@ if(window.claude && claude.use){ claude.use('downloads').then(d=>{ downloadsCap 
 
 /* ---------- auth ---------- */
 function showRegister(){ document.getElementById('loginForm').classList.add('hidden'); document.getElementById('registerForm').classList.remove('hidden'); }
-function showLogin(){ document.getElementById('registerForm').classList.add('hidden'); document.getElementById('loginForm').classList.remove('hidden'); }
+function showForgot(){ ['loginForm','registerForm'].forEach(i=>document.getElementById(i).classList.add('hidden')); document.getElementById('forgotForm').classList.remove('hidden'); }
+function showLogin(){ document.getElementById('forgotForm').classList.add('hidden'); document.getElementById('registerForm').classList.add('hidden'); document.getElementById('loginForm').classList.remove('hidden'); }
 function setErr(id,msg){ const el=document.getElementById(id); el.textContent=msg; el.classList.toggle('hidden', !msg); }
 
 function doRegister(){
@@ -1529,7 +1613,7 @@ function doRegister(){
   const users = loadUsers();
   if(users[user]){ setErr('regError','That Login ID is already taken.'); return; }
   const salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  users[user] = { displayName: raw, salt, hash: hashPass(pass, salt), createdAt: Date.now() };
+  users[user] = { displayName: raw, salt, hash: hashPass(pass, salt), createdAt: Date.now(), updatedAt: Date.now() };
   saveUsers(users);
   currentUser = user; currentDisplayName = raw;
   localStorage.setItem('udhar_current', user);
@@ -1788,12 +1872,13 @@ function cancelEditExpense(){
 }
 
 function deleteExpense(id){
+  const gone = loadExpenses().find(e=>String(e.id)===String(id));
   saveExpenses(loadExpenses().filter(e=>String(e.id)!==String(id)));
   const deleted = loadDeletedExpenseIds();
   deleted[String(id)] = Date.now();
   saveDeletedExpenseIds(deleted);
   if(String(editingExpenseId)===String(id)) cancelEditExpense();
-  showBanner('🗑️ Expense deleted');
+  showUndo('🗑️ Expense deleted', function(){ if(!gone) return; const l = loadExpenses(); l.push(Object.assign({}, gone, { updatedAt: Date.now() })); saveExpenses(l); const dd = loadDeletedExpenseIds(); delete dd[String(id)]; saveDeletedExpenseIds(dd); renderExpenses(); afterDataChange(); });
   renderExpenses();
   afterDataChange();
 }
@@ -1950,12 +2035,13 @@ function cancelEditPersonalExpense(){
 }
 
 function deletePersonalExpense(id){
+  const gone = loadPersonalExpenses().find(e=>String(e.id)===String(id));
   savePersonalExpenses(loadPersonalExpenses().filter(e=>String(e.id)!==String(id)));
   const deleted = loadPeDeletedIds();
   deleted[String(id)] = Date.now();
   savePeDeletedIds(deleted);
   if(editingPeId===id) cancelEditPersonalExpense();
-  showBanner('🗑️ Personal expense deleted');
+  showUndo('🗑️ Personal expense deleted', function(){ if(!gone) return; const l = loadPersonalExpenses(); l.push(Object.assign({}, gone, { updatedAt: Date.now() })); savePersonalExpenses(l); const dd = loadPeDeletedIds(); delete dd[String(id)]; savePeDeletedIds(dd); renderPersonalTab(); afterDataChange(); });
   renderPersonalTab();
   afterDataChange();
 }
@@ -2052,6 +2138,7 @@ function renderPersonalTab(){
   }
 
   renderPastPeCycles();
+  renderPeBudgets();
 }
 
 function renderPastPeCycles(){
@@ -2076,6 +2163,10 @@ function renderPastPeCycles(){
         <span>Spent: ${fmtMoney(c.totalExpenses)}</span>
       </div>
     `;
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'ghost'; del.textContent = '🗑️ Delete this cycle';
+    del.style.cssText = 'margin:8px 0 0; padding:6px; font-size:0.75rem; color:var(--owe); border-color:var(--owe);';
+    del.addEventListener('click', ()=>deleteCycle(c.id));
+    card.appendChild(del);
     wrap.appendChild(card);
   });
 }
@@ -2132,6 +2223,8 @@ function addPurchaseItem(){
     }
     cancelEditPurchaseItem();
   } else {
+    const dup = list.find(x=>(x.name||'').trim().toLowerCase()===name.toLowerCase() && (x.supplier||'')===(supplier||''));
+    if(dup && !confirm('"'+name+'" is already in the Master Sheet'+(supplier?' for '+supplier:'')+'. Add it again?')) return;
     const topPos = list.reduce((m,it)=>Math.min(m, it.pos===undefined?0:it.pos), 0) - 1;
     list.push(Object.assign({id:uid(), createdAt:Date.now(), updatedAt:Date.now(), priceHistory:[], pos:topPos}, data));
     savePurchaseList(list);
@@ -2455,12 +2548,13 @@ function buildPurchaseRow(it){
   row.setAttribute('data-pid', eid(it.id));
   const mrpBit = (it.mrp!==null && it.mrp!==undefined) ? ` · MRP ₹${it.mrp}` : '';
   const supplierBit = it.supplier ? ` · 🚚 ${esc(it.supplier)}` : '';
+  const marginBit = (it.mrp && it.price!==null && it.price!==undefined && it.mrp>it.price) ? ' · Margin ₹'+(it.mrp-it.price)+' ('+Math.round((it.mrp-it.price)/it.mrp*100)+'%)' : '';
   const rate = (it.price!==null && it.price!==undefined) ? it.price : 0;
   const lineTotal = rate * orderQty;
 
   const priceDisplay = isSelected
     ? `<div style="font-size:0.9rem; font-weight:700; color:var(--brand);">₹${rate} × ${orderQty} = ₹${lineTotal}${mrpBit}</div>`
-    : `<div style="font-size:0.78rem; color:var(--muted);">${(it.price!==null&&it.price!==undefined)?('₹'+it.price+' per '+unitLabel(it.unit)+mrpBit+supplierBit):'tap ○ to select and see rate'}</div>`;
+    : `<div style="font-size:0.78rem; color:var(--muted);">${(it.price!==null&&it.price!==undefined)?('₹'+it.price+' per '+unitLabel(it.unit)+mrpBit+supplierBit+marginBit):'tap ○ to select and see rate'}</div>`;
 
   const stepper = isSelected ? `
     <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
@@ -2475,7 +2569,7 @@ function buildPurchaseRow(it){
         <span class="pl-select-dot" data-id="${eid(it.id)}" style="cursor:pointer; font-size:1.2rem;">${isSelected?'✅':'⭕'}</span>
         <span>${esc(itemLabel(it))}</span>
       </span>
-      <span style="font-weight:700; white-space:nowrap; color:var(--muted); font-size:0.8rem;">in catalog: ${it.qty} ${unitLabel(it.unit)}</span>
+      <span style="font-weight:700; white-space:nowrap; color:var(--muted); font-size:0.8rem;">usual qty: ${it.qty} ${unitLabel(it.unit)}</span>
     </div>
     ${priceDisplay}
     ${stepper}
@@ -2899,6 +2993,300 @@ function addHomeButtons(){
 }
 addHomeButtons();
 
+
+/* ---------- undo banner, generic edit modal ---------- */
+function showUndo(msg, fn){
+  const b = document.getElementById('banner');
+  b.textContent = msg + ' ';
+  const u = document.createElement('button'); u.type = 'button'; u.textContent = '↩ Undo';
+  u.style.cssText = 'display:inline-flex; width:auto; margin:0 0 0 10px; padding:5px 14px; font-size:0.85rem; background:#6366f1; border-radius:10px;';
+  u.onclick = function(){ clearTimeout(window._bannerTimer); b.style.display = 'none'; fn(); showBanner('↩ Restored'); };
+  b.appendChild(u); b.style.display = 'block';
+  clearTimeout(window._bannerTimer);
+  window._bannerTimer = setTimeout(()=>{ b.style.display = 'none'; }, 7000);
+}
+let emSave = null;
+function openEditModal(title, fields, onSave){
+  document.getElementById('em-title').textContent = title;
+  const wrap = document.getElementById('em-fields'); wrap.innerHTML = ''; wrap._inputs = {};
+  fields.forEach(f=>{
+    const lab = document.createElement('label'); lab.textContent = f.label; wrap.appendChild(lab);
+    let inp;
+    if(f.type==='select'){
+      inp = document.createElement('select');
+      f.options.forEach(o=>{ const op = document.createElement('option'); op.value = o.value; op.textContent = o.label; if(String(o.value)===String(f.value)) op.selected = true; inp.appendChild(op); });
+    } else {
+      inp = document.createElement('input'); inp.type = f.type || 'text';
+      if(f.type==='number') inp.min = '0';
+      inp.value = (f.value===undefined || f.value===null) ? '' : f.value;
+      if(f.placeholder) inp.placeholder = f.placeholder;
+    }
+    wrap.appendChild(inp); wrap._inputs[f.key] = inp;
+  });
+  emSave = onSave;
+  document.getElementById('editModal').classList.remove('hidden');
+}
+function closeEditModal(){ document.getElementById('editModal').classList.add('hidden'); emSave = null; }
+function submitEditModal(){
+  const wrap = document.getElementById('em-fields'), vals = {};
+  Object.keys(wrap._inputs).forEach(k=>{ vals[k] = wrap._inputs[k].value; });
+  if(emSave && emSave(vals)!==false) closeEditModal();
+}
+
+/* ---------- customers: edit / delete entries and customers ---------- */
+function editTxn(id){
+  const t = loadTxns().find(x=>String(x.id)===String(id)); if(!t) return;
+  const fields = [
+    { key:'amount', label:'Amount (₹)', type:'number', value:t.amount },
+    { key:'note', label:'Note', value:t.note||'' },
+    { key:'date', label:'Date', type:'date', value:toISODate(new Date(t.date)) }
+  ];
+  if(t.type==='payment') fields.push({ key:'method', label:'Payment method', type:'select', value:t.method||'cash', options:[{value:'cash',label:'Cash'},{value:'online',label:'Online / UPI'}] });
+  openEditModal(t.type==='credit' ? 'Edit credit entry' : 'Edit payment entry', fields, function(v){
+    const amt = Number(v.amount)||0;
+    if(amt<=0){ showBanner('Enter a valid amount'); return false; }
+    const list = loadTxns(), i = list.findIndex(x=>String(x.id)===String(id)); if(i<0) return;
+    const old = new Date(list[i].date);
+    const nd = v.date ? new Date(v.date+'T'+String(old.getHours()).padStart(2,'0')+':'+String(old.getMinutes()).padStart(2,'0')+':00').getTime() : list[i].date;
+    list[i] = Object.assign({}, list[i], { amount:amt, note:(v.note||'').trim(), date:nd, updatedAt:Date.now() }, v.method ? { method:v.method } : {});
+    saveTxns(list); renderCustomerDetail(); showBanner('✅ Entry updated'); afterDataChange();
+  });
+}
+function deleteTxn(id){
+  const t = loadTxns().find(x=>String(x.id)===String(id)); if(!t) return;
+  if(!confirm('Delete this ' + (t.type==='credit'?'credit':'payment') + ' entry of ₹' + t.amount + '?')) return;
+  saveTxns(loadTxns().filter(x=>String(x.id)!==String(id)));
+  const d = loadTxnDeleted(); d[String(id)] = Date.now(); saveTxnDeleted(d);
+  renderCustomerDetail(); afterDataChange();
+  showUndo('🗑️ Entry deleted', function(){
+    const l = loadTxns(); l.push(Object.assign({}, t, { updatedAt: Date.now() })); saveTxns(l);
+    const dd = loadTxnDeleted(); delete dd[String(id)]; saveTxnDeleted(dd);
+    renderCustomerDetail(); afterDataChange();
+  });
+}
+function editCustomer(){
+  const c = loadCustomers().find(x=>x.id===activeCustomerId); if(!c) return;
+  openEditModal('Edit customer', [
+    { key:'name', label:'Name', value:c.name },
+    { key:'phone', label:'Phone', type:'tel', value:c.phone||'' },
+    { key:'promiseDate', label:'Promised to pay on', type:'date', value:c.promiseDate||'' }
+  ], function(v){
+    const name = (v.name||'').trim(); if(!name){ showBanner('Enter a name'); return false; }
+    const list = loadCustomers(), i = list.findIndex(x=>x.id===activeCustomerId); if(i<0) return;
+    list[i] = Object.assign({}, list[i], { name, phone:normPhone(v.phone), promiseDate:v.promiseDate||'', updatedAt:Date.now() });
+    saveCustomers(list);
+    document.getElementById('cd-name').textContent = name;
+    document.getElementById('cd-phone').textContent = list[i].phone || 'No phone number';
+    renderCustomerDetail(); showBanner('✅ Customer updated'); afterDataChange();
+  });
+}
+function deleteCustomer(){
+  const c = loadCustomers().find(x=>x.id===activeCustomerId); if(!c) return;
+  const mine = loadTxns().filter(t=>t.customerId===c.id);
+  const bal = balanceFor(c.id);
+  if(!confirm('Delete "' + c.name + '" and ' + mine.length + ' entries?' + (bal>0 ? '\n\n⚠️ They still owe ₹' + bal + '.' : '') + '\n\nYou can undo this for a few seconds.')) return;
+  const now = Date.now();
+  saveCustomers(loadCustomers().filter(x=>x.id!==c.id));
+  const cd = loadCustDeleted(); cd[String(c.id)] = now; saveCustDeleted(cd);
+  saveTxns(loadTxns().filter(t=>t.customerId!==c.id));
+  const td = loadTxnDeleted(); mine.forEach(t=>{ td[String(t.id)] = now; }); saveTxnDeleted(td);
+  activeCustomerId = null;
+  document.getElementById('custDetailView').classList.add('hidden');
+  document.getElementById('dashView').classList.remove('hidden');
+  showCustomersTab(); afterDataChange();
+  showUndo('🗑️ Customer deleted', function(){
+    const t2 = Date.now();
+    const cl = loadCustomers(); cl.push(Object.assign({}, c, { updatedAt: t2 })); saveCustomers(cl);
+    const tl = loadTxns(); mine.forEach(t=>tl.push(Object.assign({}, t, { updatedAt: t2 }))); saveTxns(tl);
+    const cd2 = loadCustDeleted(); delete cd2[String(c.id)]; saveCustDeleted(cd2);
+    const td2 = loadTxnDeleted(); mine.forEach(t=>{ delete td2[String(t.id)]; }); saveTxnDeleted(td2);
+    showCustomersTab(); afterDataChange();
+  });
+}
+
+/* ---------- security: password, recovery word ---------- */
+function changePassword(){
+  const cur = document.getElementById('s-curPass').value, nw = document.getElementById('s-newPass').value;
+  const users = loadUsers(), rec = users[currentUser];
+  if(!rec || rec.hash !== hashPass(cur, rec.salt||'')){ showBanner('⚠️ Current password is wrong'); return; }
+  if(nw.length<4){ showBanner('New password needs at least 4 characters'); return; }
+  rec.salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  rec.hash = hashPass(nw, rec.salt); rec.updatedAt = Date.now();
+  users[currentUser] = rec; saveUsers(users);
+  document.getElementById('s-curPass').value = ''; document.getElementById('s-newPass').value = '';
+  showBanner('✅ Password changed'); afterDataChange();
+}
+function saveRecoveryWord(){
+  const w = (document.getElementById('s-recWord').value||'').trim().toLowerCase();
+  if(w.length<3){ showBanner('Recovery word needs at least 3 letters'); return; }
+  const users = loadUsers(), rec = users[currentUser]; if(!rec) return;
+  rec.recSalt = Math.random().toString(36).slice(2); rec.recHash = hashPass(w, rec.recSalt); rec.updatedAt = Date.now();
+  users[currentUser] = rec; saveUsers(users);
+  document.getElementById('s-recWord').value = '';
+  showBanner('✅ Recovery word saved'); afterDataChange();
+}
+function doForgot(){
+  setErr('fError','');
+  const user = normUser(document.getElementById('fUser').value);
+  const word = (document.getElementById('fWord').value||'').trim().toLowerCase();
+  const np = document.getElementById('fPass').value;
+  const users = loadUsers(), rec = users[user];
+  if(!rec || !rec.recHash){ setErr('fError','No recovery word was saved for this ID. Restore from a backup instead.'); return; }
+  if(rec.recHash !== hashPass(word, rec.recSalt||'')){ setErr('fError','Recovery word does not match.'); return; }
+  if(np.length<4){ setErr('fError','New password needs at least 4 characters'); return; }
+  rec.salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  rec.hash = hashPass(np, rec.salt); rec.updatedAt = Date.now();
+  users[user] = rec; saveUsers(users);
+  showBanner('✅ Password reset — log in now'); showLogin();
+  document.getElementById('loginUser').value = user;
+}
+
+
+/* ---------- smart additions: comparison, close day, aging, reminders, payables, budgets ---------- */
+function prevRange(from, to){
+  if(dashRangeType==='daily'){ const p = addDays(from,-1); return [p,p]; }
+  if(dashRangeType==='weekly') return [addDays(from,-7), addDays(to,-7)];
+  if(dashRangeType==='monthly') return getMonthRange(addMonths(from,-1));
+  const n = dateRangeArray(from,to).length; return [addDays(from,-n), addDays(from,-1)];
+}
+function deltaChip(cur, prev, upGood){
+  if(!prev) return cur ? '<b style="color:var(--muted);">new</b>' : '';
+  const p = (cur-prev)/Math.abs(prev)*100, up = p>=0, good = upGood ? up : !up;
+  return `<b style="color:${good?'var(--paid)':'var(--owe)'};">${up?'▲':'▼'} ${Math.abs(p).toFixed(0)}%</b>`;
+}
+
+function isDayClosed(date){ return !!getDailySales(date).closed; }
+function updateCloseUi(date){
+  const closed = isDayClosed(date);
+  const badge = document.getElementById('ds-closedBadge'), btn = document.getElementById('ds-closeBtn');
+  if(badge) badge.textContent = closed ? '✅ This day is closed' : (date<todayStr() && hasDailyRecord(date) ? 'ℹ️ Past day — you will be asked to confirm before changing it' : '');
+  if(btn) btn.textContent = closed ? '🔓 Re-open Day' : '🔒 Close Day';
+}
+function toggleCloseDay(){
+  const date = document.getElementById('ds-date').value || todayStr();
+  if(!isDayClosed(date)){
+    const m = computeDayMetrics(date);
+    if(m.totalSales<=0){ showBanner('Enter and save sales before closing the day'); return; }
+    upsertDailySales(date, { closed:true });
+    showBanner('🔒 Day closed');
+  } else { upsertDailySales(date, { closed:false }); showBanner('🔓 Day re-opened'); }
+  loadDailySalesForm(); afterDataChange();
+}
+
+function custAging(){
+  const by = {};
+  loadTxns().slice().sort((a,b)=>a.date-b.date).forEach(t=>{ (by[t.customerId] = by[t.customerId] || []).push(t); });
+  const out = {}, now = Date.now();
+  Object.keys(by).forEach(id=>{
+    const q = []; let bal = 0;
+    by[id].forEach(t=>{
+      if(t.type==='credit'){ q.push({ amt:t.amount, date:t.date }); bal += t.amount; }
+      else { let p = t.amount; bal -= t.amount; while(p>0 && q.length){ if(q[0].amt<=p){ p -= q[0].amt; q.shift(); } else { q[0].amt -= p; p = 0; } } }
+    });
+    out[id] = { bal, oldest: q.length ? q[0].date : null, days: q.length ? Math.floor((now-q[0].date)/86400000) : 0 };
+  });
+  return out;
+}
+function custChip(id){
+  const a = (window.__agMap||{})[id];
+  return (a && a.bal>0 && a.days>=7) ? ' · <b style="color:var(--owe);">⏱ '+a.days+'d overdue</b>' : '';
+}
+async function downloadStatementPdf(){
+  const c = loadCustomers().find(x=>x.id===activeCustomerId); if(!c) return;
+  try{ await loadLib('jspdf'); }catch(e){ showBanner('⚠️ PDF library could not load — check internet'); return; }
+  const fromVal = document.getElementById('cd-fromDate').value, toVal = document.getElementById('cd-toDate').value;
+  const fromTs = fromVal ? new Date(fromVal+'T00:00:00').getTime() : -Infinity, toTs = toVal ? new Date(toVal+'T23:59:59').getTime() : Infinity;
+  const txns = loadTxns().filter(t=>t.customerId===c.id && t.date>=fromTs && t.date<=toTs).sort((a,b)=>a.date-b.date);
+  let run = 0;
+  const rows = txns.map(t=>{ run += (t.type==='credit'?t.amount:-t.amount); return { Date:toISODate(new Date(t.date)), Note:t.note||'', Type:t.type==='credit'?'Credit':'Payment', Amount:t.amount, Balance:run }; });
+  const { jsPDF } = window.jspdf, doc = new jsPDF(), upi = loadUpi();
+  doc.setFillColor(37,36,35); doc.rect(0,0,210,22,'F'); doc.setFillColor(242,200,15); doc.rect(0,22,210,1.4,'F');
+  doc.setTextColor(255); doc.setFontSize(15); doc.setFont(undefined,'bold'); doc.text(upi.shopName||'SP Tea Shop', 14, 11);
+  doc.setFontSize(9); doc.setFont(undefined,'normal'); doc.setTextColor(200); doc.text('Account Statement  |  '+(fromVal||'Start')+' to '+(toVal||todayStr()), 14, 18);
+  doc.setTextColor(0); doc.setFontSize(12); doc.setFont(undefined,'bold'); doc.text(c.name, 14, 34);
+  doc.setFont(undefined,'normal'); doc.setFontSize(9); doc.text(c.phone||'', 14, 40);
+  const end = pdfDrawTable(doc, 48, [
+    {header:'Date', key:'Date', width:28, maxChars:12}, {header:'Note', key:'Note', width:70, maxChars:40}, {header:'Type', key:'Type', width:24, maxChars:10},
+    {header:'Amount', key:'Amount', width:28, maxChars:10}, {header:'Balance', key:'Balance', width:28, maxChars:10}
+  ], rows.length ? rows : [{Date:'',Note:'No entries in this period'}]);
+  doc.setFontSize(12); doc.setFont(undefined,'bold');
+  doc.text('Current balance: '+rs(balanceFor(c.id)), 14, Math.min(end+6, 285));
+  doc.save('Statement-'+c.name.replace(/[^a-zA-Z0-9]+/g,'_')+'-'+todayStr()+'.pdf');
+}
+
+/* ---------- Master Sheet: paid status, supplier payables ---------- */
+function togglePoPaid(id){
+  const h = loadPoHistory(), i = h.findIndex(o=>o.id===id); if(i<0) return;
+  h[i] = Object.assign({}, h[i], { paid: !h[i].paid, paidAt: !h[i].paid ? Date.now() : null, updatedAt: Date.now() });
+  savePoHistory(h); renderPoHistory(); openPoInvoiceModal(id); showBanner(h[i].paid ? '✅ Marked as paid' : '⏳ Marked as unpaid'); afterDataChange();
+}
+function renderPoPayables(){
+  const el = document.getElementById('po-payableCard'); if(!el) return;
+  const by = {}; let total = 0, n = 0;
+  loadPoHistory().filter(o=>!o.paid).forEach(o=>{ const v = Number(o.totalValue)||0; const k = o.supplier || 'General Supplier'; by[k] = by[k] || { v:0, n:0 }; by[k].v += v; by[k].n++; total += v; n++; });
+  const keys = Object.keys(by).sort((a,b)=>by[b].v-by[a].v);
+  let h = '<h3 style="margin-top:0;">💳 Owed to suppliers</h3>';
+  if(!keys.length){ el.innerHTML = h + '<p class="hint" style="text-align:left; margin:0;">All invoices are marked paid ✅</p>'; return; }
+  keys.forEach(k=>{ h += `<div class="paidRow"><span>🚚 ${esc(k)} <span style="font-size:0.75rem; color:var(--muted);">(${by[k].n} unpaid)</span></span><span style="font-weight:700; color:var(--owe);">${fmtMoney(by[k].v)}</span></div>`; });
+  h += `<div class="paidRow" style="font-weight:800;"><span>Total unpaid</span><span style="color:var(--owe);">${fmtMoney(total)}</span></div>`;
+  el.innerHTML = h;
+}
+
+/* ---------- Personal: budgets, delete old cycle ---------- */
+function savePeBudget(){
+  const cat = document.getElementById('peb-cat').value, amt = Number(document.getElementById('peb-amt').value)||0;
+  if(!cat){ showBanner('Pick a category'); return; }
+  const b = loadPeBudgets(); b[cat] = { amount: amt, updatedAt: Date.now() }; savePeBudgets(b);
+  document.getElementById('peb-amt').value = '';
+  renderPeBudgets(); showBanner(amt>0 ? '✅ Budget saved' : '🗑️ Budget removed'); afterDataChange();
+}
+function renderPeBudgets(){
+  const sel = document.getElementById('peb-cat'), wrap = document.getElementById('peBudgetList'); if(!sel || !wrap) return;
+  const cats = allPeCategories(), prev = sel.value;
+  sel.innerHTML = cats.map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+  if(prev) sel.value = prev;
+  const [f,t] = getMonthRange(todayStr()), spent = {};
+  loadPersonalExpenses().filter(e=>e.date>=f && e.date<=t).forEach(e=>{ spent[e.category] = (spent[e.category]||0) + (Number(e.amount)||0); });
+  const b = loadPeBudgets(), keys = Object.keys(b).filter(k=>b[k].amount>0);
+  if(!keys.length){ wrap.innerHTML = '<p class="hint" style="text-align:left;">No budgets yet</p>'; return; }
+  wrap.innerHTML = keys.map(k=>{
+    const lim = b[k].amount, sp = spent[k]||0, pct = Math.min(100, sp/lim*100), col = sp>lim ? 'var(--owe)' : (sp>=lim*0.8 ? '#f59e0b' : 'var(--paid)');
+    return `<div style="margin-bottom:10px;"><div style="display:flex; justify-content:space-between; font-size:0.82rem;"><span>${esc(k)}</span><span style="font-weight:700; color:${col};">${fmtMoney(sp)} / ${fmtMoney(lim)}${sp>lim?' ⚠️':''}</span></div>
+      <div style="height:9px; border-radius:6px; background:rgba(128,128,128,0.18);"><div style="height:9px; border-radius:6px; width:${pct.toFixed(0)}%; background:${col};"></div></div></div>`;
+  }).join('');
+}
+function deleteCycle(id){
+  if(!confirm('Delete this closed cycle record? This cannot be undone.')) return;
+  savePeCycles(loadPeCycles().filter(c=>c.id!==id));
+  const d = loadCycleDeleted(); d[String(id)] = Date.now(); saveCycleDeleted(d);
+  renderPastPeCycles(); afterDataChange(); showBanner('🗑️ Cycle deleted');
+}
+
+/* ---------- owner report on WhatsApp ---------- */
+function sendOwnerReport(){
+  const upi = loadUpi();
+  const [f,t] = getWeekRange(todayStr()), m = computeRangeMetrics(f, t), k = computeKpis(m);
+  const text = '📒 '+(upi.shopName||'Shop')+' — weekly report\n'+f+' to '+t+'\n\n'
+    + 'Sales: '+rs(m.totalSales)+'\nExpenses + salary: '+rs(k.spend)+'\nProfit: '+rs(m.totalProfit)+' ('+k.margin.toFixed(1)+'%)\n'
+    + 'Cash '+rs(m.cashSales)+' | Online '+rs(m.onlineSales)+'\nCustomers owe: '+rs(k.outstanding)
+    + (insightLines(m).slice(0,3).map(x=>'\n• '+x).join(''));
+  const p = normPhone(upi.ownerWhatsapp);
+  if(!p){ showBanner('Add your WhatsApp number in Settings first'); return; }
+  window.open('https://wa.me/'+p+'?text='+encodeURIComponent(text), '_blank');
+}
+
+
+function renderHomeToday(){
+  const el = document.getElementById('homeTodayCard'); if(!el) return;
+  const t = todayStr(), m = computeDayMetrics(t), spend = m.expenses + m.staffSalary;
+  const tile = (l,v,c)=>'<div style="flex:1 1 30%; min-width:98px; background:var(--brand-light); border-radius:14px; padding:10px;"><div style="font-size:0.64rem; font-weight:700; color:var(--muted);">'+l+'</div><div style="font-size:1.1rem; font-weight:800; color:'+(c||'var(--text)')+';">'+v+'</div></div>';
+  el.innerHTML = '<h3 style="margin-top:0;">📅 Today · '+esc(t)+'</h3><div style="display:flex; gap:8px; flex-wrap:wrap;">'
+    + tile('SALES', fmtMoney(m.totalSales))
+    + tile('EXPENSES', fmtMoney(spend), 'var(--owe)')
+    + tile('PROFIT', m.dataIncomplete ? '⏳ —' : fmtMoney(m.estimatedProfit), m.estimatedProfit>=0 ? 'var(--paid)' : 'var(--owe)')
+    + '</div>' + (m.dataIncomplete ? '<div class="hint" style="margin-top:8px; text-align:left;">Profit shows once today’s sales are entered in Daily Sales.</div>' : '');
+}
+
 function copyPurchaseListNameQtyOnly(){
   const list = loadPurchaseList();
   if(!list.length){ showBanner('Master Sheet is empty'); return; }
@@ -2910,20 +3298,18 @@ function copyPurchaseListNameQtyOnly(){
 
 function recordPurchaseOrderHistory(items){
   const history = loadPoHistory();
-  const totalValue = items.reduce((s, it) => s + ((it.price || 0) * (it.qty || 1)), 0);
-  const suppliers = Array.from(new Set(items.map(it => it.supplier).filter(Boolean)));
-  const supplierName = suppliers.length === 1 ? suppliers[0] : (suppliers.length > 1 ? suppliers.join(', ') : 'General Supplier');
-
-  history.unshift({ 
-    id: uid(), 
-    date: todayStr(), 
-    supplier: supplierName,
-    totalValue: totalValue,
-    createdAt: Date.now(), 
-    updatedAt: Date.now(),
-    items 
+  const groups = {};
+  items.forEach(it=>{ const k = it.supplier || 'General Supplier'; (groups[k] = groups[k] || []).push(it); });
+  const now = Date.now();
+  Object.keys(groups).forEach((sup, i)=>{
+    const its = groups[sup];
+    history.unshift({
+      id: uid(), date: todayStr(), supplier: sup,
+      totalValue: its.reduce((t,it)=>t+((it.price||0)*(it.qty||1)),0),
+      createdAt: now + i, updatedAt: now + i, paid: false, items: its
+    });
   });
-  savePoHistory(history.slice(0, 100));
+  savePoHistory(history.slice(0, 200));
 }
 
 function copySelectedPurchaseItems(){
@@ -2977,6 +3363,8 @@ function openPoInvoiceModal(orderId){
   const eb = document.getElementById('poModalEditBtn'), db = document.getElementById('poModalDeleteBtn');
   eb.textContent = ta ? '✏️ திருத்து' : '✏️ Edit Invoice'; eb.onclick = function(){ openPoEdit(order.id); };
   db.textContent = ta ? '🗑️ நீக்கு' : '🗑️ Delete Invoice'; db.onclick = function(){ deletePurchaseOrder(order.id); };
+  const pb = document.getElementById('poModalPaidBtn');
+  pb.textContent = order.paid ? (ta?'⏳ செலுத்தவில்லை':'⏳ Mark as Unpaid') : (ta?'✅ செலுத்தப்பட்டது':'✅ Mark as Paid'); pb.onclick = function(){ togglePoPaid(order.id); };
   
   const itemsWrap = document.getElementById('poModalItems');
   itemsWrap.innerHTML = '';
@@ -3013,6 +3401,7 @@ function closePoInvoiceModal(){
 }
 
 function renderPoHistory(){
+  renderPoPayables();
   const wrap = document.getElementById('pl-historyList');
   if(!wrap) return;
 
@@ -3038,7 +3427,7 @@ function renderPoHistory(){
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:flex-start;">
         <div>
-          <div style="font-weight:700; font-size:1rem; color:var(--text);">🚚 ${esc(order.supplier || 'Supplier Order')}</div>
+          <div style="font-weight:700; font-size:1rem; color:var(--text);">🚚 ${esc(order.supplier || 'Supplier Order')} ${order.paid?'<span style="font-size:0.7rem; color:var(--paid);">✅ Paid</span>':'<span style="font-size:0.7rem; color:var(--owe);">⏳ Unpaid</span>'}</div>
           <div style="font-size:0.8rem; color:var(--muted); margin-top:2px;">${order.items.length} item(s) · ${esc(order.date)}</div>
         </div>
         <div style="text-align:right;">
@@ -3291,6 +3680,7 @@ function renderTodayPaid(){
 
 function renderCustomers(){
   const q = (document.getElementById('searchBox').value||'').toLowerCase();
+  window.__agMap = custAging();
   const customers = loadCustomers();
   let total = 0;
   const balMap = {};
@@ -3308,7 +3698,7 @@ function renderCustomers(){
     const div = document.createElement('div');
     div.className = 'custrow'; div.setAttribute('role','button'); div.tabIndex = 0;
     div.onclick = ()=> openCustomer(c.id);
-    div.innerHTML = `<div><div class="name">${esc(c.name)}</div><div class="phone">${esc(c.phone||'')}</div></div>
+    div.innerHTML = `<div><div class="name">${esc(c.name)}</div><div class="phone">${esc(c.phone||'')}${custChip(c.id)}</div></div>
       <div class="bal ${c.bal>0?'owe':'clear'}">${c.bal>0 ? '₹'+c.bal : 'Clear'}</div>`;
     wrap.appendChild(div);
   });
@@ -3341,6 +3731,7 @@ function showSettings(){
   const upi = loadUpi();
   document.getElementById('s-upiId').value = upi.upiId || '';
   document.getElementById('s-shopName').value = upi.shopName || '';
+  document.getElementById('s-ownerWhatsapp').value = upi.ownerWhatsapp || '';
   renderQrPreview();
   document.getElementById('s-gClientId').value = localStorage.getItem('udhar_gdrive_clientid') || '';
   document.getElementById('driveStatus').textContent = gDriveToken ? '✅ Connected this session' : 'Not connected';
@@ -3386,7 +3777,7 @@ function removeQrImage(){
 function saveUpiSettings(){
   const upiId = document.getElementById('s-upiId').value.trim();
   const shopName = document.getElementById('s-shopName').value.trim();
-  saveUpi({ upiId, shopName });
+  patchUpi({ upiId, shopName, ownerWhatsapp: (document.getElementById('s-ownerWhatsapp').value||'').trim() });
   const welcomeEl = document.getElementById('welcomeShopName');
   if(welcomeEl) welcomeEl.textContent = shopName || 'SP Tea Shop';
   showBanner('✅ UPI details saved');
@@ -3453,6 +3844,10 @@ function openCustomer(id){
 
 function renderCustomerDetail(){
   const bal = balanceFor(activeCustomerId);
+  { const cc = loadCustomers().find(x=>x.id===activeCustomerId), ag = custAging()[activeCustomerId], meta = [];
+    if(cc && cc.promiseDate) meta.push('Promised: '+cc.promiseDate);
+    if(ag && ag.bal>0 && ag.days>=1) meta.push('Oldest unpaid: '+ag.days+' days');
+    document.getElementById('cd-meta').textContent = meta.join(' · '); }
   const balEl = document.getElementById('cd-balance');
   balEl.textContent = '₹' + Math.abs(bal);
   balEl.className = 'balbig ' + (bal>0?'owe':'');
@@ -3475,8 +3870,12 @@ function renderCustomerDetail(){
     const row = document.createElement('div');
     row.className = 'txnrow';
     const d = new Date(t.date);
+    row.style.flexWrap = 'wrap';
     row.innerHTML = `<span>${d.toLocaleDateString()} ${t.note?('· '+esc(t.note)):''}</span>
-      <span class="${t.type}">${t.type==='credit'?'+':'-'}₹${t.amount} <span style="color:var(--muted); font-weight:400;">(bal ₹${running})</span></span>`;
+      <span class="${t.type}">${t.type==='credit'?'+':'-'}₹${t.amount} <span style="color:var(--muted); font-weight:400;">(bal ₹${running})</span></span>
+      <div style="width:100%; display:flex; gap:8px; margin-top:6px;"><button type="button" class="te" style="width:auto; margin:0; padding:5px 12px; font-size:0.78rem; background:var(--brand);">✏️ Edit</button><button type="button" class="td" style="width:auto; margin:0; padding:5px 12px; font-size:0.78rem; background:var(--owe);">🗑️ Delete</button></div>`;
+    row.querySelector('.te').addEventListener('click', ()=>editTxn(t.id));
+    row.querySelector('.td').addEventListener('click', ()=>deleteTxn(t.id));
     hist.appendChild(row);
   });
 }
@@ -4038,6 +4437,7 @@ function loadDailySalesForm(){
   const cashInput = document.getElementById('ds-cash');
   cashInput.placeholder = m.cashSalesIsDerived ? ('Auto: ₹'+Math.round(m.cashSales)+' (from closing cash)') : 'e.g. 1500';
 
+  updateCloseUi(dateEl.value);
   renderDailySummary(dateEl.value);
 }
 
@@ -4080,6 +4480,7 @@ function renderDailySummary(date){
 
 function saveDailySales(){
   const date = document.getElementById('ds-date').value || todayStr();
+  if(hasDailyRecord(date) && (date < todayStr() || isDayClosed(date)) && !confirm(isDayClosed(date) ? 'This day is closed. Change it anyway?' : 'You are changing a past day ('+date+'). Continue?')) return;
   const numOrNull = v => (v===''||v===null||v===undefined) ? null : Number(v);
   const opening = numOrNull(document.getElementById('ds-opening').value);
   const cash = numOrNull(document.getElementById('ds-cash').value);
@@ -4444,6 +4845,13 @@ function renderInsights(m){
     + card('AVG DAILY SALES', fmtMoney(m.avgDailySales))
     + card('CUSTOMER DUES', fmtMoney(k.outstanding), k.outstanding>0?'var(--owe)':'var(--text)')
     + '</div>';
+  { const pr = prevRange(m.fromDate, m.toDate), pm = computeRangeMetrics(pr[0], pr[1]);
+    const row = (l,c,p,upGood)=>`<div class="paidRow"><span>${l}</span><span>${fmtMoney(c)} <span style="font-size:0.75rem; color:var(--muted);">(was ${fmtMoney(p)})</span> ${deltaChip(c,p,upGood)}</span></div>`;
+    h += `<div style="font-size:0.8rem; font-weight:600; margin-bottom:4px;">Compared with previous period (${esc(pr[0])}${pr[0]!==pr[1]?' to '+esc(pr[1]):''})</div>`
+      + row('Sales', m.totalSales, pm.totalSales, true)
+      + row('Expenses + salary', m.totalExpenses+m.totalStaffSalary, pm.totalExpenses+pm.totalStaffSalary, false)
+      + row('Profit', m.totalProfit, pm.totalProfit, true)
+      + '<div style="height:12px;"></div>'; }
   if(m.totalSales>0){
     h += `<div style="font-size:0.8rem; font-weight:600; margin-bottom:4px;">Cash vs Online sales</div>
       <div style="display:flex; height:14px; border-radius:8px; overflow:hidden; margin-bottom:4px;"><div style="width:${k.cashPct}%; background:#64748b;"></div><div style="flex:1; background:var(--brand);"></div></div>
@@ -5054,6 +5462,7 @@ function shiftMm(d){
   mmUpdate();
 }
 function mmUpdate(){
+  renderHomeToday();
   const [f,t] = mmPeriod();
   const m = computeRangeMetrics(f,t), st = mmState;
   st.cash = m.totalExpensesCash + m.totalStaffSalaryCash;
