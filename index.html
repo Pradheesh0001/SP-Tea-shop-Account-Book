@@ -18,7 +18,7 @@ window.addEventListener('error', function(e){
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+Tamil:wght@400;600;700&display=swap');
 
   :root {
     --bg: #f8fafc;
@@ -87,7 +87,7 @@ window.addEventListener('error', function(e){
       radial-gradient(at 100% 100%, rgba(124, 58, 237, 0.06) 0px, transparent 50%);
     background-attachment: fixed;
     color: var(--text);
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Plus Jakarta Sans', 'Noto Sans Tamil', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -695,6 +695,9 @@ window.addEventListener('error', function(e){
         <h3 id="plFormTitle" style="margin-top:0;">Add Item to Master Sheet</h3>
         <label>Item Name</label>
         <input id="pl-name" placeholder="e.g. Amul Milk 500ml">
+        <label>Tamil name (optional — made automatically if blank)</label>
+        <input id="pl-nameTa" placeholder="தமிழ் பெயர்">
+        <button type="button" class="ghost" style="margin:-4px 0 12px; padding:8px; font-size:0.8rem;" onclick="fillAutoTamil()">✨ Auto-translate name to Tamil</button>
         <div class="twocol">
           <div><label>Qty</label><input id="pl-qty" type="number" min="0"></div>
           <div><label>Unit</label>
@@ -753,6 +756,7 @@ window.addEventListener('error', function(e){
             <button class="ghost" style="width:auto; margin:0; padding:6px 10px; font-size:0.8rem;" onclick="copyPurchaseListNameQtyOnly()">📋 Copy (Name + Qty)</button>
           </div>
         </div>
+        <div class="pl-langbar" style="margin-bottom:10px;"></div>
         <input id="pl-search" placeholder="🔍 Search to quickly find and select an item" oninput="renderPurchaseList()">
         <div class="twocol">
           <div><label>Sort by</label>
@@ -820,14 +824,16 @@ window.addEventListener('error', function(e){
           <h3 style="margin:0;" id="poModalSupplier">Supplier Invoice</h3>
           <button class="ghost" style="width:auto; margin:0; padding:4px 10px;" onclick="closePoInvoiceModal()">✕</button>
         </div>
-        <div style="font-size:0.85rem; color:var(--muted); margin-bottom:12px;" id="poModalDate"></div>
+        <div style="font-size:0.85rem; color:var(--muted); margin-bottom:8px;" id="poModalDate"></div>
+        <div class="pl-langbar" style="margin-bottom:10px;"></div>
         <div id="poModalItems"></div>
         <div style="display:flex; justify-content:space-between; font-weight:800; font-size:1.1rem; border-top:2px solid var(--muted); margin-top:10px; padding-top:10px;">
-          <span>Total Bill Value</span>
+          <span id="poModalTotalLabel">Total Bill Value</span>
           <span id="poModalTotal" style="color:var(--brand);">₹0</span>
         </div>
         <div style="display:flex; gap:8px; margin-top:14px;">
           <button style="background:var(--brand); flex:1; margin:0;" id="poModalCopyBtn">📋 Copy Again</button>
+          <button style="background:var(--paid); flex:1; margin:0;" id="poModalShareBtn">📤 Share</button>
           <button class="ghost" style="flex:1; margin:0;" onclick="closePoInvoiceModal()">Close</button>
         </div>
       </div>
@@ -1142,7 +1148,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v61-money-machine';
+const APP_VERSION = '2026-10-21-v62-tamil-mode';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1587,6 +1593,7 @@ function showPersonalTab(){
 function showPurchaseTab(){
   activateTab('purchase');
   if(!editingPlId) setPlUnit(selectedPlUnit);
+  renderPlLangBars();
   renderPurchaseList();
   renderPlTrash();
   renderPoHistory();
@@ -2057,6 +2064,7 @@ function addPurchaseItem(){
   const price = document.getElementById('pl-price').value;
   const mrp = document.getElementById('pl-mrp').value;
   const supplier = document.getElementById('pl-supplier').value.trim();
+  const nameTa = (document.getElementById('pl-nameTa').value||'').trim();
   if(!name){ showBanner('Enter an item name'); return; }
   const list = loadPurchaseList();
   const newPrice = price===''?null:Number(price);
@@ -2064,7 +2072,8 @@ function addPurchaseItem(){
     name, qty, unit: selectedPlUnit,
     price: newPrice,
     mrp: mrp===''?null:Number(mrp),
-    supplier: supplier || null
+    supplier: supplier || null,
+    nameTa: nameTa || null
   };
   if(editingPlId){
     const idx = list.findIndex(it=>String(it.id)===String(editingPlId));
@@ -2086,7 +2095,7 @@ function addPurchaseItem(){
   }
   document.getElementById('pl-name').value=''; document.getElementById('pl-qty').value='';
   document.getElementById('pl-price').value=''; document.getElementById('pl-mrp').value='';
-  document.getElementById('pl-supplier').value='';
+  document.getElementById('pl-supplier').value=''; document.getElementById('pl-nameTa').value='';
   renderPurchaseList();
   afterDataChange();
 }
@@ -2100,6 +2109,7 @@ function editPurchaseItem(id){
   document.getElementById('pl-price').value = it.price===null||it.price===undefined? '' : it.price;
   document.getElementById('pl-mrp').value = it.mrp===null||it.mrp===undefined? '' : it.mrp;
   document.getElementById('pl-supplier').value = it.supplier || '';
+  document.getElementById('pl-nameTa').value = it.nameTa || '';
   setPlUnit(it.unit||'pcs');
   document.getElementById('plFormTitle').textContent = 'Edit Item';
   document.getElementById('plSubmitBtn').textContent = '✅ Update Item';
@@ -2113,7 +2123,7 @@ function cancelEditPurchaseItem(){
   document.getElementById('plCancelBtn').classList.add('hidden');
   document.getElementById('pl-name').value=''; document.getElementById('pl-qty').value='';
   document.getElementById('pl-price').value=''; document.getElementById('pl-mrp').value='';
-  document.getElementById('pl-supplier').value='';
+  document.getElementById('pl-supplier').value=''; document.getElementById('pl-nameTa').value='';
 }
 
 function deletePurchaseItem(id){
@@ -2383,7 +2393,7 @@ function buildPurchaseRow(it){
     row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <span style="display:flex; align-items:center; gap:8px;">
           <span class="pl-reassign-box" data-id="${eid(it.id)}" style="cursor:pointer; font-size:1.2rem;">${checked?'☑️':'⬜'}</span>
-          <span>${esc(it.name)}</span>
+          <span>${esc(itemLabel(it))}</span>
         </span>
         <span style="color:var(--muted); font-size:0.78rem;">${it.supplier ? ('🚚 '+esc(it.supplier)) : 'No Supplier'}</span>
       </div>`;
@@ -2417,7 +2427,7 @@ function buildPurchaseRow(it){
   row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
       <span style="display:flex; align-items:center; gap:8px;">
         <span class="pl-select-dot" data-id="${eid(it.id)}" style="cursor:pointer; font-size:1.2rem;">${isSelected?'✅':'⭕'}</span>
-        <span>${esc(it.name)}</span>
+        <span>${esc(itemLabel(it))}</span>
       </span>
       <span style="font-weight:700; white-space:nowrap; color:var(--muted); font-size:0.8rem;">in catalog: ${it.qty} ${unitLabel(it.unit)}</span>
     </div>
@@ -2485,7 +2495,8 @@ function renderPurchaseList(){
   renderSelectedSummary();
 }
 
-function renderSelectedSummary(){
+function renderSelectedSummary(){ _renderSelectedSummary(); renderPlLangBars(); }
+function _renderSelectedSummary(){
   const summaryEl = document.getElementById('pl-selectedSummary');
   if(!summaryEl) return;
   const count = Object.keys(selectedPurchaseQty).length;
@@ -2495,13 +2506,120 @@ function renderSelectedSummary(){
       <div class="amt">₹${Math.round(total).toLocaleString('en-IN')}</div>
       <div class="sub">This Purchase Order — ${count} item(s) selected</div>
     </div>
-    <button style="background:var(--paid);" onclick="copySelectedPurchaseItems()">📋 Copy This Purchase Order</button>`;
+    <div class="pl-langbar" style="margin-top:10px;"></div>
+    <button style="background:var(--paid);" onclick="copySelectedPurchaseItems()">📋 Copy This Purchase Order (${plLang==='ta'?'தமிழ்':'English'})</button>`;
+}
+
+
+/* ---------- Tamil / English mode for Master Sheet & invoices ---------- */
+let plLang = localStorage.getItem('udhar_pl_lang') || 'en';
+let poModalOrderId = null;
+const TA_UNITS_TXT = { pcs:'பீஸ்', case:'கேஸ்', pack:'பேக்', saram:'சரம்' };
+const TA_MEAS = { ml:'மி.லி', l:'லிட்டர்', ltr:'லிட்டர்', litre:'லிட்டர்', liter:'லிட்டர்', kg:'கிலோ', g:'கிராம்', gm:'கிராம்', gms:'கிராம்', gram:'கிராம்' };
+const TA_DICT = {
+  milk:'பால்', sugar:'சர்க்கரை', tea:'டீ', coffee:'காபி', powder:'தூள்', water:'தண்ணீர்', bottle:'பாட்டில்', cup:'கப்', paper:'பேப்பர்',
+  bag:'பை', plastic:'பிளாஸ்டிக்', cover:'கவர்', biscuit:'பிஸ்கட்', snack:'ஸ்னாக்ஸ்', snacks:'ஸ்னாக்ஸ்', juice:'ஜூஸ்', cigarette:'சிகரெட்',
+  salt:'உப்பு', oil:'எண்ணெய்', rice:'அரிசி', dal:'பருப்பு', wheat:'கோதுமை', flour:'மாவு', ghee:'நெய்', butter:'வெண்ணெய்', curd:'தயிர்',
+  ginger:'இஞ்சி', cardamom:'ஏலக்காய்', cinnamon:'பட்டை', clove:'கிராம்பு', pepper:'மிளகு', chilli:'மிளகாய்', chili:'மிளகாய்',
+  onion:'வெங்காயம்', tomato:'தக்காளி', potato:'உருளைக்கிழங்கு', coconut:'தேங்காய்', banana:'வாழைப்பழம்', egg:'முட்டை', bread:'ரொட்டி',
+  bun:'பன்', rusk:'ரஸ்க்', samosa:'சமோசா', vada:'வடை', bajji:'பஜ்ஜி', mixture:'மிக்சர்', chips:'சிப்ஸ்', chocolate:'சாக்லேட்', candy:'மிட்டாய்',
+  soap:'சோப்பு', matchbox:'தீப்பெட்டி', gas:'எரிவாயு', cylinder:'சிலிண்டர்', lemon:'எலுமிச்சை', soda:'சோடா', ice:'ஐஸ்', tissue:'டிஷ்யூ',
+  straw:'ஸ்ட்ரா', spoon:'ஸ்பூன்', glass:'கிளாஸ்', plate:'தட்டு', box:'பெட்டி', packet:'பாக்கெட்', small:'சிறிய', big:'பெரிய', large:'பெரிய',
+  medium:'நடுத்தர', mini:'மினி', pack_:'பேக்', honey:'தேன்', jaggery:'வெல்லம்', leaf:'தேயிலை', sauce:'சாஸ்', jam:'ஜாம்', cake:'கேக்',
+  nescafe:'நெஸ்கஃபே', sprite:'ஸ்ப்ரைட்', bru:'ப்ரூ', good:'குட்', day:'டே', parle:'பார்லே', g:'ஜி', pepsi:'பெப்சி', coca:'கோகோ', cola:'கோலா', fanta:'ஃபேண்டா', maaza:'மாசா', aavin:'ஆவின்', thums:'தம்ஸ்', up:'அப்', bisleri:'பிஸ்லரி', hamam:'ஹமாம்', lux:'லக்ஸ்', dairy:'டெய்ரி', fresh:'ஃபிரஷ்', gold:'கோல்ட்', classic:'கிளாசிக்', filter:'ஃபில்டர்', premium:'பிரீமியம்', regular:'ரெகுலர்',
+  lighter:'லைட்டர்', paan:'பான்', masala:'மசாலா', cool:'கூல்', drink:'ட்ரிங்க்', drinks:'ட்ரிங்க்ஸ்', and:'மற்றும்', with:'உடன்'
+};
+function taPhonetic(word){
+  let w = word.toLowerCase();
+  const C = {b:'ப',c:'க',d:'ட',g:'க',h:'ஹ',j:'ஜ',k:'க',l:'ல',m:'ம',n:'ன',p:'ப',q:'க',r:'ர',s:'ஸ',t:'ட',v:'வ',w:'வ',y:'ய',z:'ஸ',f:'ப'};
+  const DG = {ch:'ச',sh:'ஷ',th:'த',ph:'ப',kh:'க',gh:'க',ng:'ங',ck:'க'};
+  const VS = {a:'',aa:'ா',i:'ி',ee:'ீ',ea:'ீ',u:'ு',oo:'ூ',e:'ெ',ai:'ை',ay:'ே',au:'ௌ',ou:'ௌ',o:'ொ',oa:'ோ'};
+  const VI = {a:'அ',aa:'ஆ',i:'இ',ee:'ஈ',ea:'ஈ',u:'உ',oo:'ஊ',e:'எ',ai:'ஐ',ay:'ஏ',au:'ஔ',ou:'ஔ',o:'ஒ',oa:'ஓ'};
+  const V = 'aeiou';
+  if(w.length>3 && w.endsWith('e') && V.indexOf(w[w.length-2])<0) w = w.slice(0,-1);
+  let out = '', pend = null, i = 0;
+  const flush = vir => { if(pend){ out += (pend.pre||'') + pend.base + (vir?'்':''); pend = null; } };
+  while(i<w.length){
+    const ch = w[i], two = w.substr(i,2);
+    const isVowelY = ch==='y' && pend && (i===w.length-1 || V.indexOf(w[i+1])<0);
+    if(V.indexOf(ch)>-1 || isVowelY){
+      let key = isVowelY ? 'i' : (VS[two]!==undefined && two.length===2 && V.indexOf(two[1])>-1 || two==='ay' || two==='ea' ? two : ch);
+      if(!isVowelY && VS[key]===undefined) key = ch;
+      if(pend){ out += (pend.pre||'') + pend.base + VS[key]; pend = null; }
+      else out += VI[key];
+      i += isVowelY ? 1 : key.length;
+      continue;
+    }
+    if(!C[ch] && !DG[two]){ flush(true); out += ch; i++; continue; }
+    if(ch==='x'){ flush(true); out += 'க்'; pend = {base:'ஸ'}; i++; continue; }
+    let base, step = 1, pre = '';
+    if(DG[two]){ base = DG[two]; step = 2; if(two==='ph') pre = 'ஃ'; }
+    else { base = C[ch]; if(ch==='n' && i===0) base = 'ந'; if(ch==='f') pre = 'ஃ'; if(ch==='c' && 'eiy'.indexOf(w[i+1]||'')>-1) base = 'ஸ'; }
+    if(step===1 && i>0 && w[i-1]===ch && ch!=='r'){ i++; continue; }
+    flush(true); pend = { base, pre }; i += step;
+  }
+  flush(true);
+  return out;
+}
+function autoTamil(name){
+  return String(name||'').split(/(\s+|-|\/)/).map(tok=>{
+    if(!tok.trim() || tok==='-' || tok==='/' || /[\u0B80-\u0BFF]/.test(tok)) return tok;
+    const m = tok.match(/^([^A-Za-z0-9]*)(.*?)([^A-Za-z0-9]*)$/);
+    const lead = m[1], core = m[2], tail = m[3], low = core.toLowerCase();
+    if(!core) return tok;
+    let t;
+    if(TA_DICT[low]) t = TA_DICT[low];
+    else if(low.endsWith('s') && TA_DICT[low.slice(0,-1)]) t = TA_DICT[low.slice(0,-1)];
+    else if(/^\d+(\.\d+)?$/.test(low)) t = core;
+    else {
+      const nu = low.match(/^(\d+(?:\.\d+)?)([a-z]+)$/);
+      if(nu) t = nu[1] + (TA_MEAS[nu[2]] || taPhonetic(nu[2]));
+      else if(TA_MEAS[low]) t = TA_MEAS[low];
+      else t = taPhonetic(core);
+    }
+    return lead + t + tail;
+  }).join('');
+}
+function tamilName(it){ return (it && it.nameTa) ? it.nameTa : autoTamil(it && it.name); }
+function itemLabel(it){ return plLang==='ta' ? tamilName(it) : (it.name||''); }
+function unitLabelL(u){ return plLang==='ta' ? (TA_UNITS_TXT[u] || TA_UNITS_TXT.pcs) : unitLabel(u); }
+function fillAutoTamil(){
+  const n = document.getElementById('pl-name').value.trim();
+  if(!n){ showBanner('Enter the item name first'); return; }
+  document.getElementById('pl-nameTa').value = autoTamil(n);
+  showBanner('✨ Tamil name filled — edit it if needed');
+}
+function renderPlLangBars(){
+  const on = 'background:var(--brand); color:#fff;', off = 'background:transparent; color:var(--text);';
+  const html = `<div style="display:flex; border:1.5px solid var(--card-border); border-radius:12px; overflow:hidden;">
+    <button type="button" style="margin:0; border-radius:0; box-shadow:none; padding:9px; ${plLang==='en'?on:off}" onclick="setPlLang('en')">🇬🇧 English</button>
+    <button type="button" style="margin:0; border-radius:0; box-shadow:none; padding:9px; ${plLang==='ta'?on:off}" onclick="setPlLang('ta')">தமிழ்</button></div>`;
+  document.querySelectorAll('.pl-langbar').forEach(el=>{ el.innerHTML = html; });
+}
+function setPlLang(l){
+  plLang = l; localStorage.setItem('udhar_pl_lang', l);
+  renderPurchaseList(); renderPoHistory();
+  const modal = document.getElementById('poInvoiceModal');
+  if(modal && !modal.classList.contains('hidden') && poModalOrderId) openPoInvoiceModal(poModalOrderId);
+  const inv = document.getElementById('pl-invoiceSummaryCard');
+  if(inv && !inv.classList.contains('hidden') && window.__lastInvoiceItems) renderInvoiceSummary(window.__lastInvoiceItems);
+  renderPlLangBars();
+  showBanner(l==='ta' ? '🌐 தமிழ் mode — item names shown in Tamil' : '🌐 English mode');
+}
+function shareHistoricalOrder(orderId){
+  const o = loadPoHistory().find(x=>x.id===orderId); if(!o) return;
+  const ta = plLang==='ta';
+  let total = 0;
+  const lines = (o.items||[]).map((it,i)=>{ total += (Number(it.price)||0)*(Number(it.qty)||0); return (i+1)+'. '+itemLabel(it)+' - '+it.qty+' '+unitLabelL(it.unit); });
+  const text = '🚚 ' + (o.supplier||'') + '\n' + (ta?'தேதி: ':'Date: ') + o.date + '\n\n' + lines.join('\n') + '\n\n' + (ta?'மொத்தம்: ₹':'Total: ₹') + Math.round(o.totalValue!==undefined?o.totalValue:total).toLocaleString('en-IN');
+  if(navigator.share){ navigator.share({ title:(ta?'ஆர்டர் - ':'Order - ')+(o.supplier||''), text }).catch(()=>{}); }
+  else if(navigator.clipboard){ navigator.clipboard.writeText(text).then(()=>showBanner('📋 Order copied')).catch(()=>showBanner('Could not copy')); }
 }
 
 function copyPurchaseListNameQtyOnly(){
   const list = loadPurchaseList();
   if(!list.length){ showBanner('Master Sheet is empty'); return; }
-  const text = list.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)}`).join('\n');
+  const text = list.map((it,i)=> `${i+1}. ${itemLabel(it)} - ${it.qty} ${unitLabelL(it.unit)}`).join('\n');
   if(navigator.clipboard){
     navigator.clipboard.writeText(text).then(()=>showBanner('📋 Master Sheet copied (name + qty only)')).catch(()=>showBanner('Could not copy'));
   }
@@ -2537,11 +2655,12 @@ function copySelectedPurchaseItems(){
       qty: selectedPurchaseQty[id], 
       unit: it.unit,
       price: (it.price !== null && it.price !== undefined) ? it.price : 0,
-      supplier: it.supplier || null
+      supplier: it.supplier || null,
+      nameTa: it.nameTa || null
     } : null;
   }).filter(Boolean);
 
-  const text = orderItems.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)}`).join('\n');
+  const text = orderItems.map((it,i)=> `${i+1}. ${itemLabel(it)} - ${it.qty} ${unitLabelL(it.unit)}`).join('\n');
   recordPurchaseOrderHistory(orderItems);
   
   if(navigator.clipboard){
@@ -2554,7 +2673,7 @@ function copySelectedPurchaseItems(){
 function copyHistoricalOrder(orderId){
   const order = loadPoHistory().find(o=>o.id===orderId);
   if(!order) return;
-  const text = order.items.map((it,i)=> `${i+1}. ${it.name} - ${it.qty} ${unitLabel(it.unit)}`).join('\n');
+  const text = order.items.map((it,i)=> `${i+1}. ${itemLabel(it)} - ${it.qty} ${unitLabelL(it.unit)}`).join('\n');
   if(navigator.clipboard){
     navigator.clipboard.writeText(text).then(()=>showBanner('📋 Order copied')).catch(()=>{});
   }
@@ -2563,9 +2682,14 @@ function copyHistoricalOrder(orderId){
 function openPoInvoiceModal(orderId){
   const order = loadPoHistory().find(o=>o.id===orderId);
   if(!order) return;
-  
-  document.getElementById('poModalSupplier').textContent = '🚚 ' + (order.supplier || 'Supplier Order');
-  document.getElementById('poModalDate').textContent = 'Date: ' + (order.date || 'Unknown') + ' · ' + (order.items ? order.items.length : 0) + ' items';
+  poModalOrderId = orderId;
+  const ta = plLang==='ta';
+  document.getElementById('poModalSupplier').textContent = '🚚 ' + (order.supplier || (ta?'சப்ளையர் ஆர்டர்':'Supplier Order'));
+  document.getElementById('poModalDate').textContent = (ta?'தேதி: ':'Date: ') + (order.date || '—') + ' · ' + (order.items ? order.items.length : 0) + (ta?' பொருட்கள்':' items');
+  document.getElementById('poModalTotalLabel').textContent = ta ? 'மொத்த பில் தொகை' : 'Total Bill Value';
+  document.getElementById('poModalCopyBtn').textContent = ta ? '📋 நகலெடு' : '📋 Copy Again';
+  document.getElementById('poModalShareBtn').textContent = ta ? '📤 பகிர்' : '📤 Share';
+  document.getElementById('poModalShareBtn').onclick = function(){ shareHistoricalOrder(order.id); };
   
   const itemsWrap = document.getElementById('poModalItems');
   itemsWrap.innerHTML = '';
@@ -2582,8 +2706,8 @@ function openPoInvoiceModal(orderId){
     div.style.padding = '8px 0';
     div.innerHTML = `
       <div>
-        <div style="font-weight:600;">${esc(it.name)}</div>
-        <div style="font-size:0.75rem; color:var(--muted);">${qty} ${unitLabel(it.unit)} × ₹${rate}</div>
+        <div style="font-weight:600;">${esc(itemLabel(it))}</div>
+        <div style="font-size:0.75rem; color:var(--muted);">${qty} ${unitLabelL(it.unit)} × ₹${rate}</div>
       </div>
       <div style="font-weight:700;">₹${lineTotal.toLocaleString('en-IN')}</div>
     `;
@@ -2593,6 +2717,7 @@ function openPoInvoiceModal(orderId){
   document.getElementById('poModalTotal').textContent = '₹' + (order.totalValue !== undefined ? order.totalValue : total).toLocaleString('en-IN');
   document.getElementById('poModalCopyBtn').onclick = function(){ copyHistoricalOrder(order.id); };
   document.getElementById('poInvoiceModal').classList.remove('hidden');
+  renderPlLangBars();
 }
 
 function closePoInvoiceModal(){
@@ -2820,6 +2945,7 @@ function confirmAddReviewedItems(){
     });
   });
   savePurchaseList(list);
+  window.__lastInvoiceItems = pendingReviewItems.slice();
   renderInvoiceSummary(pendingReviewItems);
   showBanner('✅ ' + pendingReviewItems.length + ' item(s) added — see invoice total below');
   cancelReview();
@@ -2840,7 +2966,7 @@ function renderInvoiceSummary(items){
   items.forEach(it=>{
     const rate = it.price||0;
     const lineTotal = rate * (it.qty||0);
-    html += `<div class="paidRow"><span>${esc(it.name)} (${esc(it.qty)} ${unitLabel(it.unit)})</span><span>${rate?('₹'+lineTotal):'—'}</span></div>`;
+    html += `<div class="paidRow"><span>${esc(itemLabel(it))} (${esc(it.qty)} ${unitLabelL(it.unit)})</span><span>${rate?('₹'+lineTotal):'—'}</span></div>`;
   });
   html += `<div class="paidRow" style="font-weight:700; border-top:2px solid var(--muted); margin-top:6px; padding-top:8px;"><span>Invoice Total</span><span>₹${Math.round(total).toLocaleString('en-IN')}</span></div>`;
   listEl.innerHTML = html;
@@ -3855,6 +3981,7 @@ function closePlExportModal(){ document.getElementById('plExportModal').classLis
 function buildMasterSheetRows(){
   return loadPurchaseList().map(it=>({
     Name: it.name,
+    'Tamil Name': tamilName(it),
     Qty: it.qty,
     Unit: unitLabel(it.unit),
     'Price (₹)': it.price===null||it.price===undefined? '' : it.price,
