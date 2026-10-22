@@ -699,7 +699,7 @@ window.addEventListener('error', function(e){
         <input id="pl-nameTa" placeholder="தமிழ் பெயர்">
         <div style="display:flex; gap:8px; margin:-4px 0 12px;">
           <button type="button" class="ghost" style="margin:0; padding:8px; font-size:0.78rem;" onclick="fillAutoTamil()">✨ Auto Tamil</button>
-          <button type="button" class="ghost" style="margin:0; padding:8px; font-size:0.78rem;" onclick="suggestTamilOnline()">🌐 Online suggestion</button>
+          <button type="button" class="ghost" style="margin:0; padding:8px; font-size:0.78rem;" onclick="suggestTamilOnline()">🌐 Online Tanglish</button>
         </div>
         <div class="twocol">
           <div><label>Qty</label><input id="pl-qty" type="number" min="0"></div>
@@ -1151,7 +1151,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v63-better-tamil';
+const APP_VERSION = '2026-10-21-v64-tanglish';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -2518,25 +2518,13 @@ function _renderSelectedSummary(){
 let plLang = localStorage.getItem('udhar_pl_lang') || 'en';
 let poModalOrderId = null;
 const TA_UNITS_TXT = { pcs:'பீஸ்', case:'கேஸ்', pack:'பேக்', saram:'சரம்' };
-const TA_MEAS = { ml:'மி.லி', l:'லிட்டர்', ltr:'லிட்டர்', litre:'லிட்டர்', liter:'லிட்டர்', kg:'கிலோ', g:'கிராம்', gm:'கிராம்', gms:'கிராம்', gram:'கிராம்' };
+const TA_MEAS = { ml:'எம்எல்', l:'லிட்டர்', ltr:'லிட்டர்', litre:'லிட்டர்', liter:'லிட்டர்', kg:'கிலோ', g:'கிராம்', gm:'கிராம்', gms:'கிராம்', gram:'கிராம்' };
 const TA_DICT = {
-  /* dairy, drinks */
-  'milk':'பால்','milk packet':'பால் பாக்கெட்','curd':'தயிர்','butter milk':'மோர்','buttermilk':'மோர்','ghee':'நெய்','butter':'வெண்ணெய்','cream':'கிரீம்','paneer':'பன்னீர்','cheese':'சீஸ்','ice cream':'ஐஸ் கிரீம்','ice':'ஐஸ்','ice cube':'ஐஸ் கட்டி',
-  'tea':'டீ','tea powder':'டீ தூள்','tea dust':'டீ தூள்','tea leaf':'டீ தூள்','coffee':'காபி','coffee powder':'காபி தூள்','filter coffee':'ஃபில்டர் காபி','black tea':'பிளாக் டீ','green tea':'கிரீன் டீ','lemon tea':'எலுமிச்சை டீ','ginger tea':'இஞ்சி டீ','badam milk':'பாதாம் பால்','rose milk':'ரோஸ் மில்க்','milk powder':'பால் பவுடர்','condensed milk':'கண்டென்ஸ்டு மில்க்',
-  'water':'தண்ணீர்','water bottle':'தண்ணீர் பாட்டில்','drinking water':'குடிநீர்','soda':'சோடா','cool drink':'கூல் டிரிங்க்','cool drinks':'கூல் டிரிங்க்ஸ்','juice':'ஜூஸ்','lemon juice':'எலுமிச்சை ஜூஸ்','energy drink':'எனர்ஜி டிரிங்க்',
-  'sugar':'சர்க்கரை','jaggery':'வெல்லம்','palm jaggery':'கருப்பட்டி','honey':'தேன்','salt':'உப்பு',
-  /* snacks, bakery */
-  'biscuit':'பிஸ்கட்','cake':'கேக்','bun':'பன்','bread':'பிரெட்','rusk':'ரஸ்க்','cookies':'குக்கீஸ்','chips':'சிப்ஸ்','mixture':'மிக்சர்','murukku':'முறுக்கு','thattai':'தட்டை','seedai':'சீடை','vada':'வடை','bajji':'பஜ்ஜி','bonda':'போண்டா','samosa':'சமோசா','puff':'பஃப்','sandwich':'சாண்ட்விச்','burger':'பர்கர்','pakoda':'பக்கோடா','banana chips':'வாழைக்காய் சிப்ஸ்','peanut':'வேர்க்கடலை','groundnut':'வேர்க்கடலை','cashew':'முந்திரி','almond':'பாதாம்','raisin':'உலர் திராட்சை','dates':'பேரீச்சம்பழம்','chocolate':'சாக்லேட்','candy':'மிட்டாய்','toffee':'டாஃபி','chewing gum':'சூயிங் கம்','snack':'ஸ்நாக்ஸ்','snacks':'ஸ்நாக்ஸ்','namkeen':'நம்கீன்','sweet':'ஸ்வீட்','laddu':'லட்டு','halwa':'அல்வா','pickle':'ஊறுகாய்','papad':'அப்பளம்',
-  /* staples, vegetables, fruits, spices */
-  'rice':'அரிசி','wheat':'கோதுமை','flour':'மாவு','maida':'மைதா','rava':'ரவை','sooji':'ரவை','dal':'பருப்பு','toor dal':'துவரம் பருப்பு','urad dal':'உளுத்தம் பருப்பு','moong dal':'பாசிப்பருப்பு','chana dal':'கடலைப்பருப்பு','gram flour':'கடலை மாவு','oil':'எண்ணெய்','coconut oil':'தேங்காய் எண்ணெய்','sunflower oil':'சூரியகாந்தி எண்ணெய்','gingelly oil':'நல்லெண்ணெய்','groundnut oil':'கடலை எண்ணெய்',
-  'onion':'வெங்காயம்','tomato':'தக்காளி','potato':'உருளைக்கிழங்கு','garlic':'பூண்டு','ginger':'இஞ்சி','chilli':'மிளகாய்','chili':'மிளகாய்','chilli powder':'மிளகாய் தூள்','turmeric':'மஞ்சள்','turmeric powder':'மஞ்சள் தூள்','coriander':'கொத்தமல்லி','curry leaves':'கறிவேப்பிலை','mustard':'கடுகு','cumin':'சீரகம்','fennel':'சோம்பு','tamarind':'புளி','pepper':'மிளகு','cardamom':'ஏலக்காய்','elaichi':'ஏலக்காய்','clove':'கிராம்பு','cinnamon':'பட்டை','masala':'மசாலா','lemon':'எலுமிச்சை','coconut':'தேங்காய்','egg':'முட்டை','banana':'வாழைப்பழம்','apple':'ஆப்பிள்','orange':'ஆரஞ்சு','mango':'மாம்பழம்','grapes':'திராட்சை',
-  /* shop supplies */
-  'cup':'கப்','paper cup':'பேப்பர் கப்','plastic cup':'பிளாஸ்டிக் கப்','glass':'டம்ளர்','tumbler':'டம்ளர்','plate':'தட்டு','paper plate':'பேப்பர் தட்டு','spoon':'ஸ்பூன்','straw':'ஸ்ட்ரா','bag':'பை','carry bag':'கேரி பேக்','cover':'கவர்','plastic cover':'பிளாஸ்டிக் கவர்','plastic':'பிளாஸ்டிக்','paper':'பேப்பர்','newspaper':'நியூஸ் பேப்பர்','tissue':'டிஷ்யூ','tissue paper':'டிஷ்யூ பேப்பர்','foil':'ஃபாயில்','box':'பெட்டி','carton':'பெட்டி','bottle':'பாட்டில்','flask':'ஃபிளாஸ்க்','kettle':'கெட்டில்','gas cylinder':'கேஸ் சிலிண்டர்','cylinder':'சிலிண்டர்','gas':'கேஸ்','stove':'ஸ்டவ்','lighter':'லைட்டர்','matchbox':'தீப்பெட்டி','match box':'தீப்பெட்டி','candle':'மெழுகுவர்த்தி',
-  'soap':'சோப்பு','detergent':'சலவை தூள்','broom':'துடைப்பம்','mop':'மாப்','phenyl':'பினாயில்','sanitizer':'சானிடைசர்','hand wash':'ஹேண்ட் வாஷ்','garbage bag':'குப்பை பை','gloves':'கையுறை','apron':'ஏப்ரன்',
-  'cigarette':'சிகரெட்','beedi':'பீடி','pan':'பான்','pan masala':'பான் மசாலா','tobacco':'புகையிலை',
-  /* sizes and words */
-  'small':'சிறிய','big':'பெரிய','large':'பெரிய','medium':'நடுத்தர','mini':'மினி','family':'ஃபேமிலி','jumbo':'ஜம்போ','regular':'ரெகுலர்','special':'ஸ்பெஷல்','extra':'எக்ஸ்ட்ரா','fresh':'ஃப்ரெஷ்','hot':'ஹாட்','cold':'கோல்ட்','plain':'பிளெயின்','combo':'காம்போ','powder':'பவுடர்','sauce':'சாஸ்','jam':'ஜாம்','packet':'பாக்கெட்','pouch':'பவுச்','sachet':'சாஷே','dozen':'டஜன்','bundle':'கட்டு','power':'பவர்','bank':'பேங்க்','power bank':'பவர் பேங்க்','cooking':'குக்கிங்','cooking oil':'சமையல் எண்ணெய்','real':'ரியல்','fruit':'ஃப்ரூட்','fruit juice':'ஃப்ரூட் ஜூஸ்','amla':'நெல்லிக்காய்','mint':'புதினா','pudina':'புதினா','ice tea':'ஐஸ் டீ','tea bag':'டீ பேக்','sugar free':'சுகர் ஃப்ரீ','sugarfree':'சுகர் ஃப்ரீ','diet':'டயட்','new':'நியூ','old':'ஓல்ட்','black':'பிளாக்','white':'ஒயிட்','red':'ரெட்','green':'கிரீன்','blue':'ப்ளூ','yellow':'எல்லோ','mixed':'மிக்ஸ்டு','mix':'மிக்ஸ்','tin':'டின்','jar':'ஜார்','can':'கேன்','roll':'ரோல்','sheet':'ஷீட்','pad':'பேட்','and':'மற்றும்','with':'உடன்','premium':'பிரீமியம்','gold':'கோல்ட்','classic':'கிளாசிக்','filter':'ஃபில்டர்','dairy':'டெய்ரி','pack':'பேக்',
-  /* brands as people say them */
+  /* English words written in Tamil letters, the way people say them (Tanglish) */
+  'milk':'மில்க்','tea':'டீ','coffee':'காபி','sugar':'சுகர்','powder':'பவுடர்','water':'வாட்டர்','bottle':'பாட்டில்','cup':'கப்','paper':'பேப்பர்','plastic':'பிளாஸ்டிக்','cover':'கவர்','bag':'பேக்','carry':'கேரி','biscuit':'பிஸ்கட்','juice':'ஜூஸ்','cigarette':'சிகரெட்','salt':'சால்ட்','oil':'ஆயில்','rice':'ரைஸ்','wheat':'வீட்','flour':'ஃப்ளோர்','maida':'மைதா','rava':'ரவா','dal':'தால்','ghee':'நெய்','butter':'பட்டர்','curd':'கர்ட்','cream':'கிரீம்','cheese':'சீஸ்','ice':'ஐஸ்','cake':'கேக்','bun':'பன்','bread':'பிரெட்','rusk':'ரஸ்க்','cookies':'குக்கீஸ்','chips':'சிப்ஸ்','mixture':'மிக்சர்','snack':'ஸ்நாக்ஸ்','snacks':'ஸ்நாக்ஸ்','chocolate':'சாக்லேட்','candy':'கேண்டி','toffee':'டாஃபி','peanut':'பீநட்','cashew':'கேஷ்யூ','almond':'ஆல்மண்ட்','raisin':'ரெய்சின்','dates':'டேட்ஸ்','soda':'சோடா','cool':'கூல்','drink':'டிரிங்க்','drinks':'டிரிங்க்ஸ்','lemon':'லெமன்','ginger':'ஜிஞ்சர்','cardamom':'கார்டமம்','clove':'கிளவ்','cinnamon':'சின்னமன்','pepper':'பெப்பர்','chilli':'சில்லி','chili':'சில்லி','turmeric':'டர்மரிக்','coriander':'கொரியாண்டர்','cumin':'கமின்','mustard':'மஸ்டர்ட்','tamarind':'டாமரிண்ட்','onion':'ஆனியன்','tomato':'டொமாட்டோ','potato':'பொட்டேட்டோ','garlic':'கார்லிக்','coconut':'கோகனட்','egg':'எக்','banana':'பனானா','apple':'ஆப்பிள்','orange':'ஆரஞ்சு','mango':'மேங்கோ','grapes':'கிரேப்ஸ்','honey':'ஹனி','jaggery':'ஜாகரி','gas':'கேஸ்','cylinder':'சிலிண்டர்','stove':'ஸ்டவ்','lighter':'லைட்டர்','match':'மேட்ச்','matchbox':'மேட்ச் பாக்ஸ்','box':'பாக்ஸ்','packet':'பாக்கெட்','pack':'பேக்','plate':'பிளேட்','spoon':'ஸ்பூன்','straw':'ஸ்ட்ரா','glass':'கிளாஸ்','tumbler':'டம்ளர்','tissue':'டிஷ்யூ','foil':'ஃபாயில்','soap':'சோப்','detergent':'டிடர்ஜென்ட்','broom':'ப்ரூம்','mop':'மாப்','sanitizer':'சானிடைசர்','wash':'வாஷ்','hand':'ஹேண்ட்','gloves':'கிளவுஸ்','apron':'ஏப்ரன்','garbage':'கார்பேஜ்','dustbin':'டஸ்ட்பின்','candle':'கேண்டில்','tobacco':'டொபாக்கோ','beedi':'பீடி','pan':'பான்','masala':'மசாலா',
+  'small':'ஸ்மால்','big':'பிக்','large':'லார்ஜ்','medium':'மீடியம்','mini':'மினி','family':'ஃபேமிலி','jumbo':'ஜம்போ','regular':'ரெகுலர்','special':'ஸ்பெஷல்','extra':'எக்ஸ்ட்ரா','fresh':'ஃப்ரெஷ்','hot':'ஹாட்','cold':'கோல்ட்','plain':'பிளெயின்','combo':'காம்போ','sauce':'சாஸ்','jam':'ஜாம்','pouch':'பவுச்','sachet':'சாஷே','dozen':'டஜன்','and':'அண்ட்','with':'வித்','premium':'பிரீமியம்','gold':'கோல்ட்','classic':'கிளாசிக்','filter':'ஃபில்டர்','dairy':'டெய்ரி','power':'பவர்','bank':'பேங்க்','cooking':'குக்கிங்','real':'ரியல்','fruit':'ஃப்ரூட்','amla':'ஆம்லா','mint':'மின்ட்','new':'நியூ','old':'ஓல்ட்','black':'பிளாக்','white':'ஒயிட்','red':'ரெட்','green':'கிரீன்','blue':'ப்ளூ','yellow':'எல்லோ','mixed':'மிக்ஸ்டு','mix':'மிக்ஸ்','tin':'டின்','jar':'ஜார்','can':'கேன்','roll':'ரோல்','sheet':'ஷீட்','pad':'பேட்','sweet':'ஸ்வீட்','puff':'பஃப்','sandwich':'சாண்ட்விச்','burger':'பர்கர்','sugarfree':'சுகர் ஃப்ரீ','diet':'டயட்','badam':'பாதாம்','rose':'ரோஸ்','paneer':'பன்னீர்','namkeen':'நம்கீன்','pickle':'பிக்கிள்','papad':'அப்பளம்','laddu':'லட்டு','halwa':'ஹல்வா','vada':'வடை','bajji':'பஜ்ஜி','bonda':'போண்டா','samosa':'சமோசா','murukku':'முறுக்கு','thattai':'தட்டை','seedai':'சீடை','magic':'மேஜிக்','atta':'ஆட்டா','bar':'பார்','noodles':'நூடுல்ஸ்','soup':'சூப்','tomato sauce':'டொமாட்டோ சாஸ்','sauce':'சாஸ்','pasta':'பாஸ்தா','cornflakes':'கார்ன்ஃப்ளேக்ஸ்','oats':'ஓட்ஸ்','dry':'டிரை','fruits':'ஃப்ரூட்ஸ்','nuts':'நட்ஸ்','cold coffee':'கோல்ட் காபி','shake':'ஷேக்','milkshake':'மில்க்ஷேக்','lassi':'லஸ்ஸி','mineral':'மினரல்','soft':'சாஃப்ட்','hard':'ஹார்டு','light':'லைட்','heavy':'ஹெவி','idli':'இட்லி','dosa':'தோசை','elaichi':'ஏலக்காய்','pudina':'புதினா','curry':'கறி','leaves':'லீவ்ஸ்','leaf':'லீஃப்','dust':'டஸ்ட்','bun':'பன்','tub':'டப்','cone':'கோன்','stick':'ஸ்டிக்','sticks':'ஸ்டிக்ஸ்','free':'ஃப்ரீ','pet':'பெட்','refill':'ரீஃபில்','spray':'ஸ்ப்ரே','liquid':'லிக்விட்','cleaner':'கிளீனர்','bulb':'பல்ப்','battery':'பேட்டரி','cell':'செல்','candy':'கேண்டி','gum':'கம்','pepper':'பெப்பர்','kg':'கிலோ',
+  'tea powder':'டீ பவுடர்','coffee powder':'காபி பவுடர்','milk powder':'மில்க் பவுடர்','paper cup':'பேப்பர் கப்','water bottle':'வாட்டர் பாட்டில்','gas cylinder':'கேஸ் சிலிண்டர்','cool drink':'கூல் டிரிங்க்','cool drinks':'கூல் டிரிங்க்ஸ்','hand wash':'ஹேண்ட் வாஷ்','ice cream':'ஐஸ் கிரீம்','butter milk':'பட்டர் மில்க்','pan masala':'பான் மசாலா','tissue paper':'டிஷ்யூ பேப்பர்',
+  /* brands */
   'aavin':'ஆவின்','amul':'அமுல்','nandini':'நந்தினி','heritage':'ஹெரிடேஜ்','milky mist':'மில்கி மிஸ்ட்','arokya':'ஆரோக்யா','britannia':'பிரிட்டானியா','parle':'பார்லே','parle g':'பார்லே-ஜி','good day':'குட் டே','marie':'மேரி','bourbon':'பர்பன்','hide and seek':'ஹைட் அண்ட் சீக்','tiger':'டைகர்','monaco':'மொனாகோ','krack jack':'கிராக் ஜாக்','little hearts':'லிட்டில் ஹார்ட்ஸ்','milk bikis':'மில்க் பிகிஸ்','50 50':'ஃபிப்டி ஃபிப்டி','unibic':'யூனிபிக்','sunfeast':'சன்ஃபீஸ்ட்','dark fantasy':'டார்க் ஃபேண்டசி','oreo':'ஓரியோ',
   'bru':'ப்ரூ','nescafe':'நெஸ்கஃபே','sunrise':'சன்ரைஸ்','taj mahal':'தாஜ்மஹால்','brooke bond':'ப்ரூக் பாண்ட்','red label':'ரெட் லேபிள்','tata':'டாடா','wagh bakri':'வாக் பக்ரி','3 roses':'3 ரோசஸ்','society':'சொசைட்டி','horlicks':'ஹார்லிக்ஸ்','boost':'பூஸ்ட்','bournvita':'போர்ன்விட்டா','complan':'காம்ப்ளான்','maggi':'மேகி',
   'sprite':'ஸ்ப்ரைட்','coca cola':'கோகோ கோலா','coke':'கோக்','pepsi':'பெப்சி','mirinda':'மிரிண்டா','thums up':'தம்ஸ் அப்','maaza':'மாசா','frooti':'ஃப்ரூட்டி','slice':'ஸ்லைஸ்','fanta':'ஃபேண்டா','limca':'லிம்கா','7up':'செவன் அப்','7 up':'செவன் அப்','bovonto':'பொவன்டோ','kinley':'கின்லே','bisleri':'பிஸ்லரி','aquafina':'அக்வாஃபினா','red bull':'ரெட் புல்',
@@ -2545,7 +2533,7 @@ const TA_DICT = {
 };
 const TA_NUMWORD = { '3 roses':1 };
 function taPhonetic(word){
-  let w = word.toLowerCase().replace(/tion$/,'shan').replace(/sion$/,'shan').replace(/(er|or)$/,'ar').replace(/^wh/,'w').replace(/qu/g,'kw');
+  let w = word.toLowerCase().replace(/tion$/,'shan').replace(/sion$/,'shan').replace(/(er|or)$/,'ar').replace(/ar(?![aeiou])/g,'aar').replace(/^wh/,'w').replace(/qu/g,'kw');
   const C = {b:'ப',c:'க',d:'ட',g:'க',h:'ஹ',j:'ஜ',k:'க',l:'ல',m:'ம',n:'ன',p:'ப',q:'க',r:'ர',s:'ஸ',t:'ட',v:'வ',w:'வ',y:'ய',z:'ஸ',f:'ப'};
   const DG = {ch:'ச',sh:'ஷ',th:'த',ph:'ப',kh:'க',gh:'க',ng:'ங',ck:'க'};
   const VS = {a:'',aa:'ா',i:'ி',ee:'ீ',ea:'ீ',u:'ு',oo:'ூ',e:'ெ',ai:'ை',ay:'ே',au:'ௌ',ou:'ௌ',o:'ொ',oa:'ோ'};
@@ -2605,7 +2593,7 @@ function autoTamil(name){
     else if(/^\d+(\.\d+)?$/.test(w)) out.push(w);
     else {
       const nu = w.match(/^(\d+(?:\.\d+)?)([a-z]+)$/);
-      if(nu) out.push(nu[1] + (TA_MEAS[nu[2]] || taLookup(nu[2]) || taPhonetic(nu[2])));
+      if(nu) out.push(nu[1] + ' ' + (TA_MEAS[nu[2]] || taLookup(nu[2]) || taPhonetic(nu[2])));
       else out.push(taPhonetic(rw));
     }
     i++;
@@ -2619,31 +2607,35 @@ function fillAutoTamil(){
   const n = document.getElementById('pl-name').value.trim();
   if(!n){ showBanner('Enter the item name first'); return; }
   document.getElementById('pl-nameTa').value = autoTamil(n);
-  showBanner('✨ Tamil name filled — edit it if needed');
+  showBanner('✨ Tamil letters filled — edit if needed');
 }
 async function suggestTamilOnline(){
   const n = document.getElementById('pl-name').value.trim();
   if(!n){ showBanner('Enter the item name first'); return; }
-  showBanner('🌐 Asking online translator…');
+  showBanner('🌐 Asking online Tamil typing service…');
   try{
-    const ctl = new AbortController(); const tm = setTimeout(()=>ctl.abort(), 7000);
-    const r = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ta&dt=t&q='+encodeURIComponent(n), { signal: ctl.signal });
+    const ctl = new AbortController(); const tm = setTimeout(()=>ctl.abort(), 8000);
+    const words = n.split(/\s+/).filter(Boolean);
+    const res = await Promise.all(words.map(async w=>{
+      if(/^[\d.]+$/.test(w) || /[\u0B80-\u0BFF]/.test(w)) return w;
+      const r = await fetch('https://inputtools.google.com/request?text='+encodeURIComponent(w)+'&itc=ta-t-i0-und&num=1&cp=0&cs=1&ie=utf-8&oe=utf-8&app=udhar', { signal: ctl.signal });
+      const d = await r.json();
+      if(d && d[0]==='SUCCESS' && d[1] && d[1][0] && d[1][0][1] && d[1][0][1][0]) return d[1][0][1][0];
+      throw new Error('no result');
+    }));
     clearTimeout(tm);
-    const d = await r.json();
-    const t = (d[0]||[]).map(x=>x[0]).join('').trim();
-    if(!t) throw new Error('empty');
-    document.getElementById('pl-nameTa').value = t;
-    showBanner('🌐 Online suggestion filled — edit it if needed, then save');
+    document.getElementById('pl-nameTa').value = res.join(' ');
+    showBanner('🌐 Online result filled — edit if needed, then save');
   }catch(e){
     document.getElementById('pl-nameTa').value = autoTamil(n);
-    showBanner('⚠️ Online translator not reachable — filled the offline Tamil instead');
+    showBanner('⚠️ Online service not reachable — filled the built-in Tamil letters instead');
   }
 }
 function renderPlLangBars(){
   const on = 'background:var(--brand); color:#fff;', off = 'background:transparent; color:var(--text);';
   const html = `<div style="display:flex; border:1.5px solid var(--card-border); border-radius:12px; overflow:hidden;">
     <button type="button" style="margin:0; border-radius:0; box-shadow:none; padding:9px; ${plLang==='en'?on:off}" onclick="setPlLang('en')">🇬🇧 English</button>
-    <button type="button" style="margin:0; border-radius:0; box-shadow:none; padding:9px; ${plLang==='ta'?on:off}" onclick="setPlLang('ta')">தமிழ்</button></div>`;
+    <button type="button" style="margin:0; border-radius:0; box-shadow:none; padding:9px; ${plLang==='ta'?on:off}" onclick="setPlLang('ta')">தமிழ் (Tanglish)</button></div>`;
   document.querySelectorAll('.pl-langbar').forEach(el=>{ el.innerHTML = html; });
 }
 function setPlLang(l){
@@ -2654,7 +2646,7 @@ function setPlLang(l){
   const inv = document.getElementById('pl-invoiceSummaryCard');
   if(inv && !inv.classList.contains('hidden') && window.__lastInvoiceItems) renderInvoiceSummary(window.__lastInvoiceItems);
   renderPlLangBars();
-  showBanner(l==='ta' ? '🌐 தமிழ் mode — item names shown in Tamil' : '🌐 English mode');
+  showBanner(l==='ta' ? '🌐 Tamil mode — English words shown in Tamil letters' : '🌐 English mode');
 }
 function shareHistoricalOrder(orderId){
   const o = loadPoHistory().find(x=>x.id===orderId); if(!o) return;
