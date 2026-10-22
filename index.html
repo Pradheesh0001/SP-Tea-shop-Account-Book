@@ -453,6 +453,7 @@ window.addEventListener('error', function(e){
       <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Customer Accounts</button>
       <button id="tab-personal-btn" onclick="showPersonalTab()" class="ghost" style="margin-top:0;">🧍 Personal Expenses</button>
       <button id="tab-purchase-btn" onclick="showPurchaseTab()" class="ghost" style="margin-top:0;">🛒 Master Sheet</button>
+      <button id="tab-machine-btn" onclick="showMachineTab()" class="ghost" style="margin-top:0;">💰 Money Machine</button>
       <button class="ghost sideNavSettings" onclick="showSettings()">⚙️ Settings</button>
     </nav>
     <div class="mainContent">
@@ -831,6 +832,30 @@ window.addEventListener('error', function(e){
         </div>
       </div>
     </div>
+    <!-- MONEY MACHINE TAB -->
+    <div id="machineTab" class="hidden">
+      <div class="card">
+        <h3 style="margin-top:0;">💰 Money Machine</h3>
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <button id="mm-daily" onclick="setMmRange('daily')" style="width:auto; flex:1; padding:10px; font-size:0.85rem;">Day</button>
+          <button id="mm-weekly" onclick="setMmRange('weekly')" class="ghost" style="width:auto; flex:1; margin:0; padding:10px; font-size:0.85rem;">Week</button>
+          <button id="mm-monthly" onclick="setMmRange('monthly')" class="ghost" style="width:auto; flex:1; margin:0; padding:10px; font-size:0.85rem;">Month</button>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <button class="ghost" style="width:auto; margin:0; padding:8px 14px;" onclick="shiftMm(-1)">◀</button>
+          <span id="mm-period" style="font-weight:600;"></span>
+          <button class="ghost" style="width:auto; margin:0; padding:8px 14px;" onclick="shiftMm(1)">▶</button>
+        </div>
+        <canvas id="mm-canvas" style="width:100%; max-width:420px; display:block; margin:0 auto; border-radius:18px;"></canvas>
+        <div id="mm-note" class="hint"></div>
+      </div>
+      <div class="card">
+        <div class="paidRow"><span>💵 Cash expenses (fed in)</span><span id="mm-cashExp" style="font-weight:700; color:var(--owe);">₹0</span></div>
+        <div class="paidRow"><span>📲 Online expenses (fed in)</span><span id="mm-onlineExp" style="font-weight:700; color:var(--owe);">₹0</span></div>
+        <div class="paidRow"><span>🛒 Total sales</span><span id="mm-sales" style="font-weight:700;">₹0</span></div>
+        <div class="paidRow" style="border-bottom:none;"><span><b>💰 Money produced (overall profit)</b></span><span id="mm-profit" style="font-weight:800;">₹0</span></div>
+      </div>
+    </div>
     </div><!-- /mainContent -->
     </div><!-- /appShell -->
   </div>
@@ -1117,7 +1142,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v60-powerbi-excel';
+const APP_VERSION = '2026-10-21-v61-money-machine';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1404,6 +1429,7 @@ function refreshCurrentView(){
   else if(!document.getElementById('dashboardTab').classList.contains('hidden')){ renderDashboard(); }
   else if(!document.getElementById('personalTab').classList.contains('hidden')){ renderPersonalTab(); }
   else if(!document.getElementById('purchaseTab').classList.contains('hidden')){ renderPurchaseList(); renderPlTrash(); renderPoHistory(); }
+  else if(!document.getElementById('machineTab').classList.contains('hidden')){ mmUpdate(); }
 }
 
 async function syncNow(){
@@ -1516,7 +1542,7 @@ function showDashboard(){
   showDashboardTab();
 }
 
-const TABS = ['dashboard','sales','expenses','customers','personal','purchase'];
+const TABS = ['dashboard','sales','expenses','customers','personal','purchase','machine'];
 function activateTab(name){
   TABS.forEach(t=>{
     const panel = document.getElementById(t+'Tab');
@@ -4580,6 +4606,155 @@ async function generateExcelPro(m, sections, mode){
   const safePeriod = reportPeriodLabel(m).replace(/[^a-zA-Z0-9]+/g,'_');
   xlSaveBuffer(buf, 'SP-Tea-Shop-Report-'+safePeriod+'.xlsx');
   showBanner('✅ Excel report ready');
+}
+
+
+/* ---------- MONEY MACHINE (code-only looping animation) ---------- */
+let mmRange = 'daily', mmAnchor = null, mmAnim = null;
+const mmState = { target:0, shown:0, cash:0, online:0, sales:0, waiting:false, t:0, speed:0.3, items:[], notes:[], smoke:[], acc:{c:0,o:0,out:0,sm:0} };
+function mmPeriod(){
+  if(!mmAnchor) mmAnchor = todayStr();
+  if(mmRange==='daily') return [mmAnchor, mmAnchor];
+  if(mmRange==='weekly') return getWeekRange(mmAnchor);
+  return getMonthRange(mmAnchor);
+}
+function showMachineTab(){ activateTab('machine'); mmUpdate(); mmStart(); }
+function setMmRange(r){
+  mmRange = r;
+  ['daily','weekly','monthly'].forEach(t=>{
+    const b = document.getElementById('mm-'+t);
+    b.style.background = t===r ? 'var(--brand)' : 'transparent'; b.classList.toggle('ghost', t!==r);
+  });
+  mmUpdate();
+}
+function shiftMm(d){
+  if(!mmAnchor) mmAnchor = todayStr();
+  mmAnchor = mmRange==='daily' ? addDays(mmAnchor,d) : mmRange==='weekly' ? addDays(mmAnchor,d*7) : addMonths(mmAnchor,d);
+  mmUpdate();
+}
+function mmUpdate(){
+  const [f,t] = mmPeriod();
+  const m = computeRangeMetrics(f,t), st = mmState;
+  st.cash = m.totalExpensesCash + m.totalStaffSalaryCash;
+  st.online = m.totalExpensesOnline + m.totalStaffSalaryOnline;
+  st.sales = m.totalSales;
+  st.waiting = m.totalSales===0 && (st.cash+st.online)>0;
+  st.target = st.waiting ? 0 : m.totalProfit;
+  const label = mmRange==='daily' ? f : mmRange==='weekly' ? (f+' to '+t) : parseISODate(f).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  const set = (id,v)=>{ const el = document.getElementById(id); if(el) el.textContent = v; };
+  set('mm-period', label);
+  set('mm-cashExp', fmtMoney(st.cash)); set('mm-onlineExp', fmtMoney(st.online)); set('mm-sales', fmtMoney(st.sales));
+  const pe = document.getElementById('mm-profit');
+  if(pe){ pe.textContent = fmtMoney(st.target); pe.style.color = st.target>=0 ? 'var(--paid)' : 'var(--owe)'; }
+  set('mm-note', st.waiting ? '⏳ No sales entered for this period yet — the machine is waiting for sales data.' : (st.target<0 ? '⚠️ Expenses are higher than sales — the machine is overheating.' : ''));
+}
+function mmStart(){
+  if(mmAnim) return;
+  const cv = document.getElementById('mm-canvas'); if(!cv) return;
+  const dpr = Math.min(2, window.devicePixelRatio||1);
+  cv.width = 360*dpr; cv.height = 440*dpr;
+  const g = cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0);
+  let last = performance.now();
+  function frame(now){
+    const tab = document.getElementById('machineTab');
+    if(!tab || tab.classList.contains('hidden') || document.hidden){ mmAnim = null; return; }
+    const dt = Math.min(0.05, (now-last)/1000); last = now;
+    mmStep(dt); mmDraw(g);
+    mmAnim = requestAnimationFrame(frame);
+  }
+  mmAnim = requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange', ()=>{
+  const tab = document.getElementById('machineTab');
+  if(!document.hidden && tab && !tab.classList.contains('hidden')) mmStart();
+});
+function mmStep(dt){
+  const st = mmState, a = st.acc; st.t += dt;
+  st.shown += (st.target-st.shown)*Math.min(1, dt*3);
+  if(Math.abs(st.target-st.shown)<0.5) st.shown = st.target;
+  const busy = (st.cash+st.online)>0 || st.target>0;
+  st.speed += ((busy?1:0.15)-st.speed)*Math.min(1,dt*2);
+  const rate = v => v>0 ? Math.min(6, 0.6+Math.log10(1+v)*0.9) : 0;
+  a.c += rate(st.cash)*dt; a.o += rate(st.online)*dt;
+  while(a.c>=1){ a.c-=1; st.items.push({k:'c', x:-8, y:150, v:70+Math.random()*30}); }
+  while(a.o>=1){ a.o-=1; st.items.push({k:'o', x:368, y:150, v:70+Math.random()*30}); }
+  if(st.target>0){
+    a.out += Math.min(8, 1.2+Math.log10(1+st.target)*1.5)*dt;
+    while(a.out>=1){ a.out-=1; st.notes.push({x:150+Math.random()*40, y:304, vy:0, belt:false, r:(Math.random()-0.5)*0.25}); }
+  }
+  if(st.target<0 || st.waiting){
+    a.sm += (st.target<0?4:1.2)*dt;
+    while(a.sm>=1){ a.sm-=1; st.smoke.push({x:236+Math.random()*8, y:92, r:5, life:1}); }
+  }
+  st.items.forEach(it=>{ it.x += (it.k==='c'?1:-1)*it.v*dt; });
+  st.items = st.items.filter(it=> it.k==='c' ? it.x<92 : it.x>268).slice(-60);
+  st.notes.forEach(n=>{
+    if(!n.belt){ n.vy += 520*dt; n.y += n.vy*dt; if(n.y>=354){ n.y = 354; n.belt = true; } }
+    else n.x += 62*dt;
+  });
+  st.notes = st.notes.filter(n=>n.x<390).slice(-60);
+  st.smoke.forEach(p=>{ p.y -= 22*dt; p.r += 7*dt; p.life -= 0.35*dt; });
+  st.smoke = st.smoke.filter(p=>p.life>0);
+}
+function mmRR(g,x,y,w,h,r){
+  g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath();
+}
+function mmGear(g,x,y,r,ang,col){
+  g.save(); g.translate(x,y); g.rotate(ang); g.fillStyle = col;
+  for(let i=0;i<8;i++){ g.rotate(Math.PI/4); g.fillRect(-3,-r-5,6,9); }
+  g.beginPath(); g.arc(0,0,r,0,6.2832); g.fill();
+  g.fillStyle = '#1e293b'; g.beginPath(); g.arc(0,0,r*0.35,0,6.2832); g.fill(); g.restore();
+}
+function mmDraw(g){
+  const st = mmState, W = 360, H = 440;
+  const bg = g.createLinearGradient(0,0,0,H); bg.addColorStop(0,'#0f172a'); bg.addColorStop(1,'#1e1b4b');
+  g.fillStyle = bg; g.fillRect(0,0,W,H);
+  /* belt */
+  g.fillStyle = '#334155'; g.fillRect(0,372,W,16);
+  g.fillStyle = '#475569'; const off = (st.t*62)%24;
+  for(let x=-24+off; x<W; x+=24) g.fillRect(x,376,12,3);
+  /* pipes */
+  g.fillStyle = '#475569'; g.fillRect(0,140,92,20); g.fillRect(268,140,92,20);
+  g.fillStyle = '#64748b'; g.fillRect(0,140,92,4); g.fillRect(268,140,92,4);
+  /* machine body */
+  mmRR(g,90,92,180,236,18); g.fillStyle = '#334155'; g.fill();
+  g.strokeStyle = '#64748b'; g.lineWidth = 3; g.stroke();
+  mmRR(g,106,172,148,96,12); g.fillStyle = '#0b1220'; g.fill();
+  mmGear(g,146,220,28,st.t*1.6*st.speed,'#f59e0b');
+  mmGear(g,200,206,20,-st.t*2.4*st.speed+0.4,'#22c55e');
+  mmGear(g,226,244,14,st.t*3.2*st.speed,'#38bdf8');
+  /* chimney */
+  g.fillStyle = '#475569'; g.fillRect(228,70,22,24);
+  st.smoke.forEach(p=>{ g.fillStyle = 'rgba(148,163,184,'+(Math.max(0,p.life)*0.5).toFixed(2)+')'; g.beginPath(); g.arc(p.x,p.y,p.r,0,6.2832); g.fill(); });
+  /* lamp */
+  const lampOn = st.target>0 ? true : (Math.sin(st.t*8)>0);
+  g.fillStyle = st.target>0 ? '#22c55e' : (lampOn?'#ef4444':'#7f1d1d');
+  g.beginPath(); g.arc(112,112,7,0,6.2832); g.fill();
+  /* output slot */
+  mmRR(g,138,296,84,16,6); g.fillStyle = '#020617'; g.fill();
+  /* counter on top */
+  mmRR(g,92,18,176,62,12); g.fillStyle = '#020617'; g.fill(); g.strokeStyle = '#475569'; g.lineWidth = 2; g.stroke();
+  g.textAlign = 'center'; g.fillStyle = '#94a3b8'; g.font = '600 9px Arial, sans-serif'; g.fillText('MONEY PRODUCED', 180, 34);
+  g.fillStyle = st.shown>=0 ? '#22c55e' : '#f43f5e'; g.font = 'bold 26px "Courier New", monospace';
+  g.fillText((st.shown<0?'-':'')+'₹'+Math.abs(Math.round(st.shown)).toLocaleString('en-IN'), 180, 66);
+  /* intake items */
+  st.items.forEach(it=>{
+    if(it.k==='c'){ g.fillStyle = '#f59e0b'; g.beginPath(); g.arc(it.x,150,7,0,6.2832); g.fill(); g.fillStyle = '#78350f'; g.font = 'bold 9px Arial'; g.fillText('₹',it.x,153); }
+    else { mmRR(g,it.x-7,143,14,14,3); g.fillStyle = '#3b82f6'; g.fill(); g.fillStyle = '#fff'; g.font = 'bold 8px Arial'; g.fillText('UPI',it.x,153); }
+  });
+  /* notes */
+  st.notes.forEach(n=>{
+    g.save(); g.translate(n.x,n.y); g.rotate(n.belt?0:n.r);
+    mmRR(g,-17,-9,34,18,3); g.fillStyle = '#10b981'; g.fill(); g.strokeStyle = '#a7f3d0'; g.lineWidth = 1.5; g.stroke();
+    g.fillStyle = '#064e3b'; g.font = 'bold 11px Arial'; g.fillText('₹',0,4); g.restore();
+  });
+  /* labels */
+  g.fillStyle = '#fbbf24'; g.font = '600 10px Arial'; g.textAlign = 'left'; g.fillText('CASH EXPENSES', 8, 128);
+  g.fillText('₹'+Math.round(st.cash).toLocaleString('en-IN'), 8, 178);
+  g.fillStyle = '#60a5fa'; g.textAlign = 'right'; g.fillText('ONLINE EXPENSES', 352, 128);
+  g.fillText('₹'+Math.round(st.online).toLocaleString('en-IN'), 352, 178);
+  g.textAlign = 'center'; g.fillStyle = '#94a3b8'; g.font = '600 10px Arial';
+  g.fillText(st.waiting ? 'WAITING FOR SALES DATA' : (st.target>0 ? 'PROFIT IS FLOWING OUT' : (st.target<0 ? 'LOSS — OVERHEATING' : 'MACHINE IDLE')), 180, 418);
 }
 
 function generateExcelReport(m, sections, mode){
