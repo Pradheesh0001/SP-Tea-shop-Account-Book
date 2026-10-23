@@ -466,6 +466,7 @@ window.addEventListener('error', function(e){
     <nav class="sideNav tabGrid">
       <button id="tab-machine-btn" onclick="showMachineTab()" style="background:var(--brand);">🏠 Home</button>
       <button id="tab-dashboard-btn" onclick="showDashboardTab()" class="ghost" style="margin-top:0;">📊 Dashboard</button>
+      <button id="tab-forecast-btn" onclick="showForecastTab()" class="ghost" style="margin-top:0;">🔮 Smart Forecast</button>
       <button id="tab-sales-btn" onclick="showSalesTab()" class="ghost" style="margin-top:0;">💵 Daily Sales</button>
       <button id="tab-expenses-btn" onclick="showExpensesTab()" class="ghost" style="margin-top:0;">💸 Shop Expenses</button>
       <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Customer Accounts</button>
@@ -914,6 +915,17 @@ window.addEventListener('error', function(e){
       </div>
     </div>
 
+    <!-- SMART FORECAST TAB -->
+    <div id="forecastTab" class="hidden">
+      <div class="card" id="fc-statusCard"></div>
+      <div class="card" id="fc-setupCard"></div>
+      <div id="fc-daysWrap"></div>
+      <div class="card hidden" id="fc-weekCard"></div>
+      <div class="card" id="fc-newsCard"></div>
+      <div class="card" id="fc-eventsCard"></div>
+      <div class="card hidden" id="fc-accCard"></div>
+    </div>
+
     <!-- MONEY MACHINE TAB -->
     <div id="machineTab" class="hidden">
       <div class="card" id="homeTodayCard"></div>
@@ -1256,7 +1268,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v69-requested-only';
+const APP_VERSION = '2026-10-21-v70-smart-forecast';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1488,6 +1500,13 @@ function mergeRemoteData(remote){
   { const lb = loadPeBudgets(), mb = Object.assign({}, lb), rb = remote.peBudgets || {};
     Object.keys(rb).forEach(k=>{ if(!lb[k] || (rb[k].updatedAt||0) > (lb[k].updatedAt||0)) mb[k] = rb[k]; });
     savePeBudgets(mb); }
+  if(remote.forecastCfg && (remote.forecastCfg.updatedAt||0) > (loadFcCfg().updatedAt||0)) localStorage.setItem(FC_CFG_KEY, JSON.stringify(remote.forecastCfg));
+  { const mergedEvtDel = Object.assign({}, loadFcEvtDeleted(), remote.deletedEventIds || {});
+    localStorage.setItem(FC_EVT_DEL_KEY, JSON.stringify(mergedEvtDel));
+    const eMap = {}; loadFcEvents().forEach(e=>{ eMap[e.id]=e; });
+    (remote.events||[]).forEach(e=>{ const ex = eMap[e.id]; if(!ex || (e.updatedAt||0) > (ex.updatedAt||0)) eMap[e.id]=e; });
+    Object.keys(mergedEvtDel).forEach(id=>{ if(eMap[id] && mergedEvtDel[id] >= (eMap[id].updatedAt||0)) delete eMap[id]; });
+    localStorage.setItem(FC_EVT_KEY, JSON.stringify(Object.values(eMap))); }
 
   const mergedPoDeleted = Object.assign({}, loadPoDeleted(), remote.deletedPoIds || {});
   savePoDeleted(mergedPoDeleted);
@@ -1499,7 +1518,7 @@ function mergeRemoteData(remote){
 }
 
 function buildPayload(){
-  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory(), deletedPoIds: loadPoDeleted(), deletedTxnIds: loadTxnDeleted(), deletedCustomerIds: loadCustDeleted(), deletedCycleIds: loadCycleDeleted(), peBudgets: loadPeBudgets(), upi: loadUpi() };
+  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory(), deletedPoIds: loadPoDeleted(), deletedTxnIds: loadTxnDeleted(), deletedCustomerIds: loadCustDeleted(), deletedCycleIds: loadCycleDeleted(), peBudgets: loadPeBudgets(), upi: loadUpi(), forecastCfg: loadFcCfg(), events: loadFcEvents(), deletedEventIds: loadFcEvtDeleted() };
 }
 let syncDirty = false, syncBusy = false;
 async function syncToDrive(){
@@ -1562,6 +1581,7 @@ function refreshCurrentView(){
   else if(!document.getElementById('personalTab').classList.contains('hidden')){ renderPersonalTab(); }
   else if(!document.getElementById('purchaseTab').classList.contains('hidden')){ renderPurchaseList(); renderPlTrash(); renderPoHistory(); }
   else if(!document.getElementById('machineTab').classList.contains('hidden')){ mmUpdate(); }
+  else if(!document.getElementById('forecastTab').classList.contains('hidden')){ fcRenderAll(); }
 }
 
 async function syncNow(){
@@ -1675,7 +1695,7 @@ function showDashboard(){
   showMachineTab();
 }
 
-const TABS = ['machine','dashboard','sales','expenses','customers','personal','purchase'];
+const TABS = ['machine','dashboard','forecast','sales','expenses','customers','personal','purchase'];
 function activateTab(name){
   TABS.forEach(t=>{
     const panel = document.getElementById(t+'Tab');
@@ -2976,7 +2996,7 @@ function goHome(){
   window.scrollTo(0, 0);
 }
 function addHomeButtons(){
-  ['dashboardTab','salesTab','expensesTab','customersTab','personalTab','purchaseTab','addCustView','settingsView','custDetailView'].forEach(id=>{
+  ['dashboardTab','forecastTab','salesTab','expensesTab','customersTab','personalTab','purchaseTab','addCustView','settingsView','custDetailView'].forEach(id=>{
     const panel = document.getElementById(id);
     if(!panel || panel.getAttribute('data-home')) return;
     panel.setAttribute('data-home','1');
@@ -3015,6 +3035,8 @@ function openEditModal(title, fields, onSave){
     if(f.type==='select'){
       inp = document.createElement('select');
       f.options.forEach(o=>{ const op = document.createElement('option'); op.value = o.value; op.textContent = o.label; if(String(o.value)===String(f.value)) op.selected = true; inp.appendChild(op); });
+    } else if(f.type==='textarea'){
+      inp = document.createElement('textarea'); inp.rows = 5; inp.value = f.value || ''; if(f.placeholder) inp.placeholder = f.placeholder;
     } else {
       inp = document.createElement('input'); inp.type = f.type || 'text';
       if(f.type==='number') inp.min = '0';
@@ -3285,6 +3307,549 @@ function renderHomeToday(){
     + tile('EXPENSES', fmtMoney(spend), 'var(--owe)')
     + tile('PROFIT', m.dataIncomplete ? '⏳ —' : fmtMoney(m.estimatedProfit), m.estimatedProfit>=0 ? 'var(--paid)' : 'var(--owe)')
     + '</div>' + (m.dataIncomplete ? '<div class="hint" style="margin-top:8px; text-align:left;">Profit shows once today’s sales are entered in Daily Sales.</div>' : '');
+}
+
+
+/* ======================================================================
+   SMART FORECAST — sales prediction from history, weather, holidays,
+   calendar events, nearby landmarks and local news
+   ====================================================================== */
+const FC_CFG_KEY = 'udhar_forecast_cfg_v1', FC_EVT_KEY = 'udhar_events_v1', FC_EVT_DEL_KEY = 'udhar_events_deleted_v1', FC_LOG_KEY = 'udhar_forecast_log_v1', FC_CACHE_KEY = 'udhar_fc_cache_v1';
+function loadFcCfg(){ try{ return jload(FC_CFG_KEY,'{}'); }catch(e){ return {}; } }
+function saveFcCfg(o){ localStorage.setItem(FC_CFG_KEY, JSON.stringify(Object.assign({}, o, { updatedAt: Date.now() }))); }
+function loadFcEvents(){ try{ return jload(FC_EVT_KEY,'[]'); }catch(e){ return []; } }
+function saveFcEvents(a){ localStorage.setItem(FC_EVT_KEY, JSON.stringify(a)); }
+function loadFcEvtDeleted(){ try{ return jload(FC_EVT_DEL_KEY,'{}'); }catch(e){ return {}; } }
+function loadFcLog(){ try{ return jload(FC_LOG_KEY,'{}'); }catch(e){ return {}; } }
+function loadFcCache(){ try{ return JSON.parse(localStorage.getItem(FC_CACHE_KEY)||'{}'); }catch(e){ return {}; } }
+function saveFcCache(o){ try{ localStorage.setItem(FC_CACHE_KEY, JSON.stringify(o)); }catch(e){} }
+
+const FC_FOCUS = [
+  { k:'hot_drinks', l:'☕ Tea / Coffee' }, { k:'cold_drinks', l:'🧃 Juice / Cold drinks / Ice cream' }, { k:'snacks', l:'🍟 Snacks / Fast food' },
+  { k:'meals', l:'🍛 Meals / Hotel' }, { k:'grocery', l:'🛒 Grocery / Provisions' }, { k:'bakery_sweets', l:'🍰 Bakery / Sweets' }, { k:'general', l:'🏪 Other / General' }
+];
+/* % change in sales for each weather situation, per kind of shop */
+const FC_SENS = {
+  hot_drinks:    { rain:10, heavy:-8,  hot:-10, extreme:-15, cold:10 },
+  cold_drinks:   { rain:-12, heavy:-20, hot:18,  extreme:22,  cold:-15 },
+  snacks:        { rain:6,  heavy:-8,  hot:-4,  extreme:-8,  cold:6 },
+  meals:         { rain:-3, heavy:-10, hot:-3,  extreme:-8,  cold:2 },
+  grocery:       { rain:-3, heavy:-10, hot:-2,  extreme:-5,  cold:0 },
+  bakery_sweets: { rain:2,  heavy:-8,  hot:-4,  extreme:-8,  cold:4 },
+  general:       { rain:-3, heavy:-10, hot:-3,  extreme:-8,  cold:0 }
+};
+const FC_LM = [
+  { k:'school', l:'School', hol:-15 }, { k:'college', l:'College / University', hol:-15 }, { k:'office', l:'Offices / IT park', hol:-15 }, { k:'factory', l:'Factory / industry', hol:-15 },
+  { k:'bus', l:'Bus stand', hol:4 }, { k:'station', l:'Railway station', hol:4 }, { k:'temple', l:'Temple / church / mosque', hol:8 }, { k:'hospital', l:'Hospital', hol:0 },
+  { k:'market', l:'Market / mall', hol:8 }, { k:'cinema', l:'Cinema', hol:10 }, { k:'hall', l:'Marriage hall / mandapam', hol:0 }, { k:'tourist', l:'Park / beach / tourist spot', hol:12 }, { k:'other', l:'Other', hol:0 }
+];
+const FC_IMPACT = { big_up:25, up:12, neutral:0, down:-12, big_down:-25 };
+const FC_IMPACT_LABEL = { auto:'Auto (muhurtham — from marriage halls nearby)', big_up:'Big crowd (+25%)', up:'More crowd (+12%)', neutral:'No effect', down:'Less crowd (−12%)', big_down:'Much less (−25%)' };
+
+let fcEditing = false, fcDraft = null, fcData = { weather:null, holidays:{}, news:null, status:{} }, fcBusy = false;
+
+function showForecastTab(){ activateTab('forecast'); fcOpen(); }
+function fcOpen(){
+  const cfg = loadFcCfg(), c = loadFcCache();
+  if(c.weather) fcData.weather = c.weather.data;
+  if(c.news) fcData.news = c.news.data;
+  Object.keys(c.holidays||{}).forEach(k=>{ fcData.holidays[k] = c.holidays[k].data; });
+  if(!cfg.configured){ fcEditing = true; fcDraft = fcNewDraft(cfg); }
+  fcRenderAll();
+  if(cfg.configured) fcRefresh(false);
+}
+function fcNewDraft(cfg){
+  return { focus:(cfg.focus||[]).slice(), lat:cfg.lat||null, lon:cfg.lon||null, place:cfg.place||'', cc:cfg.cc||'', landmarks:(cfg.landmarks||[]).map(x=>Object.assign({},x)),
+    typical:cfg.typical||'', useNews:cfg.useNews!==false, q:'', results:[], msg:'' };
+}
+
+/* ---------- network helpers ---------- */
+async function fcFetchJson(url, ms){
+  const ctl = new AbortController(), tm = setTimeout(()=>ctl.abort(), ms||9000);
+  try{ const r = await fetch(url, { signal: ctl.signal }); if(!r.ok) throw new Error('HTTP '+r.status); return await r.json(); }
+  finally{ clearTimeout(tm); }
+}
+function fcFresh(entry, maxMs){ return entry && (Date.now()-entry.t) < maxMs; }
+async function fcRefresh(force){
+  const cfg = loadFcCfg(); if(!cfg.configured || fcBusy) return;
+  fcBusy = true; fcRenderStatus();
+  const cache = loadFcCache(); cache.holidays = cache.holidays || {};
+  const st = fcData.status;
+  if(cfg.lat!=null){
+    try{
+      if(force || !fcFresh(cache.weather, 30*60000)){
+        const u = 'https://api.open-meteo.com/v1/forecast?latitude='+cfg.lat+'&longitude='+cfg.lon+'&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&forecast_days=7&timezone=auto';
+        const d = await fcFetchJson(u), out = { current:{ temp:d.current.temperature_2m, code:d.current.weather_code }, days:{} };
+        d.daily.time.forEach((t,i)=>{ out.days[t] = { code:d.daily.weather_code[i], tmax:d.daily.temperature_2m_max[i], tmin:d.daily.temperature_2m_min[i], rain:d.daily.precipitation_sum[i]||0, prob:d.daily.precipitation_probability_max[i]||0 }; });
+        cache.weather = { t:Date.now(), data:out }; fcData.weather = out;
+      } else fcData.weather = cache.weather.data;
+      st.weather = 'ok';
+    }catch(e){ st.weather = fcData.weather ? 'cached' : 'fail'; }
+  }
+  if(cfg.cc){
+    const yrs = [new Date().getFullYear()]; if(new Date().getMonth()>=10) yrs.push(yrs[0]+1);
+    for(const y of yrs){
+      const key = cfg.cc+'-'+y;
+      try{
+        if(force || !fcFresh(cache.holidays[key], 7*86400000)){
+          const d = await fcFetchJson('https://date.nager.at/api/v3/PublicHolidays/'+y+'/'+cfg.cc);
+          cache.holidays[key] = { t:Date.now(), data:d.map(h=>({ date:h.date, name:h.name, local:h.localName })) };
+        }
+        fcData.holidays[key] = cache.holidays[key].data; st.holidays = 'ok';
+      }catch(e){ if(cache.holidays[key]){ fcData.holidays[key] = cache.holidays[key].data; st.holidays = 'cached'; } else st.holidays = 'fail'; }
+    }
+  }
+  if(cfg.useNews && cfg.place){
+    try{
+      if(force || !fcFresh(cache.news, 60*60000)){
+        const city = cfg.place.split(',')[0].trim();
+        const q = '"'+city+'" (bandh OR hartal OR strike OR curfew OR protest OR "road closure" OR cyclone OR "heavy rain" OR flood OR festival OR fair OR exhibition OR procession OR "power cut")';
+        const d = await fcFetchJson('https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent(q)+'&mode=ArtList&maxrecords=12&format=json&timespan=2d&sort=DateDesc', 12000);
+        const arts = (d.articles||[]).map(a=>({ title:a.title, url:a.url, domain:a.domain, seen:a.seendate }));
+        cache.news = { t:Date.now(), data:fcTagNews(arts) }; fcData.news = cache.news.data;
+      } else fcData.news = cache.news.data;
+      st.news = 'ok';
+    }catch(e){ st.news = fcData.news ? 'cached' : 'fail'; }
+  }
+  saveFcCache(cache); fcBusy = false; fcRenderAll();
+}
+
+/* ---------- news tagging ---------- */
+const FC_NEG = ['bandh','hartal','strike','curfew','protest','riot','cyclone','flood','heavy rain','red alert','orange alert','lockdown','power cut','road closure','traffic diversion','shutdown','agitation','boycott'];
+const FC_POS = ['festival','fair','exhibition','procession','jayanti','jayanthi','car festival','pongal','diwali','deepavali'];
+function fcTagNews(arts){
+  return arts.map(a=>{
+    const t = (a.title||'').toLowerCase(), neg = FC_NEG.filter(k=>t.indexOf(k)>-1), pos = FC_POS.filter(k=>t.indexOf(k)>-1);
+    return Object.assign({}, a, { neg, pos });
+  });
+}
+function fcNewsEffect(){
+  const cfg = loadFcCfg(); if(!cfg.useNews || !fcData.news) return null;
+  const negN = fcData.news.filter(a=>a.neg.length).length, posN = fcData.news.filter(a=>!a.neg.length && a.pos.length).length;
+  const pct = Math.max(-10, Math.min(10, Math.max(-12, -4*negN) + Math.min(6, 3*posN)));
+  if(!pct) return null;
+  return { label: pct<0 ? 'Local news mentions possible disruption ('+negN+' headline'+(negN>1?'s':'')+')' : 'Local news mentions festivals / fairs nearby', pct, foot:true };
+}
+
+/* ---------- prediction engine ---------- */
+function fcSens(focus){
+  const f = (focus && focus.length) ? focus : ['general'], sum = { rain:0, heavy:0, hot:0, extreme:0, cold:0 };
+  f.forEach(k=>{ const t = FC_SENS[k] || FC_SENS.general; Object.keys(sum).forEach(x=>{ sum[x] += t[x]; }); });
+  Object.keys(sum).forEach(x=>{ sum[x] = Math.round(sum[x]/f.length); });
+  return sum;
+}
+function fcWx(c){
+  if(c===0) return { i:'☀️', l:'Clear' }; if(c<=2) return { i:'🌤️', l:'Partly cloudy' }; if(c===3) return { i:'☁️', l:'Cloudy' };
+  if(c===45||c===48) return { i:'🌫️', l:'Fog' }; if(c>=51&&c<=57) return { i:'🌦️', l:'Drizzle' }; if(c>=61&&c<=67) return { i:'🌧️', l:'Rain' };
+  if(c>=71&&c<=77) return { i:'❄️', l:'Snow' }; if(c>=80&&c<=82) return { i:'🌧️', l:'Showers' }; if(c>=95) return { i:'⛈️', l:'Thunderstorm' };
+  return { i:'🌡️', l:'—' };
+}
+function fcWeatherFactors(w, cfg){
+  const out = []; if(!w) return out;
+  const sens = fcSens(cfg.focus);
+  const heavy = (w.rain>=15) || w.code>=95;
+  const rain = !heavy && ((w.rain>=2 && w.prob>=40) || (w.code>=61&&w.code<=67) || (w.code>=80&&w.code<=82));
+  const drizzle = !heavy && !rain && (w.rain>=0.5 || (w.code>=51&&w.code<=57));
+  if(heavy) out.push({ label:'Heavy rain / storm expected ('+Math.round(w.rain)+' mm)', pct:sens.heavy, foot:true });
+  else if(rain) out.push({ label:'Rain expected ('+Math.round(w.rain)+' mm, '+w.prob+'% chance)', pct:sens.rain, foot:sens.rain<0 });
+  else if(drizzle) out.push({ label:'Light drizzle likely', pct:Math.round(sens.rain/2), foot:false });
+  if(w.tmax>=39) out.push({ label:'Very hot day ('+Math.round(w.tmax)+'°C)', pct:sens.extreme, foot:true });
+  else if(w.tmax>=35) out.push({ label:'Hot day ('+Math.round(w.tmax)+'°C)', pct:sens.hot, foot:false });
+  else if(w.tmax<=24) out.push({ label:'Cool day ('+Math.round(w.tmax)+'°C)', pct:sens.cold, foot:false });
+  return out.filter(f=>f.pct!==0);
+}
+function fcHistory(){
+  const to = addDays(todayStr(), -1), from = addDays(to, -90);
+  return computeRangeMetrics(from, to).days.filter(d=>d.totalSales>0).map(d=>({ date:d.date, v:d.totalSales }));
+}
+function fcWeighted(vals){
+  const n = vals.length; if(!n) return { mean:0, sd:0, n:0 };
+  const med = vals.slice().sort((a,b)=>a-b)[Math.floor(n/2)];
+  const v = vals.map(x=>Math.min(Math.max(x, med*0.4), med*2));
+  let w = 0, sw = 0; v.forEach((x,i)=>{ const wt = 1+i*0.25; w += x*wt; sw += wt; });
+  const mean = w/sw, sd = Math.sqrt(v.reduce((a,x)=>a+(x-mean)*(x-mean),0)/n);
+  return { mean, sd, n };
+}
+function fcHolidayOn(date){
+  const y = date.slice(0,4), cfg = loadFcCfg(); if(!cfg.cc) return null;
+  const list = fcData.holidays[cfg.cc+'-'+y] || [];
+  const h = list.find(x=>x.date===date); return h || null;
+}
+function fcEventsOn(date){ return loadFcEvents().filter(e=>e.date===date); }
+function fcHolidayEffect(cfg){
+  const lms = cfg.landmarks || [];
+  if(!lms.length) return { pct:-8, why:'no landmarks saved — people usually stay home on holidays' };
+  let sum = 0; const used = [];
+  lms.forEach(l=>{ const t = FC_LM.find(x=>x.k===l.type); if(t && t.hol){ sum += t.hol; used.push(l.name); } });
+  sum = Math.max(-35, Math.min(30, sum));
+  return { pct:sum, why: sum<0 ? 'offices / schools / colleges nearby are closed' : (sum>0 ? 'temple / market / tourist places nearby draw crowds' : 'nearby places are not much affected') };
+}
+function fcMuhurthamEffect(cfg){
+  const halls = (cfg.landmarks||[]).filter(l=>l.type==='hall').length;
+  if(halls) return { pct: Math.min(30, 18 + (halls-1)*4), why: halls+' marriage hall'+(halls>1?'s':'')+' near your shop — guests and traffic pass by' };
+  return { pct:6, why:'weddings bring extra guests and traffic in the area' };
+}
+function fcParseDates(text){
+  const out = [], seen = {};
+  String(text||'').split(/[\n,;]+/).forEach(raw=>{
+    const t = raw.trim(); if(!t) return;
+    let iso = null, m;
+    if((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) iso = m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+    else if((m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/))) iso = m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
+    else { const d = new Date(t+' 12:00'); if(!isNaN(d) && /[A-Za-z]/.test(t) && /\d{4}/.test(t)) iso = toISODate(d); }
+    if(iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) && !isNaN(parseISODate(iso)) && !seen[iso]){ seen[iso] = 1; out.push(iso); }
+  });
+  return out;
+}
+function fcAddMuhurtham(){
+  openEditModal('💍 Add muhurtham / wedding days', [
+    { key:'dates', label:'Dates — one per line or separated by commas (e.g. 2026-11-20, 22/11/2026, 5 Dec 2026)', type:'textarea', placeholder:'2026-11-20\n22/11/2026\n5 Dec 2026' }
+  ], function(v){
+    const dates = fcParseDates(v.dates).filter(d=>d>=addDays(todayStr(),-1));
+    if(!dates.length){ showBanner('No valid upcoming dates found'); return false; }
+    const l = loadFcEvents(); let n = 0;
+    dates.forEach(d=>{ const id = 'mur-'+d; if(!l.find(x=>x.id===id) && !loadFcEvtDeleted()[id]){ l.push({ id, title:'Muhurtham day', date:d, kind:'muhurtham', impact:'auto', updatedAt:Date.now() }); n++; } });
+    saveFcEvents(l); fcRenderAll(); showBanner(n ? '💍 Added '+n+' muhurtham day(s)' : 'Those dates are already added'); if(n) afterDataChange();
+  });
+}
+function fcPredict(date, hist, weather){
+  const cfg = loadFcCfg(), d = parseISODate(date), dow = d.getDay();
+  const all = hist.map(h=>h.v), usual = fcWeighted(all.slice(-28));
+  let same = hist.filter(h=>parseISODate(h.date).getDay()===dow).slice(-8).map(h=>h.v), src = 'weekday';
+  let st = fcWeighted(same);
+  if(same.length<3){ st = fcWeighted(all.slice(-28)); src = 'overall'; }
+  let base = st.mean, sd = st.sd, nSamples = st.n;
+  if(!hist.length){ base = Number(cfg.typical)||0; sd = base*0.25; nSamples = 0; src = base ? 'typical' : 'none'; }
+  const factors = [];
+  if(hist.length>=10){
+    const last = fcWeighted(all.slice(-14)).mean, prev = fcWeighted(all.slice(-42,-14)).mean;
+    if(prev>0){ const r = Math.max(0.85, Math.min(1.15, last/prev)), pct = Math.round((r-1)*0.6*100); if(Math.abs(pct)>=2) factors.push({ label:(pct>0?'Sales have been rising lately':'Sales have been slipping lately'), pct, foot:false }); }
+  }
+  const w = weather && weather.days ? weather.days[date] : null;
+  fcWeatherFactors(w, cfg).forEach(f=>factors.push(f));
+  const hol = fcHolidayOn(date), isWeekend = (dow===0 || dow===6);
+  if(hol && !isWeekend){ const he = fcHolidayEffect(cfg); if(he.pct) factors.push({ label:'Holiday: '+hol.name+' — '+he.why, pct:he.pct, foot:true }); }
+  const evs = fcEventsOn(date);
+  evs.forEach(e=>{
+    let p = FC_IMPACT[e.impact], label = 'Event: '+e.title;
+    if(e.impact==='auto' || (e.kind==='muhurtham' && p===undefined)){ const me = fcMuhurthamEffect(cfg); p = me.pct; label = 'Muhurtham / wedding day — '+me.why; }
+    if(p) factors.push({ label, pct:p, foot:true });
+  });
+  if(date<=addDays(todayStr(),1)){ const ne = fcNewsEffect(); if(ne) factors.push(ne); }
+  let mult = factors.reduce((m,f)=>m*(1+f.pct/100), 1); mult = Math.max(0.5, Math.min(1.6, mult));
+  const foot = factors.filter(f=>f.foot).reduce((m,f)=>m*(1+f.pct/100), 1);
+  const dowIdx = (same.length>=3 && usual.mean>0) ? fcWeighted(same).mean/usual.mean : 1;
+  const pred = base*mult, round10 = x=>Math.max(0, Math.round(x/10)*10);
+  const ratioUsual = usual.mean>0 ? pred/usual.mean : 1;
+  const cv = base>0 ? sd/base : 1;
+  const conf = (src==='weekday' && nSamples>=6 && cv<0.25) ? 'High' : (nSamples>=3 && cv<0.45 ? 'Medium' : 'Low');
+  const fi = foot;
+  return { date, dow, base, pred:round10(pred), low:round10(pred-sd*0.8), high:round10(pred+sd*0.8), mult, factors, usual:usual.mean, ratioUsual, src, nSamples, conf, w, hol, evs,
+    foot: fi>=1.08 ? 'High' : (fi<=0.92 ? 'Low' : 'Normal'), fi, level: ratioUsual>=1.12 ? 'High' : (ratioUsual<=0.88 ? 'Low' : 'Normal') };
+}
+function fcTips(p, cfg){
+  const f = cfg.focus||[], t = [], has = k=>f.indexOf(k)>-1;
+  const w = p.w, heavy = w && (w.rain>=15 || w.code>=95), rainy = w && !heavy && (w.rain>=2 && w.prob>=40);
+  const hot = w && w.tmax>=35, cool = w && w.tmax<=24;
+  const dn = parseISODate(p.date).toLocaleDateString('en-IN',{weekday:'long'});
+  if(p.mult>=1.08) t.push('Busier than a normal '+dn+' — prepare about '+Math.round((p.mult-1)*100)+'% extra stock and keep change ready.');
+  else if(p.mult<=0.92) t.push('Slower than a normal '+dn+' — buy about '+Math.round((1-p.mult)*100)+'% less milk and perishables to avoid wastage.');
+  else if(p.level==='High') t.push(dn+' is usually one of your busier days — stock up the way you normally do for it.');
+  if(rainy && (has('hot_drinks')||has('snacks'))) t.push('Rain lifts hot tea and fried snacks — keep extra milk and snack batter ready.');
+  if(heavy) t.push('Heavy rain can keep walk-ins low — consider delivery or phone orders, and cover the shop front.');
+  if(hot && (has('cold_drinks')||has('hot_drinks'))) t.push('Hot day — keep extra ice, juice and cold drinks chilled'+(has('hot_drinks')?'; hot tea may sell less in the afternoon.':'.'));
+  if(cool && has('hot_drinks')) t.push('Cool weather — hot tea and coffee will sell more, especially morning and evening.');
+  if(p.hol && p.factors.some(x=>x.label.indexOf('Holiday')===0 && x.pct<0)) t.push('Offices / schools nearby are closed — expect fewer regular customers.');
+  if(p.hol && p.factors.some(x=>x.label.indexOf('Holiday')===0 && x.pct>0)) t.push('Holiday crowd expected near temples / markets — open a little early.');
+  if(p.factors.some(x=>x.label.indexOf('Muhurtham')===0 && x.pct>=15)) t.push('Wedding day near a marriage hall — guests and relatives will pass by. Open early, keep extra tea, snacks and cold water ready.');
+  else if(p.factors.some(x=>x.label.indexOf('Muhurtham')===0)) t.push('Wedding day — a little extra crowd and traffic is likely.');
+  if(p.factors.some(x=>x.label.indexOf('Local news')===0 && x.pct<0)) t.push('Check local news — a bandh or protest may keep people at home.');
+  if(!t.length) t.push('A normal day is expected — stock as usual.');
+  return t;
+}
+function fcLogForecast(p){
+  const log = loadFcLog(), copy = Object.assign({}, log);
+  if(!copy[p.date] && p.pred>0){ copy[p.date] = { pred:p.pred, at:Date.now() }; localStorage.setItem(FC_LOG_KEY, JSON.stringify(copy)); }
+}
+
+/* ---------- rendering ---------- */
+function fcRenderAll(){
+  fcRenderStatus(); fcRenderSetup(); fcRenderDays(); fcRenderWeek(); fcRenderNews(); fcRenderEvents(); fcRenderAccuracy();
+}
+function fcRenderStatus(){
+  const el = document.getElementById('fc-statusCard'); if(!el) return;
+  const cfg = loadFcCfg(), st = fcData.status;
+  const chip = (n,k)=>{ const v = st[k]; const m = v==='ok' ? '✅' : (v==='cached' ? '🕘' : (v==='fail' ? '⚠️' : '•')); return '<span style="font-size:0.72rem; padding:3px 8px; border-radius:20px; background:var(--brand-light);">'+n+' '+m+'</span>'; };
+  el.innerHTML = '<div class="toprow" style="margin-bottom:8px;"><h3 style="margin:0;">🔮 Smart Forecast</h3><button class="ghost" style="width:auto; margin:0; padding:7px 12px; font-size:0.8rem;" onclick="fcRefresh(true)">'+(fcBusy?'⏳ Updating…':'🔄 Refresh')+'</button></div>'
+    + '<p class="hint" style="text-align:left; margin:0 0 8px;">Predicts your sales from past sales, weather, holidays, calendar events, nearby landmarks and local news. It is a guide, not a guarantee.</p>'
+    + (cfg.configured ? '<div style="display:flex; gap:6px; flex-wrap:wrap;">'+chip('Weather','weather')+chip('Holidays','holidays')+chip('News','news')+'</div>' : '');
+}
+function fcRenderSetup(){
+  const el = document.getElementById('fc-setupCard'); if(!el) return;
+  const cfg = loadFcCfg();
+  if(!fcEditing && cfg.configured){
+    const focus = (cfg.focus||[]).map(k=>(FC_FOCUS.find(f=>f.k===k)||{}).l).filter(Boolean).join(', ');
+    el.innerHTML = '<div class="toprow" style="margin-bottom:6px;"><h3 style="margin:0;">⚙️ Your shop setup</h3><button class="ghost" style="width:auto; margin:0; padding:7px 12px; font-size:0.8rem;" onclick="fcEditSetup()">✏️ Edit</button></div>'
+      + '<div style="font-size:0.85rem; line-height:1.6;">🏪 <b>'+esc(focus||'—')+'</b><br>📍 '+esc(cfg.place||'No location set')+'<br>🏛️ '+((cfg.landmarks||[]).length ? esc(cfg.landmarks.map(l=>l.name).join(', ')) : 'No landmarks added')+'</div>';
+    return;
+  }
+  const d = fcDraft || (fcDraft = fcNewDraft(cfg));
+  let h = '<h3 style="margin-top:0;">'+(cfg.configured?'✏️ Edit setup':'👋 Let’s set up your forecast')+'</h3>'
+    + '<p class="hint" style="text-align:left; margin-bottom:12px;">Answer a few questions once. The forecast uses them to understand your customers.</p>'
+    + '<label>1. What does your shop mostly sell? (pick all that apply)</label><div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">';
+  FC_FOCUS.forEach(f=>{ const on = d.focus.indexOf(f.k)>-1; h += '<button type="button" style="width:auto; margin:0; padding:9px 12px; font-size:0.82rem; '+(on?'background:var(--brand); color:#fff;':'background:transparent; color:var(--text); border:1.5px solid var(--card-border); box-shadow:none;')+'" onclick="fcToggleFocus(\''+f.k+'\')">'+f.l+'</button>'; });
+  h += '</div><label>2. Where is your shop?</label>'
+    + '<button type="button" class="ghost" style="margin-bottom:10px;" onclick="fcUseGps()">📍 Use my current location</button>'
+    + '<div style="display:flex; gap:8px;"><input id="fc-q" placeholder="or type your town / area" value="'+esc(d.q||'')+'" oninput="fcDraft.q=this.value" style="margin-bottom:10px;"><button type="button" style="width:auto; margin:0 0 10px; padding:10px 16px; background:var(--brand);" onclick="fcSearchPlace()">Search</button></div>';
+  (d.results||[]).forEach((r,i)=>{ h += '<div class="paidRow" style="cursor:pointer;" onclick="fcPickPlace('+i+')"><span>📍 '+esc(r.label)+'</span><span style="color:var(--brand); font-weight:700;">Select</span></div>'; });
+  h += '<div class="hint" style="text-align:left; margin-bottom:12px;">'+(d.lat!=null ? '✅ Selected: <b>'+esc(d.place||(d.lat+', '+d.lon))+'</b>' : 'No location selected yet')+(d.msg?'<br>'+esc(d.msg):'')+'</div>'
+    + '<label>3. Important places near your shop (people who walk past)</label>';
+  (d.landmarks||[]).forEach(l=>{ const t = FC_LM.find(x=>x.k===l.type)||FC_LM[FC_LM.length-1]; h += '<div class="paidRow"><span>'+esc(l.name)+' <span style="font-size:0.72rem; color:var(--muted);">· '+esc(t.l)+'</span></span><button type="button" class="ghost" style="width:auto; margin:0; padding:4px 10px; font-size:0.75rem; color:var(--owe); border-color:var(--owe);" onclick="fcRemoveLandmark(\''+eid(l.id)+'\')">✕</button></div>'; });
+  h += '<div style="display:flex; gap:8px; margin-top:10px;"><input id="fc-lmName" placeholder="Name, e.g. Govt School" style="margin-bottom:10px;"><select id="fc-lmType" style="margin-bottom:10px; max-width:48%;">'+FC_LM.map(t=>'<option value="'+t.k+'">'+esc(t.l)+'</option>').join('')+'</select></div>'
+    + '<div style="display:flex; gap:8px; margin-bottom:14px;"><button type="button" class="ghost" style="margin:0; padding:9px; font-size:0.82rem;" onclick="fcAddLandmark()">+ Add place</button><button type="button" class="ghost" style="margin:0; padding:9px; font-size:0.82rem;" onclick="fcFindLandmarks()">🔍 Find nearby automatically</button></div>'
+    + '<label>4. Usual sales on a normal day (₹) — optional, used only until you have a week of data</label><input id="fc-typical" type="number" min="0" value="'+esc(d.typical)+'" oninput="fcDraft.typical=this.value">'
+    + '<label class="checkrow" style="margin-bottom:12px;"><input type="checkbox" id="fc-useNews" '+(d.useNews?'checked':'')+' onchange="fcDraft.useNews=this.checked"> Include local news (bandh, protests, festivals…) in the prediction</label>'
+    + '<button style="background:var(--paid);" onclick="fcSaveSetup()">💾 Save &amp; show my forecast</button>'
+    + (cfg.configured ? '<button class="ghost" onclick="fcCancelSetup()">Cancel</button>' : '');
+  el.innerHTML = h;
+}
+function fcEditSetup(){ fcDraft = fcNewDraft(loadFcCfg()); fcEditing = true; fcRenderSetup(); }
+function fcCancelSetup(){ fcEditing = false; fcDraft = null; fcRenderSetup(); }
+function fcToggleFocus(k){ const i = fcDraft.focus.indexOf(k); if(i>-1) fcDraft.focus.splice(i,1); else fcDraft.focus.push(k); fcRenderSetup(); }
+function fcUseGps(){
+  if(!navigator.geolocation){ fcDraft.msg = 'GPS is not available — search your town instead.'; fcRenderSetup(); return; }
+  fcDraft.msg = 'Getting your location…'; fcRenderSetup();
+  navigator.geolocation.getCurrentPosition(async function(pos){
+    fcDraft.lat = Math.round(pos.coords.latitude*1000)/1000; fcDraft.lon = Math.round(pos.coords.longitude*1000)/1000;
+    fcDraft.place = fcDraft.lat+', '+fcDraft.lon; fcDraft.cc = fcDraft.cc || 'IN';
+    try{
+      const r = await fcFetchJson('https://api.bigdatacloud.net/data/reverse-geocode-client?latitude='+fcDraft.lat+'&longitude='+fcDraft.lon+'&localityLanguage=en', 8000);
+      fcDraft.place = [r.locality||r.city, r.principalSubdivision].filter(Boolean).join(', ') || fcDraft.place;
+      if(r.countryCode) fcDraft.cc = r.countryCode;
+    }catch(e){}
+    fcDraft.msg = ''; fcRenderSetup();
+  }, function(){ fcDraft.msg = 'Could not get your location — allow location access, or search your town.'; fcRenderSetup(); }, { enableHighAccuracy:false, timeout:12000 });
+}
+async function fcSearchPlace(){
+  const q = (document.getElementById('fc-q').value||'').trim(); fcDraft.q = q;
+  if(q.length<2){ fcDraft.msg = 'Type at least 2 letters'; fcRenderSetup(); return; }
+  fcDraft.msg = 'Searching…'; fcRenderSetup();
+  try{
+    const d = await fcFetchJson('https://geocoding-api.open-meteo.com/v1/search?name='+encodeURIComponent(q)+'&count=6&language=en&format=json', 9000);
+    fcDraft.results = (d.results||[]).map(r=>({ label:[r.name, r.admin1, r.country].filter(Boolean).join(', '), lat:r.latitude, lon:r.longitude, cc:r.country_code, place:[r.name, r.admin1].filter(Boolean).join(', ') }));
+    fcDraft.msg = fcDraft.results.length ? '' : 'No match — try a bigger nearby town.';
+  }catch(e){ fcDraft.msg = 'Search failed — check your internet.'; }
+  fcRenderSetup();
+}
+function fcPickPlace(i){
+  const r = fcDraft.results[i]; if(!r) return;
+  fcDraft.lat = r.lat; fcDraft.lon = r.lon; fcDraft.place = r.place; fcDraft.cc = r.cc || 'IN'; fcDraft.results = []; fcDraft.msg = ''; fcRenderSetup();
+}
+function fcAddLandmark(){
+  const n = (document.getElementById('fc-lmName').value||'').trim(), t = document.getElementById('fc-lmType').value;
+  if(!n){ showBanner('Type the place name'); return; }
+  fcDraft.landmarks.push({ id:uid(), name:n, type:t }); fcRenderSetup();
+}
+function fcRemoveLandmark(id){ fcDraft.landmarks = fcDraft.landmarks.filter(l=>eid(l.id)!==id); fcRenderSetup(); }
+async function fcFindLandmarks(){
+  if(fcDraft.lat==null){ showBanner('Select your location first'); return; }
+  fcDraft.msg = 'Looking for places within 600 m…'; fcRenderSetup();
+  const A = '(around:600,'+fcDraft.lat+','+fcDraft.lon+')';
+  const q = '[out:json][timeout:20];(nwr'+A+'[amenity~"^(school|college|university|bus_station|place_of_worship|hospital|clinic|cinema|marketplace)$"][name];nwr'+A+'[name~"mandapam|mahal|kalyana|marriage|wedding",i];nwr'+A+'[railway=station][name];nwr'+A+'[shop=mall][name];nwr'+A+'[office][name];nwr'+A+'[leisure~"^(park|beach_resort)$"][name];nwr'+A+'[landuse=industrial][name];);out center 60;';
+  try{
+    const d = await fcFetchJson('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(q), 22000);
+    const map = t=>{ const a = t.amenity, o = t.office, l = t.leisure;
+      if(/mandapam|mahal|kalyana|marriage|wedding/i.test(t.name||'')) return 'hall';
+      if(a==='school') return 'school'; if(a==='college'||a==='university') return 'college'; if(a==='bus_station') return 'bus'; if(a==='place_of_worship') return 'temple';
+      if(a==='hospital'||a==='clinic') return 'hospital'; if(a==='cinema') return 'cinema'; if(a==='marketplace'||t.shop==='mall') return 'market'; if(t.railway==='station') return 'station';
+      if(o) return 'office'; if(l) return 'tourist'; if(t.landuse==='industrial') return 'factory'; return 'other'; };
+    let added = 0; const have = fcDraft.landmarks.map(l=>l.name.toLowerCase());
+    (d.elements||[]).forEach(e=>{ const n = e.tags && e.tags.name; if(!n || have.indexOf(n.toLowerCase())>-1 || added>=12) return; have.push(n.toLowerCase()); fcDraft.landmarks.push({ id:uid(), name:n, type:map(e.tags) }); added++; });
+    fcDraft.msg = added ? 'Added '+added+' nearby places — remove any that are not useful.' : 'No named places found nearby — add them by hand.';
+  }catch(e){ fcDraft.msg = 'Automatic search failed (the map service may be busy) — add places by hand.'; }
+  fcRenderSetup();
+}
+function fcSaveSetup(){
+  const d = fcDraft;
+  if(!d.focus.length){ showBanner('Pick at least one thing your shop sells'); return; }
+  const cfg = { configured:true, focus:d.focus, lat:d.lat, lon:d.lon, place:d.place, cc:d.cc, landmarks:d.landmarks, typical:Number(d.typical)||0, useNews:!!d.useNews };
+  saveFcCfg(cfg); fcEditing = false; fcDraft = null;
+  const c = loadFcCache(); delete c.weather; delete c.news; saveFcCache(c); fcData.weather = null; fcData.news = null;
+  showBanner('✅ Setup saved'); afterDataChange(); fcRenderAll(); fcRefresh(true);
+}
+
+function fcMoney(n){ return '₹'+Math.round(n).toLocaleString('en-IN'); }
+function fcDayName(date, i){ return i===0 ? 'Today' : (i===1 ? 'Tomorrow' : parseISODate(date).toLocaleDateString('en-IN',{weekday:'long'})); }
+function fcRenderDays(){
+  const wrap = document.getElementById('fc-daysWrap'); if(!wrap) return;
+  const cfg = loadFcCfg(); wrap.innerHTML = '';
+  if(!cfg.configured) return;
+  const hist = fcHistory(), t0 = todayStr();
+  [0,1].forEach(i=>{
+    const date = addDays(t0, i), p = fcPredict(date, hist, fcData.weather);
+    if(i<=1) fcLogForecast(p);
+    const lvlCol = p.level==='High' ? 'var(--paid)' : (p.level==='Low' ? 'var(--owe)' : 'var(--brand)');
+    const lvlTxt = p.level==='High' ? '🔥 Higher than your average day' : (p.level==='Low' ? '🔻 Lower than your average day' : '➖ About your average day');
+    const footTxt = p.foot==='High' ? '🚶🚶🚶 High' : (p.foot==='Low' ? '🚶 Low' : '🚶🚶 Normal');
+    const w = p.w, wx = w ? fcWx(w.code) : null;
+    const card = document.createElement('div'); card.className = 'card';
+    let h = '<div class="toprow" style="margin-bottom:6px;"><h3 style="margin:0;">'+fcDayName(date,i)+' <span style="font-size:0.75rem; color:var(--muted); font-weight:500;">'+esc(parseISODate(date).toLocaleDateString('en-IN',{weekday:'short', day:'numeric', month:'short'}))+'</span></h3>'
+      + (wx ? '<div style="font-size:0.85rem; font-weight:600;">'+wx.i+' '+Math.round(w.tmax)+'° / '+Math.round(w.tmin)+'°</div>' : '') + '</div>';
+    if(p.src==='none'){
+      h += '<p class="hint" style="text-align:left;">Not enough sales history yet. Enter daily sales for about a week (or add a usual daily sales figure in setup) and the prediction will appear.</p>';
+    } else {
+      h += '<div style="text-align:center; margin:6px 0 10px;"><div style="font-size:0.72rem; color:var(--muted); font-weight:700; letter-spacing:.05em;">PREDICTED SALES</div>'
+        + '<div style="font-size:2.1rem; font-weight:800; color:'+lvlCol+';">'+fcMoney(p.pred)+'</div>'
+        + '<div style="font-size:0.8rem; color:var(--muted);">likely between '+fcMoney(p.low)+' and '+fcMoney(p.high)+'</div></div>'
+        + '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">'
+        + '<span style="flex:1 1 45%; padding:8px; border-radius:12px; background:var(--brand-light); font-size:0.8rem; font-weight:700; color:'+lvlCol+';">'+lvlTxt+'</span>'
+        + '<span style="flex:1 1 45%; padding:8px; border-radius:12px; background:var(--brand-light); font-size:0.8rem; font-weight:700;">Walk-in vs usual '+esc(parseISODate(date).toLocaleDateString('en-IN',{weekday:'short'}))+': '+footTxt+'</span>'
+        + '<span style="flex:1 1 45%; padding:8px; border-radius:12px; background:var(--brand-light); font-size:0.8rem;">Usual '+esc(parseISODate(date).toLocaleDateString('en-IN',{weekday:'long'}))+': <b>'+fcMoney(p.base)+'</b></span>'
+        + '<span style="flex:1 1 45%; padding:8px; border-radius:12px; background:var(--brand-light); font-size:0.8rem;">Confidence: <b>'+p.conf+'</b></span></div>';
+      if(wx){ h += '<div style="font-size:0.85rem; margin-bottom:8px;">'+wx.i+' <b>'+esc(wx.l)+'</b>'+(w.rain>=0.5 ? ' · '+Math.round(w.rain)+' mm rain ('+w.prob+'% chance)' : '')+'</div>'; }
+      else if(cfg.lat==null) h += '<div class="hint" style="text-align:left; margin-bottom:8px;">Add your location in setup to include the weather.</div>';
+      else h += '<div class="hint" style="text-align:left; margin-bottom:8px;">Weather is not available right now.</div>';
+      if(p.hol) h += '<div style="font-size:0.85rem; margin-bottom:6px;">🎉 <b>'+esc(p.hol.name)+'</b> (public holiday)</div>';
+      p.evs.forEach(e=>{ h += '<div style="font-size:0.85rem; margin-bottom:6px;">'+(e.kind==='muhurtham'?'💍':'📌')+' <b>'+esc(e.title)+'</b> <span style="color:var(--muted);">· '+esc(FC_IMPACT_LABEL[e.impact]||'')+'</span></div>'; });
+      if(p.factors.length){
+        h += '<div style="font-size:0.78rem; font-weight:700; margin:10px 0 4px;">Why this prediction</div>';
+        p.factors.forEach(f=>{ h += '<div class="paidRow" style="padding:6px 0; font-size:0.82rem;"><span>'+esc(f.label)+'</span><span style="font-weight:800; color:'+(f.pct>=0?'var(--paid)':'var(--owe)')+';">'+(f.pct>=0?'+':'')+f.pct+'%</span></div>'; });
+      } else h += '<div class="hint" style="text-align:left;">Nothing unusual found — based on your normal '+esc(parseISODate(date).toLocaleDateString('en-IN',{weekday:'long'}))+' sales.</div>';
+      h += '<div style="margin-top:12px; padding:10px; border-radius:12px; background:var(--brand-light); font-size:0.82rem; line-height:1.55;">💡 '+fcTips(p, cfg).map(esc).join('<br>💡 ')+'</div>';
+      h += '<div class="hint" style="text-align:left; margin-top:8px;">'+(p.src==='weekday' ? 'Based on your last '+p.nSamples+' '+esc(parseISODate(date).toLocaleDateString('en-IN',{weekday:'long'}))+'s' : (p.src==='overall' ? 'Based on your recent daily average (few same-weekday records yet)' : 'Based on the usual sales figure you entered'))+'.</div>';
+    }
+    card.innerHTML = h; wrap.appendChild(card);
+  });
+}
+function fcRenderWeek(){
+  const el = document.getElementById('fc-weekCard'); if(!el) return;
+  const cfg = loadFcCfg(); if(!cfg.configured){ el.classList.add('hidden'); return; }
+  const hist = fcHistory(), t0 = todayStr(); el.classList.remove('hidden');
+  let h = '<h3 style="margin-top:0;">📅 Next 7 days</h3>';
+  const rows = []; for(let i=0;i<7;i++){ const date = addDays(t0,i), p = fcPredict(date, hist, fcData.weather); rows.push({ i, date, p }); }
+  const mx = Math.max(1, ...rows.map(r=>r.p.pred));
+  rows.forEach(r=>{
+    const wx = r.p.w ? fcWx(r.p.w.code) : null, lvl = r.p.level==='High' ? '🔥' : (r.p.level==='Low' ? '🔻' : '➖');
+    h += '<div style="margin-bottom:9px;"><div style="display:flex; justify-content:space-between; font-size:0.82rem;"><span>'+(wx?wx.i+' ':'')+'<b>'+esc(r.i===0?'Today':parseISODate(r.date).toLocaleDateString('en-IN',{weekday:'short', day:'numeric'}))+'</b>'+(r.p.hol?' 🎉':'')+(r.p.evs.length?(r.p.evs.some(x=>x.kind==='muhurtham')?' 💍':' 📌'):'')+'</span><span style="font-weight:700;">'+(r.p.pred?fcMoney(r.p.pred):'—')+' '+lvl+'</span></div>'
+      + '<div style="height:8px; border-radius:6px; background:rgba(128,128,128,0.18);"><div style="height:8px; border-radius:6px; width:'+(r.p.pred/mx*100).toFixed(0)+'%; background:'+(r.p.level==='High'?'var(--paid)':(r.p.level==='Low'?'var(--owe)':'var(--brand)'))+';"></div></div></div>';
+  });
+  const byDow = [0,0,0,0,0,0,0], cnt = [0,0,0,0,0,0,0];
+  hist.forEach(x=>{ const d = parseISODate(x.date).getDay(); byDow[d] += x.v; cnt[d]++; });
+  const avg = byDow.map((v,i)=>cnt[i]?v/cnt[i]:0), amx = Math.max(1, ...avg), names = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  if(hist.length>=7){
+    h += '<div style="font-size:0.8rem; font-weight:700; margin:14px 0 6px;">Your usual sales by weekday</div><div style="display:flex; gap:6px; align-items:flex-end; height:80px;">'
+      + avg.map((v,i)=>'<div style="flex:1; text-align:center;"><div style="height:'+Math.max(3,v/amx*60)+'px; background:var(--brand); border-radius:5px 5px 0 0;"></div><div style="font-size:0.68rem; color:var(--muted); margin-top:3px;">'+names[i]+'</div></div>').join('')+'</div>';
+  }
+  el.innerHTML = h;
+}
+function fcRenderNews(){
+  const el = document.getElementById('fc-newsCard'); if(!el) return;
+  const cfg = loadFcCfg(); if(!cfg.configured){ el.classList.add('hidden'); return; } el.classList.remove('hidden');
+  let h = '<h3 style="margin-top:0;">🗞️ News that may affect sales</h3>';
+  if(!cfg.useNews){ el.innerHTML = h + '<p class="hint" style="text-align:left; margin:0;">News is switched off in setup.</p>'; return; }
+  if(!cfg.place){ el.innerHTML = h + '<p class="hint" style="text-align:left; margin:0;">Add your location in setup to see local news.</p>'; return; }
+  const n = fcData.news;
+  if(!n){ el.innerHTML = h + '<p class="hint" style="text-align:left; margin:0;">'+(fcData.status.news==='fail' ? '⚠️ News could not be loaded right now.' : 'Loading…')+'</p>'; return; }
+  if(!n.length){ el.innerHTML = h + '<p class="hint" style="text-align:left; margin:0;">✅ No disruptive news found for '+esc(cfg.place.split(',')[0])+' in the last 2 days.</p>'; return; }
+  n.slice(0,8).forEach(a=>{
+    const tag = a.neg.length ? '<span style="color:var(--owe); font-weight:700;">⚠️ may reduce footfall</span>' : (a.pos.length ? '<span style="color:var(--paid); font-weight:700;">🎉 may bring crowds</span>' : '');
+    h += '<div style="padding:8px 0; border-bottom:1px solid var(--card-border);"><a href="'+esc(a.url)+'" target="_blank" rel="noopener" style="color:var(--text); font-weight:600; font-size:0.85rem; text-decoration:none;">'+esc(a.title)+'</a><div style="font-size:0.7rem; color:var(--muted); margin-top:2px;">'+esc(a.domain||'')+' '+tag+'</div></div>';
+  });
+  h += '<p class="hint" style="text-align:left; margin-top:8px;">News is matched by keywords and counts for at most ±10% in today’s and tomorrow’s prediction. Read the headline to judge for yourself.</p>';
+  el.innerHTML = h;
+}
+
+/* ---------- calendar events ---------- */
+function fcRenderEvents(){
+  const el = document.getElementById('fc-eventsCard'); if(!el) return;
+  const cfg = loadFcCfg(); if(!cfg.configured){ el.classList.add('hidden'); return; } el.classList.remove('hidden');
+  const t0 = todayStr(), list = loadFcEvents().filter(e=>e.date>=t0).sort((a,b)=>a.date<b.date?-1:1);
+  let h = '<div class="toprow" style="margin-bottom:8px;"><h3 style="margin:0;">📌 Calendar &amp; events</h3><div style="display:flex; gap:6px;"><button class="ghost" style="width:auto; margin:0; padding:7px 10px; font-size:0.78rem;" onclick="fcAddMuhurtham()">💍 Muhurtham days</button><button class="ghost" style="width:auto; margin:0; padding:7px 10px; font-size:0.78rem;" onclick="fcAddEvent()">+ Event</button></div></div>'
+    + '<p class="hint" style="text-align:left; margin-bottom:8px;">Add local events (temple festival, match, college function, wedding, exam week, road work…) and say how they change your crowd. Public holidays are added automatically. <b>Muhurtham (wedding) dates change every year</b> — tap “💍 Muhurtham days” and paste them from your panchangam / calendar, or import the .ics file below.</p>';
+  const hols = []; Object.keys(fcData.holidays).forEach(k=>{ (fcData.holidays[k]||[]).forEach(x=>{ if(x.date>=t0 && x.date<=addDays(t0,30)) hols.push(x); }); });
+  hols.sort((a,b)=>a.date<b.date?-1:1).slice(0,5).forEach(x=>{ h += '<div class="paidRow" style="font-size:0.82rem;"><span>🎉 '+esc(x.name)+'</span><span style="color:var(--muted);">'+esc(x.date)+'</span></div>'; });
+  if(!list.length) h += '<p class="hint" style="text-align:left;">No events added yet.</p>';
+  list.slice(0,25).forEach(e=>{
+    h += '<div style="padding:8px 0; border-bottom:1px solid var(--card-border);"><div style="display:flex; justify-content:space-between; gap:8px; font-size:0.85rem;"><span>'+(e.kind==='muhurtham'?'💍 ':'')+'<b>'+esc(e.title)+'</b></span><span style="color:var(--muted); white-space:nowrap;">'+esc(e.date)+'</span></div>'
+      + '<div style="display:flex; gap:8px; align-items:center; margin-top:6px;"><select style="margin:0; padding:7px; font-size:0.8rem;" onchange="fcSetImpact(\''+eid(e.id)+'\', this.value)">'
+      + Object.keys(FC_IMPACT_LABEL).map(k=>'<option value="'+k+'"'+(k===e.impact?' selected':'')+'>'+esc(FC_IMPACT_LABEL[k])+'</option>').join('')
+      + '</select><button type="button" class="ghost" style="width:auto; margin:0; padding:6px 10px; font-size:0.78rem; color:var(--owe); border-color:var(--owe);" onclick="fcDeleteEvent(\''+eid(e.id)+'\')">🗑️</button></div></div>';
+  });
+  h += '<label style="margin-top:12px;">Import from your calendar (.ics file exported from Google / phone calendar)</label><input id="fc-ics" type="file" accept=".ics,text/calendar" onchange="fcImportIcs(event)">';
+  el.innerHTML = h;
+}
+function fcAddEvent(){
+  openEditModal('Add event', [
+    { key:'title', label:'What is happening?', placeholder:'e.g. Temple festival' },
+    { key:'date', label:'Date', type:'date', value:todayStr() },
+    { key:'impact', label:'Effect on your crowd', type:'select', value:'up', options:Object.keys(FC_IMPACT_LABEL).map(k=>({ value:k, label:FC_IMPACT_LABEL[k] })) }
+  ], function(v){
+    const title = (v.title||'').trim(); if(!title || !v.date){ showBanner('Enter the event name and date'); return false; }
+    const l = loadFcEvents(); l.push({ id:uid(), title, date:v.date, impact:v.impact, updatedAt:Date.now() }); saveFcEvents(l);
+    fcRenderAll(); showBanner('✅ Event added'); afterDataChange();
+  });
+}
+function fcSetImpact(id, impact){
+  const l = loadFcEvents(), i = l.findIndex(e=>String(e.id)===String(id)); if(i<0) return;
+  l[i] = Object.assign({}, l[i], { impact, updatedAt:Date.now() }); saveFcEvents(l); fcRenderDays(); fcRenderWeek(); afterDataChange();
+}
+function fcDeleteEvent(id){
+  const e = loadFcEvents().find(x=>String(x.id)===String(id)); if(!e) return;
+  saveFcEvents(loadFcEvents().filter(x=>String(x.id)!==String(id)));
+  const d = loadFcEvtDeleted(); d[String(id)] = Date.now(); localStorage.setItem(FC_EVT_DEL_KEY, JSON.stringify(d));
+  fcRenderAll(); afterDataChange();
+  showUndo('🗑️ Event deleted', function(){
+    const l = loadFcEvents(); l.push(Object.assign({}, e, { updatedAt:Date.now() })); saveFcEvents(l);
+    const dd = loadFcEvtDeleted(); delete dd[String(id)]; localStorage.setItem(FC_EVT_DEL_KEY, JSON.stringify(dd));
+    fcRenderAll(); afterDataChange();
+  });
+}
+function fcParseIcs(text){
+  const t = text.replace(/\r?\n[ \t]/g,''), out = [], lo = addDays(todayStr(),-1), hi = addDays(todayStr(),120);
+  t.split('BEGIN:VEVENT').slice(1).forEach(b=>{
+    const sum = (b.match(/SUMMARY[^:\r\n]*:([^\r\n]*)/)||[])[1], ds = (b.match(/DTSTART[^:\r\n]*:(\d{8})/)||[])[1], de = (b.match(/DTEND[^:\r\n]*:(\d{8})/)||[])[1];
+    if(!sum || !ds) return;
+    const iso = x=>x.slice(0,4)+'-'+x.slice(4,6)+'-'+x.slice(6,8);
+    const start = iso(ds); let end = de ? iso(de) : start;
+    const dateOnly = /DTSTART;VALUE=DATE/.test(b) || (b.match(/DTSTART[^:\r\n]*:(\d{8})(?!T)/) && !/DTSTART[^:\r\n]*:\d{8}T/.test(b));
+    if(de && dateOnly && end>start) end = addDays(end,-1);
+    if(end<start) end = start;
+    let d = start, n = 0;
+    while(d<=end && n<10){ if(d>=lo && d<=hi) out.push({ date:d, title:sum.replace(/\\,/g,',').trim() }); d = addDays(d,1); n++; }
+  });
+  return out;
+}
+function fcImportIcs(e){
+  const f = e.target.files && e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = function(ev){
+    const items = fcParseIcs(String(ev.target.result||'')), l = loadFcEvents(); let n = 0;
+    items.forEach(it=>{
+      const id = 'ics-'+it.date+'-'+sha256(it.title).slice(0,8);
+      if(!l.find(x=>x.id===id) && !loadFcEvtDeleted()[id]){ const mur = /muhurtham|muhurat|muhurta|wedding|marriage|kalyanam|thirumanam|vivaah/i.test(it.title); l.push({ id, title:it.title, date:it.date, impact: mur?'auto':'neutral', kind: mur?'muhurtham':undefined, source:'ics', updatedAt:Date.now() }); n++; }
+    });
+    saveFcEvents(l); e.target.value = ''; fcRenderAll();
+    showBanner(n ? '✅ Imported '+n+' calendar event(s) — set how each one affects your crowd' : 'No new events in the next 120 days'); if(n) afterDataChange();
+  };
+  r.readAsText(f);
+}
+
+/* ---------- accuracy of past predictions ---------- */
+function fcRenderAccuracy(){
+  const el = document.getElementById('fc-accCard'); if(!el) return;
+  const log = loadFcLog(), t0 = todayStr(), rows = [];
+  Object.keys(log).sort().forEach(d=>{
+    if(d>=t0) return;
+    const act = computeDayMetrics(d).totalSales;
+    if(act>0 && log[d].pred>0) rows.push({ d, pred:log[d].pred, act, err:Math.abs(act-log[d].pred)/act });
+  });
+  if(!rows.length){ el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const last = rows.slice(-14), acc = Math.max(0, Math.round((1 - last.reduce((a,r)=>a+r.err,0)/last.length)*100));
+  let h = '<h3 style="margin-top:0;">🎯 How accurate was it?</h3><div style="font-size:1.6rem; font-weight:800; color:'+(acc>=80?'var(--paid)':(acc>=60?'#f59e0b':'var(--owe)'))+';">'+acc+'% <span style="font-size:0.8rem; font-weight:500; color:var(--muted);">over the last '+last.length+' day(s)</span></div>';
+  last.slice(-6).reverse().forEach(r=>{ h += '<div class="paidRow" style="font-size:0.8rem;"><span>'+esc(r.d)+'</span><span>predicted '+fcMoney(r.pred)+' · actual <b>'+fcMoney(r.act)+'</b></span></div>'; });
+  h += '<p class="hint" style="text-align:left; margin-top:8px;">The forecast saved here is the first one made for each day. Accuracy improves as you enter more daily sales.</p>';
+  el.innerHTML = h;
 }
 
 function copyPurchaseListNameQtyOnly(){
