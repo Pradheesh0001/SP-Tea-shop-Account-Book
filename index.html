@@ -3404,9 +3404,7 @@ async function fcRefresh(force){
     try{
       if(force || !fcFresh(cache.news, 60*60000)){
         const city = cfg.place.split(',')[0].trim();
-        const q = '"'+city+'" (bandh OR hartal OR strike OR curfew OR protest OR "road closure" OR cyclone OR "heavy rain" OR flood OR festival OR fair OR exhibition OR procession OR "power cut")';
-        const d = await fcFetchJson('https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent(q)+'&mode=ArtList&maxrecords=12&format=json&timespan=2d&sort=DateDesc', 12000);
-        const arts = (d.articles||[]).map(a=>({ title:a.title, url:a.url, domain:a.domain, seen:a.seendate }));
+        const arts = await fcFetchNews(city);
         cache.news = { t:Date.now(), data:fcTagNews(arts) }; fcData.news = cache.news.data;
       } else fcData.news = cache.news.data;
       st.news = 'ok';
@@ -3416,6 +3414,47 @@ async function fcRefresh(force){
   try{ fcAutoMuhurtham(false); }catch(e){}
 }
 
+
+/* ---------- news fetch: tries 3 free sources one after another ---------- */
+async function fcFetchText(url, ms){
+  const ctl = new AbortController(), tm = setTimeout(()=>ctl.abort(), ms||12000);
+  try{ const r = await fetch(url, { signal: ctl.signal }); if(!r.ok) throw new Error('HTTP '+r.status); return await r.text(); }
+  finally{ clearTimeout(tm); }
+}
+function fcParseRss(xml){
+  const doc = new DOMParser().parseFromString(xml, 'text/xml'), out = [];
+  doc.querySelectorAll('item').forEach(function(it){
+    const g = function(t){ const e = it.querySelector(t); return e ? e.textContent : ''; };
+    const title = g('title').trim(); if(!title) return;
+    const src = g('source').trim();
+    out.push({ title:title, url:g('link').trim(), domain:src || 'news', seen:g('pubDate') });
+  });
+  return out.slice(0,15);
+}
+async function fcFetchNews(city){
+  const terms = '("'+city+'") (bandh OR hartal OR strike OR curfew OR protest OR "road closure" OR cyclone OR "heavy rain" OR flood OR festival OR fair OR exhibition OR procession OR "power cut") when:2d';
+  const rss = 'https://news.google.com/rss/search?q='+encodeURIComponent(terms)+'&hl=en-IN&gl=IN&ceid=IN:en';
+  const tries = [
+    async function(){ return fcParseRss(await fcFetchText('https://api.allorigins.win/raw?url='+encodeURIComponent(rss))); },
+    async function(){ return fcParseRss(await fcFetchText('https://corsproxy.io/?'+encodeURIComponent(rss))); },
+    async function(){
+      const d = JSON.parse(await fcFetchText('https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent(rss)));
+      if(d.status!=='ok') throw new Error('rss2json');
+      return (d.items||[]).slice(0,15).map(function(i){ return { title:i.title, url:i.link, domain:(i.author||'news'), seen:i.pubDate }; });
+    },
+    async function(){
+      const q = '"'+city+'" (bandh OR hartal OR strike OR curfew OR protest OR "road closure" OR cyclone OR "heavy rain" OR flood OR festival OR fair OR exhibition OR procession OR "power cut")';
+      const t = await fcFetchText('https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent(q)+'&mode=ArtList&maxrecords=12&format=json&timespan=2d&sort=DateDesc', 15000);
+      const d = JSON.parse(t);
+      return (d.articles||[]).map(function(a){ return { title:a.title, url:a.url, domain:a.domain, seen:a.seendate }; });
+    }
+  ];
+  let lastErr = null;
+  for(const f of tries){
+    try{ const r = await f(); if(Array.isArray(r)) return r; }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error('news unavailable');
+}
 /* ---------- news tagging ---------- */
 const FC_NEG = ['bandh','hartal','strike','curfew','protest','riot','cyclone','flood','heavy rain','red alert','orange alert','lockdown','power cut','road closure','traffic diversion','shutdown','agitation','boycott'];
 const FC_POS = ['festival','fair','exhibition','procession','jayanti','jayanthi','car festival','pongal','diwali','deepavali'];
