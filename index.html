@@ -1306,7 +1306,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v73-research';
+const APP_VERSION = '2026-10-21-v74-ai-settings';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -4160,8 +4160,11 @@ async function aiListModels(){
   return s.kind==='ollama' ? (j.models||[]).map(m=>m.name) : (j.data||[]).map(m=>m.id);
 }
 function aiConnHelp(msg){
-  const o = location.origin;
-  return msg + '\n\nIf the browser says it "failed to fetch", your AI program is probably blocking this page. For Ollama set OLLAMA_ORIGINS to '+o+' and restart it. For Stable Diffusion WebUI start it with --api --cors-allow-origins='+o+'. On a phone, "localhost" means the phone itself — use an https link to your computer.';
+  const o = location.origin, st = aiS();
+  const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent||'');
+  const local = aiHostClass(st.host)==='device' || aiHostClass(st.imgHost)==='device';
+  const phone = (mobile && local) ? '\n\n📱 You are on a phone. "localhost" means THIS PHONE, not your computer, so your AI program cannot be found. Open this app in Chrome on the computer where LM Studio / Ollama is running — or reach the computer through an https link (see Settings → Setup help).' : '';
+  return msg + phone + '\n\nIf it says "failed to fetch", the AI program may be blocking this page. LM Studio: Developer tab → turn on "Enable CORS". Ollama: set OLLAMA_ORIGINS to '+o+' and restart it. Stable Diffusion WebUI: start with --api --cors-allow-origins='+o+'.';
 }
 
 /* ---------- document retrieval for "ask about my file" ---------- */
@@ -4787,12 +4790,23 @@ async function aiDoResearch(q, lang){
 }
 
 async function aiRenderSettings(){
-  const s = aiS(), body = document.getElementById('ai-body'), tok = await aiTokenGet().catch(()=>''), o = location.origin;
-  body.innerHTML = '<div class="card"><h3 style="margin-top:0;">⚙️ AI connection</h3>'
+  const s = aiS(), body = document.getElementById('ai-body'), o = location.origin;
+  let hasTok = false;
+  if(!localStorage.getItem('udhar_ai_tokfix')){ await aiTokenSet(''); localStorage.setItem('udhar_ai_tokfix','1'); }
+  try{ hasTok = !!(await aiTokenGet()); }catch(e){}
+  body.innerHTML = '<div class="card"><h3 style="margin-top:0;">🚀 Quick setup (3 steps)</h3>'
+    + '<div style="font-size:0.85rem; line-height:1.65;"><b>1.</b> On your <b>computer</b>, install <b>LM Studio</b> (easiest) or <b>Ollama</b>, and download a model.<br>'
+    + '<b>2.</b> Start its server. <u>LM Studio:</u> open the <i>Developer</i> tab → turn ON <i>Start server</i> and <i>Enable CORS</i>. <u>Ollama:</u> it starts by itself.<br>'
+    + '<b>3.</b> Open <b>this app in Chrome on that same computer</b>, tap your program below, then tap <b>Test connection</b> and pick a model.</div>'
+    + '<div style="display:flex; gap:8px; margin-top:12px;"><button style="background:var(--brand); margin:0; padding:10px; font-size:0.85rem;" onclick="aiPreset(\'lmstudio\')">I use LM Studio</button><button style="background:var(--brand); margin:0; padding:10px; font-size:0.85rem;" onclick="aiPreset(\'ollama\')">I use Ollama</button></div>'
+    + '<p class="hint" style="text-align:left; margin-top:10px;">📱 On a phone this will not work with <b>localhost</b> — a phone cannot see your computer\'s localhost. Use the computer\'s Chrome, or see “Using it from a phone” at the bottom.</p></div>'
+    + '<div class="card"><h3 style="margin-top:0;">⚙️ AI connection</h3>'
     + '<label>Type of AI program</label><select id="ai-s-kind"><option value="ollama"'+(s.kind==='ollama'?' selected':'')+'>Ollama</option><option value="openai"'+(s.kind==='openai'?' selected':'')+'>OpenAI-compatible (LM Studio, llama.cpp, vLLM…)</option></select>'
-    + '<label>Chat AI address</label><input id="ai-s-host" value="'+esc(s.host)+'" placeholder="http://localhost:11434">'
-    + '<label>Password / access token (optional, for protected hosts)</label><input id="ai-s-tok" type="password" value="'+esc(tok)+'">'
-    + '<label>Model</label><div style="display:flex; gap:8px;"><select id="ai-s-model" style="margin-bottom:14px;">'+(s.model?'<option>'+esc(s.model)+'</option>':'<option value="">— tap "Test connection" —</option>')+'</select><button class="ghost" style="width:auto; margin:0 0 14px; padding:10px 14px;" onclick="aiTestConn()">Test connection</button></div>'
+    + '<label>Chat AI address</label><input id="ai-s-host" value="'+esc(s.host)+'" placeholder="http://localhost:11434"><div class="hint" style="text-align:left; margin:-8px 0 12px;">LM Studio is usually <b>http://localhost:1234</b> · Ollama is <b>http://localhost:11434</b></div>'
+    + '<label>Access token — leave EMPTY normally</label><input id="ai-s-tok" type="password" name="ai-access-token" autocomplete="new-password" autocapitalize="off" value="" placeholder="'+(hasTok ? 'a token is saved — type only to replace it' : 'not needed for your own computer')+'">'
+    + '<div class="hint" style="text-align:left; margin:-8px 0 12px;">Only fill this if your AI host asks for a password. '+(hasTok ? '<button type="button" class="link" style="display:inline; width:auto;" onclick="aiClearToken()">Remove the saved token</button>' : '')+'</div>'
+    + '<label>Model (the AI brain to chat with)</label><div style="display:flex; gap:8px;"><select id="ai-s-model" style="margin-bottom:14px;">'+(s.model?'<option>'+esc(s.model)+'</option>':'<option value="">— tap "Test connection" —</option>')+'</select><button class="ghost" style="width:auto; margin:0 0 14px; padding:10px 14px;" onclick="aiTestConn()">Test connection</button></div>'
+    + '<div class="hint" style="text-align:left; margin:-8px 0 12px;">Tap <b>Test connection</b> first — it fills this list from your AI program.</div>'
     + '<label>Creativity (temperature)</label><input id="ai-s-temp" type="number" min="0" max="2" step="0.1" value="'+esc(s.temp)+'">'
     + '<label>Instructions for the AI</label><textarea id="ai-s-sys" rows="5">'+esc(s.system)+'</textarea>'
     + '<label>Image program address (Stable Diffusion WebUI / Forge)</label><input id="ai-s-img" value="'+esc(s.imgHost)+'" placeholder="http://127.0.0.1:7860">'
@@ -4809,8 +4823,17 @@ async function aiRenderSettings(){
 async function aiSaveSettings(){
   const g = id=>document.getElementById(id).value;
   aiSaveS({ kind:g('ai-s-kind'), host:g('ai-s-host').trim(), model:g('ai-s-model'), temp:Number(g('ai-s-temp'))||0.7, system:g('ai-s-sys').trim() || AI_SYS_DEFAULT, imgHost:g('ai-s-img').trim() });
-  await aiTokenSet(g('ai-s-tok')); showBanner('✅ Settings saved'); aiRenderStatus();
+  const tv = g('ai-s-tok'); if(tv) await aiTokenSet(tv); showBanner('✅ Settings saved'); aiRenderStatus();
 }
+function aiPreset(kind){
+  const lm = kind==='lmstudio';
+  document.getElementById('ai-s-kind').value = lm ? 'openai' : 'ollama';
+  document.getElementById('ai-s-host').value = lm ? 'http://localhost:1234' : 'http://localhost:11434';
+  document.getElementById('ai-s-tok').value = '';
+  showBanner('✅ '+(lm?'LM Studio':'Ollama')+' address filled — now scroll down and tap “Test connection”');
+  document.getElementById('ai-s-host').scrollIntoView && document.getElementById('ai-s-host').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+async function aiClearToken(){ await aiTokenSet(''); showBanner('🗑️ Saved token removed'); aiRenderSettings(); }
 async function aiTestConn(){
   const msg = document.getElementById('ai-s-msg'); await aiSaveSettings(); msg.textContent = 'Checking…';
   try{
