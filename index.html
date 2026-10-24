@@ -678,6 +678,8 @@ window.addEventListener('error', function(e){
         <div class="sub">Personal Balance — In Hand Profit minus Personal Expenses (current cycle)</div>
       </div>
 
+      <div class="card" id="pe-planner"></div>
+
       <div class="card">
         <h3 id="peFormTitle" style="margin-top:0;">Add Personal Expense</h3>
         <div class="loadgrid" id="peCatGrid" style="grid-template-columns:repeat(4,1fr);"></div>
@@ -1268,7 +1270,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-24-v71-muhurtham-autofetch';
+const APP_VERSION = '2026-10-24-v74-money-advisor';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -1500,6 +1502,7 @@ function mergeRemoteData(remote){
   { const lb = loadPeBudgets(), mb = Object.assign({}, lb), rb = remote.peBudgets || {};
     Object.keys(rb).forEach(k=>{ if(!lb[k] || (rb[k].updatedAt||0) > (lb[k].updatedAt||0)) mb[k] = rb[k]; });
     savePeBudgets(mb); }
+  if(remote.emiPlan && (remote.emiPlan.updatedAt||0) > (loadEmiPlan().updatedAt||0)) localStorage.setItem(EMI_PLAN_KEY, JSON.stringify(remote.emiPlan));
   if(remote.forecastCfg && (remote.forecastCfg.updatedAt||0) > (loadFcCfg().updatedAt||0)) localStorage.setItem(FC_CFG_KEY, JSON.stringify(remote.forecastCfg));
   { const mergedEvtDel = Object.assign({}, loadFcEvtDeleted(), remote.deletedEventIds || {});
     localStorage.setItem(FC_EVT_DEL_KEY, JSON.stringify(mergedEvtDel));
@@ -1518,7 +1521,7 @@ function mergeRemoteData(remote){
 }
 
 function buildPayload(){
-  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory(), deletedPoIds: loadPoDeleted(), deletedTxnIds: loadTxnDeleted(), deletedCustomerIds: loadCustDeleted(), deletedCycleIds: loadCycleDeleted(), peBudgets: loadPeBudgets(), upi: loadUpi(), forecastCfg: loadFcCfg(), events: loadFcEvents(), deletedEventIds: loadFcEvtDeleted() };
+  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory(), deletedPoIds: loadPoDeleted(), deletedTxnIds: loadTxnDeleted(), deletedCustomerIds: loadCustDeleted(), deletedCycleIds: loadCycleDeleted(), peBudgets: loadPeBudgets(), upi: loadUpi(), forecastCfg: loadFcCfg(), emiPlan: loadEmiPlan(), events: loadFcEvents(), deletedEventIds: loadFcEvtDeleted() };
 }
 let syncDirty = false, syncBusy = false;
 async function syncToDrive(){
@@ -2159,6 +2162,7 @@ function renderPersonalTab(){
 
   renderPastPeCycles();
   renderPeBudgets();
+  try{ renderEmiPlanner(); }catch(e){ console.error(e); }
 }
 
 function renderPastPeCycles(){
@@ -3414,6 +3418,220 @@ async function fcRefresh(force){
   try{ fcAutoMuhurtham(false); }catch(e){}
 }
 
+
+
+/* ======================================================================
+   SAFE CASH PLANNER — EMI due dates, projected balance, safe spare cash
+   ====================================================================== */
+const EMI_PLAN_KEY = 'udhar_emi_plan_v1';
+function loadEmiPlan(){ try{ const o = jload(EMI_PLAN_KEY,'{}'); o.emis = o.emis||[]; if(o.buffer==null) o.buffer = 2000; if(o.rate==null) o.rate = 6.5; if(o.income==null) o.income = 0; if(o.saveRate==null) o.saveRate = 3; if(o.sweepRate==null) o.sweepRate = 6; return o; }catch(e){ return { emis:[], buffer:2000, rate:6.5, income:0, saveRate:3, sweepRate:6 }; } }
+function saveEmiPlan(o){ o.updatedAt = Date.now(); localStorage.setItem(EMI_PLAN_KEY, JSON.stringify(o)); }
+function emiNextDue(day){
+  const t = parseISODate(todayStr()); let y = t.getFullYear(), m = t.getMonth();
+  const mk = function(yy, mm){ const last = new Date(yy, mm+1, 0).getDate(); return new Date(yy, mm, Math.min(day, last)); };
+  let d = mk(y, m); if(d < t){ m++; if(m>11){ m = 0; y++; } d = mk(y, m); }
+  return { date: toISODate(d), days: Math.round((d - t)/86400000) };
+}
+function emiRng(seed){ let a = seed>>>0; return function(){ a = (a + 0x6D2B79F5)|0; let t = Math.imul(a ^ (a>>>15), 1|a); t = (t + Math.imul(t ^ (t>>>7), 61|t)) ^ t; return ((t ^ (t>>>14))>>>0)/4294967296; }; }
+function emiPct(sorted, p){ if(!sorted.length) return 0; const i = Math.min(sorted.length-1, Math.max(0, Math.round(p*(sorted.length-1)))); return sorted[i]; }
+/* Monte Carlo: replays your own recent days (profit by weekday, personal spending) thousands of times over the days until each EMI */
+function emiSimulate(o){
+  const N = o.N||3000, rnd = emiRng(o.seed||1), emis = o.emis.slice().sort(function(a,b){ return a.days-b.days; });
+  const maxD = emis.length ? emis[emis.length-1].days : 0, out = emis.map(function(){ return []; });
+  const byDow = [0,1,2,3,4,5,6].map(function(d){ return o.profits.filter(function(x){ return x.dow===d; }).map(function(x){ return x.v; }); });
+  const allP = o.profits.map(function(x){ return x.v; });
+  for(let n=0;n<N;n++){
+    let bal = o.bal, ei = 0;
+    for(let k=0;k<=maxD;k++){
+      if(k>0){
+        const dow = (o.startDow + k) % 7, pool = byDow[dow].length>=3 ? byDow[dow] : allP;
+        const spend = o.spends.length ? o.spends[Math.floor(rnd()*o.spends.length)] : 0;
+        let prof = pool.length ? pool[Math.floor(rnd()*pool.length)] : (o.fallbackProfit||0);
+        if(prof>0) prof *= (o.mult && o.mult[k]) || 1;
+        bal -= spend;
+        if(!(ei<emis.length && emis[ei].days===k)) bal += prof;   /* on the EMI day itself, today's profit is not counted (safe side) */
+      }
+      while(ei<emis.length && emis[ei].days===k){ out[ei].push(bal); bal -= emis[ei].amount; ei++; }
+    }
+  }
+  return emis.map(function(e,i){
+    const v = out[i].slice().sort(function(a,b){ return a-b; }), need = e.amount, buf = o.buffer||0;
+    const cov = v.filter(function(x){ return x>=need; }).length/v.length, comf = v.filter(function(x){ return x-need>=buf; }).length/v.length;
+    return { id:e.id, p10:emiPct(v,0.1), p50:emiPct(v,0.5), p90:emiPct(v,0.9), covered:cov, comfortable:comf,
+      safeSpare: Math.max(0, emiPct(v,0.1) - need - buf), midSpare: Math.max(0, emiPct(v,0.5) - need - buf),
+      topUp: Math.max(0, need + buf - emiPct(v,0.1)) };
+  });
+}
+
+function emiGatherInputs(){
+  const to = addDays(todayStr(),-1), from = addDays(to,-59);
+  const days = computeRangeMetrics(from,to).days.filter(function(d){ return d.recorded; });
+  const profits = days.map(function(d){ return { dow:parseISODate(d.date).getDay(), v:(Number(d.onlineProfit)||0) - (Number(d.ownMoneyAdded)||0) }; });
+  const pe = loadPersonalExpenses(), byDate = {};
+  pe.forEach(function(e){ if(e.date>=from && e.date<=to) byDate[e.date] = (byDate[e.date]||0) + (Number(e.amount)||0); });
+  const spends = dateRangeArray(from,to).map(function(d){ return byDate[d]||0; });
+  return { profits:profits, spends:spends, hasSpend: Object.keys(byDate).length>0 };
+}
+/* the same engine as Smart Forecast (weather, holidays, muhurtham, events, news, trend) scales expected shop profit for each coming day */
+function emiForecastMult(maxD){
+  const mult = [1]; const cfg = loadFcCfg(); if(!cfg.configured) return { mult:mult, used:false };
+  try{
+    if(!fcData.weather){ const c = loadFcCache(); if(c.weather) fcData.weather = c.weather.data; if(c.news && !fcData.news) fcData.news = c.news.data; Object.keys(c.holidays||{}).forEach(function(k){ if(!fcData.holidays[k]) fcData.holidays[k] = c.holidays[k].data; }); }
+    const hist = fcHistory(); if(hist.length<5) return { mult:mult, used:false };
+    for(let k=1;k<=maxD;k++){ const p = fcPredict(addDays(todayStr(),k), hist, fcData.weather); mult[k] = Math.max(0.6, Math.min(1.5, p.mult)); }
+    return { mult:mult, used:true };
+  }catch(e){ return { mult:[1], used:false }; }
+}
+function emiCompute(){
+  const plan = loadEmiPlan(), bal = personalCycleInHandProfit() - totalPersonalExpensesCurrentCycle();
+  const rows = plan.emis.map(function(e){ return Object.assign({}, e, emiNextDue(Number(e.day)||1)); }).sort(function(a,b){ return a.days-b.days; });
+  const inp = emiGatherInputs(), maxD = rows.length ? Math.min(rows[rows.length-1].days, 62) : 0, fm = emiForecastMult(maxD);
+  const nP = inp.profits.length, conf = (nP>=25 && inp.hasSpend) ? 'High' : (nP>=12 ? 'Medium' : 'Low');
+  const seed = parseInt(todayStr().replace(/-/g,''),10) + rows.length*7919 + Math.round(bal);
+  const sim = rows.length ? emiSimulate({ bal:bal, profits:inp.profits, spends:inp.spends, mult:fm.mult, emis:rows.map(function(r){ return { id:r.id, days:Math.min(r.days,62), amount:Number(r.amount)||0 }; }), buffer:Number(plan.buffer)||0, startDow:new Date().getDay(), seed:seed, N:3000, fallbackProfit:(Number(plan.income)||0)/30 }) : [];
+  rows.forEach(function(r,i){ const s = sim[i]; r.sim = s; r.interest = s.safeSpare * (Number(plan.rate)||0)/100 * r.days/365; });
+  const avgSpend = inp.spends.length ? inp.spends.reduce(function(a,x){ return a+x; },0)/inp.spends.length : 0;
+  const avgProfit = nP ? inp.profits.reduce(function(a,x){ return a+x.v; },0)/nP : 0;
+  return { plan:plan, bal:bal, rows:rows, conf:conf, nP:nP, usedForecast:fm.used, avgSpend:avgSpend, avgProfit:avgProfit };
+}
+function renderEmiPlanner(){
+  const el = document.getElementById('pe-planner'); if(!el) return;
+  const c = emiCompute(), p = c.plan;
+  let h = '<div class="toprow" style="margin-bottom:6px;"><h3 style="margin:0;">🛡️ Safe Cash Planner</h3><div style="display:flex; gap:6px;"><button class="ghost" style="width:auto; margin:0; padding:7px 10px; font-size:0.78rem;" onclick="emiSettings()">⚙️</button><button class="ghost" style="width:auto; margin:0; padding:7px 10px; font-size:0.78rem;" onclick="emiAdd()">+ EMI</button></div></div>';
+  h += '<p class="hint" style="text-align:left; margin:0 0 8px;">Replays your own recent days (shop profit by weekday + personal spending) 3,000 times, and adjusts coming days for weather, holidays, muhurtham, events and local news from Smart Forecast. It tells you the <b>chance</b> each EMI is covered — not a single guess.</p>';
+  if(!c.rows.length){
+    h += '<p class="hint" style="text-align:left;">No EMI added yet. Tap “+ EMI” and enter the EMI name, amount and the day of the month it is due.</p>';
+  } else {
+    const confCol = c.conf==='High' ? 'var(--paid)' : (c.conf==='Medium' ? '#f59e0b' : 'var(--owe)');
+    h += '<div style="font-size:0.8rem; color:var(--muted); margin-bottom:8px;">Balance now <b>'+fmtMoney(c.bal)+'</b> · avg shop profit <b>'+fmtMoney(c.avgProfit)+'/day</b> · avg personal spend <b>'+fmtMoney(c.avgSpend)+'/day</b> · based on '+c.nP+' recorded day'+(c.nP===1?'':'s')+' · confidence <b style="color:'+confCol+';">'+c.conf+'</b>'+(c.usedForecast?' · forecast factors on':' · forecast factors off (set up Smart Forecast to turn on)')+'</div>';
+    if(c.conf==='Low') h += '<div style="font-size:0.8rem; color:var(--owe); margin-bottom:8px;">⚠️ Fewer than 12 recorded days — results are rough. Enter daily sales and expenses every day to make this accurate.</div>';
+    finEnsureNews(); h += finAdviceHtml(c);
+    c.rows.forEach(function(r){
+      const s = r.sim, pc = Math.round(s.covered*100), col = pc>=90 ? 'var(--paid)' : (pc>=70 ? '#f59e0b' : 'var(--owe)');
+      h += '<div style="padding:10px 0; border-top:1px solid var(--card-border);">'
+        + '<div style="display:flex; justify-content:space-between; gap:8px;"><b>'+esc(r.name||'EMI')+'</b><span style="font-weight:700;">'+fmtMoney(r.amount)+'</span></div>'
+        + '<div style="font-size:0.8rem; color:var(--muted);">Due '+esc(r.date)+' · '+(r.days===0?'<b style="color:var(--owe);">today</b>':r.days+' day'+(r.days>1?'s':'')+' left')+'</div>'
+        + '<div style="font-size:1.25rem; font-weight:800; color:'+col+'; margin-top:4px;">'+pc+'% <span style="font-size:0.8rem; font-weight:500;">chance it is fully covered</span></div>'
+        + '<div style="font-size:0.82rem; margin-top:2px;">Balance on due day (before paying): usually between <b>'+fmtMoney(s.p10)+'</b> and <b>'+fmtMoney(s.p90)+'</b>, most likely about <b>'+fmtMoney(s.p50)+'</b>.</div>';
+      if(pc>=90){
+        h += '<div style="font-size:0.85rem; margin-top:4px; color:var(--paid);">✅ Looks safe.'+(s.safeSpare>=500 ? ' About <b>'+fmtMoney(s.safeSpare)+'</b> is spare (you stay 90% sure of the EMI). Where it can wait until the due date:' : ' Little spare cash beyond your safety buffer, so no need to move money around.')+'</div>';
+        if(s.safeSpare>=500){ finParkingOptions(s.safeSpare, r.days, p).forEach(function(o){ h += '<div style="font-size:0.8rem; margin:3px 0 0 10px;">🏦 <b>'+esc(o.name)+'</b> @ '+o.rate+'%: '+(o.interest>0 ? '≈ <b>'+fmtMoney(o.interest)+'</b> for '+o.d+' day'+(o.d>1?'s':'') : 'too short to earn much')+' <span style="color:var(--muted);">— '+esc(o.note)+'</span></div>'; }); }
+      } else {
+        h += '<div style="font-size:0.85rem; margin-top:4px; color:'+col+';">⚠️ '+(pc>=70?'Probably fine but not certain.':'Likely short.')+' To be 90% sure, keep about <b>'+fmtMoney(Math.ceil(s.topUp))+'</b> more aside'+(r.days>0?' (≈ <b>'+fmtMoney(Math.ceil(s.topUp/r.days))+'/day</b>)':'')+' or cut personal spending / delay big bills until after the EMI. Don’t put this money in anything risky.</div>';
+      }
+      h += '<div style="margin-top:6px;"><button type="button" class="ghost" style="width:auto; margin:0; padding:5px 10px; font-size:0.75rem; margin-right:6px;" onclick="emiEdit(\''+eid(r.id)+'\')">✏️ Edit</button><button type="button" class="ghost" style="width:auto; margin:0; padding:5px 10px; font-size:0.75rem; color:var(--owe); border-color:var(--owe);" onclick="emiDelete(\''+eid(r.id)+'\')">🗑️</button></div></div>';
+    });
+  }
+  h += '<p class="hint" style="text-align:left; margin-top:8px;">This is a statistical estimate from your own records, not a guarantee — no app can predict the future perfectly (sudden bills, a bad sales week or a bandh can change it). Never use EMI money for stocks, crypto or trading for a few days; it can lose. Not financial advice.</p>';
+  el.innerHTML = h;
+}
+
+/* ---------- finance news + parking advisor (information & risk flags only — no buy/sell calls) ---------- */
+const FIN_NEWS_KEY = 'udhar_fin_news_v1';
+const FIN_RISK = ['crash','plunge','selloff','sell-off','tumble','slump','meltdown','volatil','recession','war ','sanction','rate hike','hikes rate','inflation rises','inflation surges','default','bank run','panic','rupee falls','rupee hits record low','fii outflow','fraud','ban '];
+const FIN_CALM = ['rally','record high','all-time high','rate cut','cuts repo','inflation eases','inflation cools','rupee gains','rupee rises','upgrade','growth beats','steady','stable'];
+let finBusy = false;
+async function finFetchRss(terms){
+  const rss = 'https://news.google.com/rss/search?q='+encodeURIComponent(terms)+'&hl=en-IN&gl=IN&ceid=IN:en';
+  const tries = [
+    async function(){ return fcParseRss(await fcFetchText('https://api.allorigins.win/raw?url='+encodeURIComponent(rss))); },
+    async function(){ return fcParseRss(await fcFetchText('https://corsproxy.io/?'+encodeURIComponent(rss))); },
+    async function(){ const d = JSON.parse(await fcFetchText('https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent(rss))); if(d.status!=='ok') throw new Error('rss2json'); return (d.items||[]).slice(0,15).map(function(i){ return { title:i.title, url:i.link, domain:(i.author||'news'), seen:i.pubDate }; }); }
+  ];
+  let last = null; for(const f of tries){ try{ const r = await f(); if(Array.isArray(r) && r.length) return r; }catch(e){ last = e; } }
+  throw last || new Error('no finance news');
+}
+function finTag(arts){
+  return arts.map(function(a){ const t = (a.title||'').toLowerCase(); return Object.assign({}, a, { risk:FIN_RISK.filter(function(k){ return t.indexOf(k)>-1; }).length, calm:FIN_CALM.filter(function(k){ return t.indexOf(k)>-1; }).length, cut:/rate cut|cuts repo|repo rate cut|cuts rates/.test(t), hike:/rate hike|hikes repo|hikes rates|raises repo/.test(t) }); });
+}
+function finLoad(){ try{ return JSON.parse(localStorage.getItem(FIN_NEWS_KEY)||'null'); }catch(e){ return null; } }
+function finEnsureNews(){
+  const c = finLoad(); if(finBusy || (c && Date.now()-c.t < 2*3600000)) return;
+  finBusy = true;
+  finFetchRss('(RBI OR "repo rate" OR inflation OR Sensex OR Nifty OR "gold price" OR "petrol price" OR "fixed deposit rates" OR "bank interest rates" OR rupee) India when:3d')
+    .then(function(arts){ try{ localStorage.setItem(FIN_NEWS_KEY, JSON.stringify({ t:Date.now(), data:finTag(arts).slice(0,12) })); }catch(e){} })
+    .catch(function(){ if(!c){ try{ localStorage.setItem(FIN_NEWS_KEY, JSON.stringify({ t:Date.now()-100*60000, data:[], fail:true })); }catch(e){} } })
+    .then(function(){ finBusy = false; try{ renderEmiPlanner(); }catch(e){} });
+}
+function finMood(){
+  const c = finLoad(); if(!c || !c.data || !c.data.length) return null;
+  const risk = c.data.filter(function(a){ return a.risk>a.calm; }).length, calm = c.data.filter(function(a){ return a.calm>a.risk; }).length;
+  const cut = c.data.some(function(a){ return a.cut; }), hike = c.data.some(function(a){ return a.hike; });
+  const mood = (risk>=3 && risk>calm) ? 'Choppy' : (calm>risk ? 'Calm' : 'Mixed');
+  return { mood:mood, risk:risk, calm:calm, cut:cut, hike:hike, items:c.data.slice(0,5), t:c.t };
+}
+/* where spare cash can wait until the EMI date — safest first */
+function finParkingOptions(spare, days, plan){
+  const opts = [
+    { name:'Savings account', rate:Number(plan.saveRate)||0, lead:0, note:'Instant withdrawal, no risk to your money.' },
+    { name:'Sweep / short FD', rate:Number(plan.sweepRate)||0, lead:0, note:'Same bank as your savings; check the minimum period and any penalty for breaking it early.' },
+    { name:'Liquid / overnight fund', rate:Number(plan.rate)||0, lead:2, note:'Low risk but not guaranteed; withdrawals take about 1 working day, so move it back 2 days before the EMI.' }
+  ];
+  return opts.map(function(o){ const d = Math.max(0, days - o.lead); return Object.assign({}, o, { d:d, interest: d>=3 ? spare*o.rate/100*d/365 : 0 }); });
+}
+function finAdviceHtml(c){
+  const m = finMood(), rows = c.rows;
+  if(!rows.length) return '';
+  const worst = rows.reduce(function(a,r){ return r.sim.covered<a ? r.sim.covered : a; }, 1), next = rows[0], tips = [];
+  if(worst<0.7) tips.push('🔴 One of your EMIs is likely short. Keep <b>every rupee in your bank account</b> and don’t move money anywhere until it is paid.');
+  else if(worst<0.9) tips.push('🟠 Your EMI is probably covered but not certain. Keep spare cash in your bank account (instant access), not in funds.');
+  if(m && m.mood==='Choppy') tips.push('📰 Finance headlines look shaky right now. Money you need within 15 days should stay in savings / sweep FD — no shares, crypto or trading with it.');
+  else if(m && m.mood==='Calm') tips.push('📰 Finance headlines look calm, but that does not make 10-day price moves predictable. Stay with savings / sweep FD / liquid fund for EMI money.');
+  if(m && m.cut) tips.push('📉 Headlines mention interest-rate cuts — savings and FD rates may drift lower over the coming months. This barely changes a 10–15 day plan.');
+  if(m && m.hike) tips.push('📈 Headlines mention interest-rate hikes — your loan EMI may rise if it is on a floating rate. Keep a little extra buffer.');
+  if(worst>=0.9 && next.sim.safeSpare>=500){ const o = finParkingOptions(next.sim.safeSpare, next.days, c.plan).filter(function(x){ return x.interest>0; }).sort(function(a,b){ return b.interest-a.interest; })[0]; if(o) tips.push('✅ About <b>'+fmtMoney(next.sim.safeSpare)+'</b> is spare for “'+esc(next.name||'EMI')+'”. Best low-risk spot until '+esc(next.date)+': <b>'+esc(o.name)+'</b>, roughly <b>'+fmtMoney(o.interest)+'</b> (estimate).'); }
+  if(!tips.length) tips.push('Add your EMIs to get advice.');
+  let h = '<div style="background:var(--brand-light); border-radius:12px; padding:10px 12px; margin-bottom:10px;"><div style="font-weight:700; margin-bottom:4px;">💡 Smart advice today</div>'+tips.map(function(t){ return '<div style="font-size:0.85rem; margin-bottom:5px;">'+t+'</div>'; }).join('')+'</div>';
+  if(m){
+    h += '<div style="font-size:0.8rem; color:var(--muted); margin-bottom:4px;">📰 Money &amp; markets news (India, last 3 days) · mood: <b>'+m.mood+'</b></div>';
+    m.items.forEach(function(a){ h += '<div style="font-size:0.8rem; padding:4px 0; border-bottom:1px dashed var(--card-border);"><a href="'+esc(a.url)+'" target="_blank" rel="noopener" style="color:inherit;">'+esc(a.title)+'</a></div>'; });
+  } else { const fc = finLoad(); h += '<div style="font-size:0.8rem; color:var(--muted); margin-bottom:6px;">📰 '+(fc && fc.fail ? 'Finance news could not be loaded (free proxies busy) — will retry.' : 'Loading finance news…')+'</div>'; }
+  return h;
+}
+
+function emiAdd(){
+  openEditModal('Add EMI', [
+    { key:'name', label:'EMI name', placeholder:'e.g. Bike loan' },
+    { key:'amount', label:'EMI amount (₹)', type:'number' },
+    { key:'day', label:'Due day of the month (1–31)', type:'number', value:'5' }
+  ], function(v){
+    const amount = Number(v.amount), day = Math.round(Number(v.day));
+    if(!(amount>0) || !(day>=1 && day<=31)){ showBanner('Enter a valid amount and due day (1–31)'); return false; }
+    const p = loadEmiPlan(); p.emis.push({ id:uid(), name:(v.name||'').trim()||'EMI', amount:amount, day:day }); saveEmiPlan(p);
+    renderEmiPlanner(); showBanner('✅ EMI added'); afterDataChange();
+  });
+}
+function emiEdit(id){
+  const p = loadEmiPlan(), e = p.emis.find(function(x){ return String(x.id)===String(id); }); if(!e) return;
+  openEditModal('Edit EMI', [
+    { key:'name', label:'EMI name', value:e.name },
+    { key:'amount', label:'EMI amount (₹)', type:'number', value:String(e.amount) },
+    { key:'day', label:'Due day of the month (1–31)', type:'number', value:String(e.day) }
+  ], function(v){
+    const amount = Number(v.amount), day = Math.round(Number(v.day));
+    if(!(amount>0) || !(day>=1 && day<=31)){ showBanner('Enter a valid amount and due day (1–31)'); return false; }
+    e.name = (v.name||'').trim()||'EMI'; e.amount = amount; e.day = day; saveEmiPlan(p);
+    renderEmiPlanner(); showBanner('✅ EMI updated'); afterDataChange();
+  });
+}
+function emiDelete(id){
+  if(!confirm('Delete this EMI?')) return;
+  const p = loadEmiPlan(); p.emis = p.emis.filter(function(x){ return String(x.id)!==String(id); }); saveEmiPlan(p);
+  renderEmiPlanner(); afterDataChange();
+}
+function emiSettings(){
+  const p = loadEmiPlan();
+  openEditModal('Planner settings', [
+    { key:'buffer', label:'Safety buffer to always keep (₹)', type:'number', value:String(p.buffer) },
+    { key:'saveRate', label:'Savings account rate (% per year)', type:'number', value:String(p.saveRate) },
+    { key:'sweepRate', label:'Sweep / short FD rate (% per year — check your bank)', type:'number', value:String(p.sweepRate) },
+    { key:'rate', label:'Liquid / overnight fund return (% per year — approximate, not guaranteed)', type:'number', value:String(p.rate) },
+    { key:'income', label:'Backup: expected monthly profit (₹) — used only if you have no recorded days yet', type:'number', value:String(p.income||0) }
+  ], function(v){
+    p.buffer = Math.max(0, Number(v.buffer)||0); p.rate = Math.max(0, Number(v.rate)||0); p.saveRate = Math.max(0, Number(v.saveRate)||0); p.sweepRate = Math.max(0, Number(v.sweepRate)||0); p.income = Math.max(0, Number(v.income)||0); saveEmiPlan(p);
+    renderEmiPlanner(); afterDataChange();
+  });
+}
 
 /* ---------- news fetch: tries 3 free sources one after another ---------- */
 async function fcFetchText(url, ms){
