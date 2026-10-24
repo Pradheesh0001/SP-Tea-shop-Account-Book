@@ -1306,7 +1306,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v72-script-fix';
+const APP_VERSION = '2026-10-21-v73-research';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -4203,10 +4203,10 @@ function aiRenderChatView(kind){
     + '<div class="aiMsgs" id="ai-msgs-'+kind+'"></div>'
     + '<div id="ai-att-'+kind+'" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;"></div>'
     + '<textarea id="ai-in-'+kind+'" rows="3" placeholder="'+(isCode ? 'Describe the code you need, or paste code to explain / debug…' : 'Ask anything… (Tamil or English)')+'" style="margin:8px 0 8px;"></textarea>'
-    + '<div style="display:flex; gap:8px;"><button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="document.getElementById(\'ai-img-'+kind+'\').click()">🖼️</button><button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="aiAttachFile(\''+kind+'\')">📄</button>'
+    + '<div style="display:flex; gap:8px;"><button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="document.getElementById(\'ai-img-'+kind+'\').click()">🖼️</button><button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="aiAttachFile(\''+kind+'\')">📄</button>'+(kind==='chat' ? '<button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="aiResearch()">🔎</button>' : '')
     + '<input id="ai-img-'+kind+'" type="file" accept="image/*" class="hidden" onchange="aiAttachImage(event,\''+kind+'\')">'
     + '<button id="ai-send-'+kind+'" style="background:var(--brand); margin:0;" onclick="aiSend(\''+kind+'\')">➤ Send</button></div>'
-    + '<p class="hint" style="margin-top:8px;">🖼️ attach a picture (needs a vision model) · 📄 use one of your imported files as context</p></div>';
+    + '<p class="hint" style="margin-top:8px;">🖼️ attach a picture (needs a vision model) · 📄 use one of your imported files as context · 🔎 research online (asks you first)</p></div>';
   aiLoadChats(kind).then(()=>{ const st = aiSt[kind]; if(st.cur && !st.list.find(c=>c.id===st.cur.id)) st.cur = null; if(!st.cur && st.list.length) st.cur = st.list[0]; aiRenderChatHead(kind); aiRenderMsgs(kind); aiRenderAtts(kind); });
 }
 function aiRenderChatHead(kind){
@@ -4753,25 +4753,39 @@ async function aiToggleEnc(on){
   }
 }
 /* approved internet research: only the search words leave the device */
-async function aiResearch(){
-  openEditModal('Research a topic', [{ key:'q', label:'What should I look up? (only these words are sent)', placeholder:'e.g. Chennai tea consumption' }], async v=>{
+function aiResearch(){
+  openEditModal('🔎 Research online', [
+    { key:'q', label:'What should I look up? (only these words are sent)', placeholder:'e.g. tea shop business tips Tamil Nadu' },
+    { key:'lang', label:'Search Wikipedia in', type:'select', value:'en', options:[{ value:'en', label:'English' },{ value:'ta', label:'தமிழ் (Tamil)' }] }
+  ], function(v){
     const q = (v.q||'').trim(); if(!q){ showBanner('Type a topic'); return false; }
-    setTimeout(async ()=>{
-      const ok = await aiInternetApproved('en.wikipedia.org', 'Look up "'+q+'" on Wikipedia', 'your search words: <b>'+esc(q)+'</b>', 'your chats, files, memories, location');
-      if(!ok) return;
-      try{
-        const d = await fcFetchJson('https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch='+encodeURIComponent(q)+'&srlimit=5&format=json&origin=*', 10000);
-        const items = (d.query && d.query.search || []).map(x=>({ t:x.title, s:x.snippet.replace(/<[^>]+>/g,'') }));
-        if(!items.length){ showBanner('No results found'); return; }
-        const text = 'Research results for "'+q+'" (from Wikipedia):\n\n'+items.map((x,i)=>(i+1)+'. '+x.t+' — '+x.s).join('\n');
-        const c = await aiEnsureChat('chat'); c.messages.push({ role:'user', content:'Using these research notes, explain what matters for me:\n\n'+text, t:Date.now() }); await aiPut('chats', c); aiShow('chat');
-        showBanner('✅ Research added to your chat — tap Regenerate or Send to get the AI summary');
-      }catch(e){ showBanner('⚠️ Could not reach Wikipedia ('+(e.message||'error')+')'); }
-    }, 50);
+    setTimeout(()=>aiDoResearch(q, v.lang==='ta' ? 'ta' : 'en'), 50);
   });
 }
+async function aiDoResearch(q, lang){
+  if(!aiS().internetOn){
+    const on = await aiAsk('Turn on internet features?', '<p style="margin:0 0 8px;">Internet research is switched off. Turn it on?</p><p class="hint" style="text-align:left; margin:0;">You will still be asked before every task, and nothing is sent until you approve. You can switch it off again any time in Privacy &amp; Permissions.</p>', 'Turn on');
+    if(!on) return;
+    aiSaveS({ internetOn:true }); aiRenderStatus();
+  }
+  const host = lang+'.wikipedia.org';
+  const ok = await aiInternetApproved(host, 'Look up "'+q+'" on Wikipedia', 'your search words: <b>'+esc(q)+'</b>', 'your chats, files, memories, location');
+  if(!ok) return;
+  showBanner('🔎 Searching…');
+  try{
+    const d = await fcFetchJson('https://'+host+'/w/api.php?action=query&generator=search&gsrsearch='+encodeURIComponent(q)+'&gsrlimit=3&prop=extracts&exintro=1&explaintext=1&exchars=1200&format=json&origin=*', 12000);
+    const pages = Object.values((d.query && d.query.pages) || {}).sort((a,b)=>(a.index||0)-(b.index||0));
+    if(!pages.length){ showBanner('No results found — try other words'); return; }
+    const notes = pages.map((p,i)=>(i+1)+'. '+p.title+' — '+String(p.extract||'').replace(/\s+/g,' ').trim()+'\n   Source: https://'+host+'/?curid='+p.pageid).join('\n\n');
+    const prompt = 'Research question: '+q+'\n\nHere are notes from Wikipedia:\n\n'+notes+'\n\nUsing these notes, answer the question clearly (reply in the language I used), and list the sources you used. If the notes do not answer it, say so.';
+    const c = await aiEnsureChat('chat'); if(c.title==='New chat') c.title = '🔎 '+q.slice(0,34);
+    c.messages.push({ role:'user', content:prompt, t:Date.now() }); await aiPut('chats', c);
+    aiShow('chat'); await new Promise(r=>setTimeout(r, 450));
+    if(aiS().model){ showBanner('✅ Found '+pages.length+' result(s) — asking your AI to summarise'); await aiRun('chat', prompt); }
+    else showBanner('✅ Results added to your chat. Choose a model in Settings to get the AI summary.');
+  }catch(e){ showBanner('⚠️ Could not reach '+host+' ('+(e.message||'error')+')'); }
+}
 
-/* ---------- settings ---------- */
 async function aiRenderSettings(){
   const s = aiS(), body = document.getElementById('ai-body'), tok = await aiTokenGet().catch(()=>''), o = location.origin;
   body.innerHTML = '<div class="card"><h3 style="margin-top:0;">⚙️ AI connection</h3>'
