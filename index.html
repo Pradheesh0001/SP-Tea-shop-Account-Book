@@ -1268,7 +1268,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v70-smart-forecast';
+const APP_VERSION = '2026-10-24-v71-muhurtham-autofetch';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -3412,6 +3412,7 @@ async function fcRefresh(force){
     }catch(e){ st.news = fcData.news ? 'cached' : 'fail'; }
   }
   saveFcCache(cache); fcBusy = false; fcRenderAll();
+  if(cfg.gcal && !force){ try{ fcGcalFetch(false); }catch(e){} }
 }
 
 /* ---------- news tagging ---------- */
@@ -3764,8 +3765,8 @@ function fcRenderEvents(){
   const el = document.getElementById('fc-eventsCard'); if(!el) return;
   const cfg = loadFcCfg(); if(!cfg.configured){ el.classList.add('hidden'); return; } el.classList.remove('hidden');
   const t0 = todayStr(), list = loadFcEvents().filter(e=>e.date>=t0).sort((a,b)=>a.date<b.date?-1:1);
-  let h = '<div class="toprow" style="margin-bottom:8px;"><h3 style="margin:0;">📌 Calendar &amp; events</h3><div style="display:flex; gap:6px;"><button class="ghost" style="width:auto; margin:0; padding:7px 10px; font-size:0.78rem;" onclick="fcAddMuhurtham()">💍 Muhurtham days</button><button class="ghost" style="width:auto; margin:0; padding:7px 10px; font-size:0.78rem;" onclick="fcAddEvent()">+ Event</button></div></div>'
-    + '<p class="hint" style="text-align:left; margin-bottom:8px;">Add local events (temple festival, match, college function, wedding, exam week, road work…) and say how they change your crowd. Public holidays are added automatically. <b>Muhurtham (wedding) dates change every year</b> — tap “💍 Muhurtham days” and paste them from your panchangam / calendar, or import the .ics file below.</p>';
+  let h = '<div class="toprow" style="margin-bottom:8px;"><h3 style="margin:0;">📌 Calendar &amp; events</h3><div style="display:flex; gap:6px;"><button class="ghost" style="width:auto; margin:0; padding:7px 10px; font-size:0.78rem;" onclick="fcGcalFetch(true)">🔄 Auto-fetch</button><button class="ghost" style="width:auto; margin:0; padding:7px 10px; font-size:0.78rem;" onclick="fcAddMuhurtham()">💍 Muhurtham days</button><button class="ghost" style="width:auto; margin:0; padding:7px 10px; font-size:0.78rem;" onclick="fcAddEvent()">+ Event</button></div></div>'
+    + '<p class="hint" style="text-align:left; margin-bottom:8px;">Add local events (temple festival, match, college function, wedding, exam week, road work…) and say how they change your crowd. Public holidays are added automatically. <b>Muhurtham (wedding) dates change every year</b> — tap “💍 Muhurtham days” and paste them from your panchangam / calendar, or import the .ics file below. Tap <b>🔄 Auto-fetch</b> to pull muhurtham days from your Google Calendar automatically (add a Tamil panchangam calendar to Google Calendar first, and it refreshes by itself each time you open Forecast).</p>';
   const hols = []; Object.keys(fcData.holidays).forEach(k=>{ (fcData.holidays[k]||[]).forEach(x=>{ if(x.date>=t0 && x.date<=addDays(t0,30)) hols.push(x); }); });
   hols.sort((a,b)=>a.date<b.date?-1:1).slice(0,5).forEach(x=>{ h += '<div class="paidRow" style="font-size:0.82rem;"><span>🎉 '+esc(x.name)+'</span><span style="color:var(--muted);">'+esc(x.date)+'</span></div>'; });
   if(!list.length) h += '<p class="hint" style="text-align:left;">No events added yet.</p>';
@@ -3803,6 +3804,69 @@ function fcDeleteEvent(id){
     const dd = loadFcEvtDeleted(); delete dd[String(id)]; localStorage.setItem(FC_EVT_DEL_KEY, JSON.stringify(dd));
     fcRenderAll(); afterDataChange();
   });
+}
+
+/* ---------- auto-fetch muhurtham days from Google Calendar ---------- */
+const FC_MUR_RE = /muhurtham|muhurtam|muhurat|muhurta|suba\s*muhurt|subha\s*muhurt|wedding|marriage|kalyanam|thirumanam|vivaah|முகூர்த்|முகூர்த|திருமண|கல்யாண/i;
+let gCalToken = null, gCalTokenAt = 0;
+function fcGcalGetToken(interactive){
+  return new Promise(function(resolve){
+    if(gCalToken && Date.now()-gCalTokenAt < 50*60000) return resolve(gCalToken);
+    if(!window.google || !google.accounts){ if(interactive) showBanner('Google sign-in still loading, try again in a moment'); return resolve(null); }
+    try{
+      const tc = google.accounts.oauth2.initTokenClient({
+        client_id: BAKED_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/calendar.readonly',
+        callback: function(r){ if(r && r.access_token){ gCalToken = r.access_token; gCalTokenAt = Date.now(); resolve(gCalToken); } else resolve(null); },
+        error_callback: function(){ resolve(null); }
+      });
+      tc.requestAccessToken(interactive ? {} : { prompt:'' });
+    }catch(e){ resolve(null); }
+  });
+}
+async function fcGcalFetch(interactive){
+  const tok = await fcGcalGetToken(interactive);
+  if(!tok){ if(interactive) showBanner('⚠️ Google Calendar access was not given'); return 0; }
+  const H = { headers:{ 'Authorization':'Bearer '+tok } };
+  try{
+    const cl = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=100', H);
+    if(!cl.ok){
+      if(interactive) showBanner(cl.status===403 ? '⚠️ Google Calendar API is not enabled for this app' : '⚠️ Could not read calendars (HTTP '+cl.status+')');
+      return 0;
+    }
+    const cals = (await cl.json()).items || [];
+    const tMin = new Date(addDays(todayStr(),-1)+'T00:00:00').toISOString(), tMax = new Date(addDays(todayStr(),150)+'T00:00:00').toISOString();
+    const l = loadFcEvents(); let n = 0, seen = 0;
+    for(const c of cals){
+      let page = null, guard = 0;
+      do{
+        const u = 'https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(c.id)+'/events?singleEvents=true&orderBy=startTime&maxResults=250&timeMin='+encodeURIComponent(tMin)+'&timeMax='+encodeURIComponent(tMax)+(page?'&pageToken='+page:'');
+        const r = await fetch(u, H); if(!r.ok) break;
+        const d = await r.json();
+        (d.items||[]).forEach(function(ev){
+          const title = (ev.summary||'').trim(); if(!title || !FC_MUR_RE.test(title)) return;
+          const s = (ev.start && (ev.start.date || (ev.start.dateTime||'').slice(0,10))) || '';
+          let e = (ev.end && (ev.end.date || (ev.end.dateTime||'').slice(0,10))) || s;
+          if(!s) return;
+          if(ev.start && ev.start.date && e>s) e = addDays(e,-1);
+          if(e<s) e = s;
+          let dd = s, k = 0;
+          while(dd<=e && k<5){
+            seen++;
+            const id = 'mur-'+dd;
+            if(dd>=addDays(todayStr(),-1) && !l.find(function(x){return x.id===id;}) && !loadFcEvtDeleted()[id]){ l.push({ id:id, title:'Muhurtham day', date:dd, kind:'muhurtham', impact:'auto', source:'gcal', updatedAt:Date.now() }); n++; }
+            dd = addDays(dd,1); k++;
+          }
+        });
+        page = d.nextPageToken; guard++;
+      }while(page && guard<6);
+    }
+    const cfg = loadFcCfg(); cfg.gcal = true; saveFcCfg(cfg);
+    if(n){ saveFcEvents(l); afterDataChange(); }
+    fcRenderAll();
+    if(interactive) showBanner(n ? '💍 Auto-added '+n+' muhurtham day(s) from your calendar' : (seen ? 'Muhurtham days are already up to date' : 'No muhurtham / wedding days found in your calendars for the next 150 days'));
+    return n;
+  }catch(e){ if(interactive) showBanner('⚠️ Calendar fetch failed — check internet'); return 0; }
 }
 function fcParseIcs(text){
   const t = text.replace(/\r?\n[ \t]/g,''), out = [], lo = addDays(todayStr(),-1), hi = addDays(todayStr(),120);
