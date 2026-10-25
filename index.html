@@ -1306,7 +1306,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v74-ai-settings';
+const APP_VERSION = '2026-10-21-v75-online-options';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -3991,7 +3991,7 @@ async function aiTokenGet(){
 
 /* ---------- settings ---------- */
 function aiS(){
-  const d = { host:'http://localhost:11434', kind:'ollama', model:'', temp:0.7, system:AI_SYS_DEFAULT, memoryOn:true, imgHost:'http://127.0.0.1:7860', internetOn:false, authHosts:[] };
+  const d = { host:'http://localhost:11434', kind:'ollama', model:'', temp:0.7, system:AI_SYS_DEFAULT, memoryOn:true, imgHost:'http://127.0.0.1:7860', internetOn:false, authHosts:[], imgSource:'local' };
   try{ return Object.assign(d, JSON.parse(localStorage.getItem('udhar_ai_settings')||'{}')); }catch(e){ return d; }
 }
 function aiSaveS(p){ localStorage.setItem('udhar_ai_settings', JSON.stringify(Object.assign(aiS(), p))); }
@@ -4385,7 +4385,10 @@ function aiOpt(list, cur){ return list.map(o=>'<option value="'+o[0]+'"'+(String
 function aiRenderImage(){
   const f = aiImgForm, body = document.getElementById('ai-body');
   body.innerHTML = '<div class="card"><h3 style="margin-top:0;">🎨 Image Studio</h3>'
-    + '<p class="hint" style="text-align:left; margin-bottom:10px;">Pictures are made by the Stable Diffusion program on your own computer (set its address in Settings). Nothing goes to the internet.</p>'
+    + '<label>Where should pictures be made?</label><select id="ai-i-source" onchange="aiSaveS({imgSource:this.value}); aiRenderImage();"><option value="local"'+(aiS().imgSource!=='online'?' selected':'')+'>On my own computer (private)</option><option value="online"'+(aiS().imgSource==='online'?' selected':'')+'>Online free service (no computer needed)</option></select>'
+    + (aiS().imgSource==='online'
+      ? '<p class="hint" style="text-align:left; margin-bottom:10px;">🌐 Your picture description is sent over the internet to <b>image.pollinations.ai</b>, a free third-party service, and you are asked first every time. Do not put private details in the description. The "avoid" box and editing from a picture are not available online.</p>'
+      : '<p class="hint" style="text-align:left; margin-bottom:10px;">Pictures are made by the Stable Diffusion program on your own computer (set its address in Settings). Nothing goes to the internet.</p>')
     + '<label>Describe the picture</label><textarea id="ai-i-prompt" rows="3" placeholder="e.g. a steaming cup of tea on a wooden table at sunrise">'+esc(f.prompt)+'</textarea>'
     + '<label>Avoid (negative prompt)</label><input id="ai-i-neg" value="'+esc(f.neg)+'">'
     + '<div class="twocol"><div><label>Style</label><select id="ai-i-style">'+aiOpt([['none','None'],['realistic','Realistic'],['cinematic','Cinematic'],['cartoon','Cartoon'],['anime','Anime'],['illustration','Illustration'],['fantasy','Fantasy']], f.style)+'</select></div>'
@@ -4425,6 +4428,12 @@ async function aiImgGenerate(){
   const payload = { prompt, negative_prompt:f.neg, steps:Number(f.quality), cfg_scale:Number(f.cfg)||7, width:wh[0], height:wh[1], seed: f.seed!=='' ? Number(f.seed) : -1, batch_size:Number(f.count)||1, n_iter:1 };
   let path = '/sdapi/v1/txt2img';
   if(aiImgSrc){ path = '/sdapi/v1/img2img'; payload.init_images = [aiImgSrc.b64]; payload.denoising_strength = Number(f.denoise)||0.55; }
+  if(aiS().imgSource==='online'){
+    aiImgBusy = true; go.disabled = true; st.textContent = '⏳ Making your picture online…';
+    try{ const done = await aiImgOnline(f, wh, prompt); st.textContent = done ? '✅ Done' : ''; aiRenderImgOut(); }
+    catch(e){ st.textContent = '⚠️ '+(e.message||'Could not make the picture online.'); }
+    aiImgBusy = false; go.disabled = false; return;
+  }
   aiImgBusy = true; go.disabled = true; st.textContent = '⏳ Generating on your computer… this can take a while.';
   try{
     const d = await aiImgCall(path, payload); let seeds = [];
@@ -4434,6 +4443,24 @@ async function aiImgGenerate(){
   }catch(e){ st.textContent = '⚠️ '+aiConnHelp(e.message||'Could not reach the image host.'); }
   aiImgBusy = false; go.disabled = false;
 }
+async function aiImgOnline(f, wh, prompt){
+  if(aiImgSrc){ showBanner('Editing from a picture needs your own computer — remove the starting picture first'); return false; }
+  if(!aiS().internetOn){
+    const on = await aiAsk('Turn on internet features?', '<p style="margin:0 0 8px;">Online pictures need internet features. Turn them on?</p><p class="hint" style="text-align:left; margin:0;">You will still be asked before every picture. Switch it off any time in Privacy &amp; Permissions.</p>', 'Turn on');
+    if(!on) return false; aiSaveS({ internetOn:true }); aiRenderStatus();
+  }
+  const ok = await aiInternetApproved('image.pollinations.ai', 'Make a picture with a free online service', 'your picture description: <b>'+esc(prompt)+'</b>', 'your chats, files, memories, location');
+  if(!ok) return false;
+  const n = Math.max(1, Math.min(4, Number(f.count)||1)), base = f.seed!=='' ? Number(f.seed) : Math.floor(Math.random()*1000000), out = [];
+  for(let i=0;i<n;i++){
+    const seed = base+i, url = 'https://image.pollinations.ai/prompt/'+encodeURIComponent(prompt)+'?width='+wh[0]+'&height='+wh[1]+'&seed='+seed+'&nologo=true';
+    try{
+      const r = await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status);
+      out.push({ id:uid(), b64:b64(await r.arrayBuffer()), prompt:f.prompt.trim(), style:f.style, w:wh[0], h:wh[1], seed });
+    }catch(e){ out.push({ id:uid(), url, prompt:f.prompt.trim(), style:f.style, w:wh[0], h:wh[1], seed }); }
+  }
+  aiImgOut = out; return true;
+}
 function aiRenderImgOut(){
   const el = document.getElementById('ai-i-out'); if(!el) return;
   if(!aiImgOut.length){ el.style.display = 'none'; return; }
@@ -4442,8 +4469,12 @@ function aiRenderImgOut(){
   const g = document.getElementById('ai-i-grid');
   aiImgOut.forEach((im,i)=>{
     const d = document.createElement('div');
-    d.innerHTML = '<img src="data:image/png;base64,'+im.b64+'" alt=""><div class="acts" style="display:flex; gap:5px; flex-wrap:wrap; margin-top:5px;">'
-      + '<button type="button" onclick="aiImgSave('+i+')">💾 Save</button><button type="button" onclick="aiImgDl('+i+')">⬇️</button><button type="button" onclick="aiImgVar('+i+')">🔁 Variation</button><button type="button" onclick="aiImgEditFrom('+i+')">✏️ Edit</button><button type="button" onclick="aiImgToVideo('+i+')">🎬</button></div>';
+    if(im.b64){
+      d.innerHTML = '<img src="data:image/png;base64,'+im.b64+'" alt=""><div class="acts" style="display:flex; gap:5px; flex-wrap:wrap; margin-top:5px;">'
+        + '<button type="button" onclick="aiImgSave('+i+')">💾 Save</button><button type="button" onclick="aiImgDl('+i+')">⬇️</button><button type="button" onclick="aiImgVar('+i+')">🔁 Variation</button><button type="button" onclick="aiImgEditFrom('+i+')">✏️ Edit</button><button type="button" onclick="aiImgToVideo('+i+')">🎬</button></div>';
+    } else {
+      d.innerHTML = '<img src="'+esc(im.url)+'" alt=""><div class="hint" style="text-align:left; margin-top:4px;">Shown from the online service. Press and hold the picture to save it to your phone.</div>';
+    }
     d.querySelectorAll('button').forEach(b=>{ b.style.cssText = 'width:auto; margin:0; padding:4px 8px; font-size:0.72rem; background:transparent; color:var(--text); border:1px solid var(--card-border); box-shadow:none;'; });
     g.appendChild(d);
   });
@@ -4799,6 +4830,7 @@ async function aiRenderSettings(){
     + '<b>2.</b> Start its server. <u>LM Studio:</u> open the <i>Developer</i> tab → turn ON <i>Start server</i> and <i>Enable CORS</i>. <u>Ollama:</u> it starts by itself.<br>'
     + '<b>3.</b> Open <b>this app in Chrome on that same computer</b>, tap your program below, then tap <b>Test connection</b> and pick a model.</div>'
     + '<div style="display:flex; gap:8px; margin-top:12px;"><button style="background:var(--brand); margin:0; padding:10px; font-size:0.85rem;" onclick="aiPreset(\'lmstudio\')">I use LM Studio</button><button style="background:var(--brand); margin:0; padding:10px; font-size:0.85rem;" onclick="aiPreset(\'ollama\')">I use Ollama</button></div>'
+    + '<button class="ghost" style="margin-top:8px; padding:10px; font-size:0.85rem;" onclick="aiPreset(\'online\')">📱 I have no computer — free online AI</button>'
     + '<p class="hint" style="text-align:left; margin-top:10px;">📱 On a phone this will not work with <b>localhost</b> — a phone cannot see your computer\'s localhost. Use the computer\'s Chrome, or see “Using it from a phone” at the bottom.</p></div>'
     + '<div class="card"><h3 style="margin-top:0;">⚙️ AI connection</h3>'
     + '<label>Type of AI program</label><select id="ai-s-kind"><option value="ollama"'+(s.kind==='ollama'?' selected':'')+'>Ollama</option><option value="openai"'+(s.kind==='openai'?' selected':'')+'>OpenAI-compatible (LM Studio, llama.cpp, vLLM…)</option></select>'
@@ -4825,7 +4857,17 @@ async function aiSaveSettings(){
   aiSaveS({ kind:g('ai-s-kind'), host:g('ai-s-host').trim(), model:g('ai-s-model'), temp:Number(g('ai-s-temp'))||0.7, system:g('ai-s-sys').trim() || AI_SYS_DEFAULT, imgHost:g('ai-s-img').trim() });
   const tv = g('ai-s-tok'); if(tv) await aiTokenSet(tv); showBanner('✅ Settings saved'); aiRenderStatus();
 }
+async function aiPresetOnline(){
+  const ok = await aiAsk('Free online AI (Groq)', '<p style="margin:0 0 8px;"><b>⚠️ Not private:</b> your chat messages will be sent over the internet to <b>api.groq.com</b>. Do not type secrets.</p>'
+    + '<p style="margin:0 0 6px;"><b>Do this:</b></p><p style="margin:0 0 4px;">1. On your phone open <b>console.groq.com</b>, sign up (free) and create an <b>API key</b>.</p><p style="margin:0 0 4px;">2. Copy the key and paste it in the <b>Access token</b> box below.</p><p style="margin:0;">3. Tap <b>Test connection</b>, then pick a model (for example <i>llama-3.3-70b-versatile</i>) and <b>Save settings</b>.</p>', 'Authorise & continue');
+  if(!ok) return;
+  document.getElementById('ai-s-kind').value = 'openai'; document.getElementById('ai-s-host').value = 'https://api.groq.com/openai'; document.getElementById('ai-s-tok').value = '';
+  const l = aiS().authHosts.filter(x=>x!=='https://api.groq.com'); l.push('https://api.groq.com'); aiSaveS({ authHosts:l });
+  showBanner('✅ Address filled. Now paste your Groq key in the Access token box, then tap Test connection');
+  const t = document.getElementById('ai-s-tok'); if(t && t.scrollIntoView) t.scrollIntoView({ behavior:'smooth', block:'center' });
+}
 function aiPreset(kind){
+  if(kind==='online'){ aiPresetOnline(); return; }
   const lm = kind==='lmstudio';
   document.getElementById('ai-s-kind').value = lm ? 'openai' : 'ollama';
   document.getElementById('ai-s-host').value = lm ? 'http://localhost:1234' : 'http://localhost:11434';
