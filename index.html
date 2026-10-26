@@ -1306,7 +1306,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v75-online-options';
+const APP_VERSION = '2026-10-21-v76-default-online';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -3991,8 +3991,10 @@ async function aiTokenGet(){
 
 /* ---------- settings ---------- */
 function aiS(){
-  const d = { host:'http://localhost:11434', kind:'ollama', model:'', temp:0.7, system:AI_SYS_DEFAULT, memoryOn:true, imgHost:'http://127.0.0.1:7860', internetOn:false, authHosts:[], imgSource:'local' };
-  try{ return Object.assign(d, JSON.parse(localStorage.getItem('udhar_ai_settings')||'{}')); }catch(e){ return d; }
+  const d = { provider:'free', host:'http://localhost:11434', kind:'ollama', model:'openai', temp:0.7, system:AI_SYS_DEFAULT, memoryOn:true, imgHost:'http://127.0.0.1:7860', internetOn:true, askEachTime:false, authHosts:[], imgSource:'online' };
+  let o = {}; try{ o = JSON.parse(localStorage.getItem('udhar_ai_settings')||'{}') || {}; }catch(e){ o = {}; }
+  if(Object.keys(o).length && !o.provider){ o = { provider:'free' }; try{ localStorage.setItem('udhar_ai_settings', JSON.stringify(o)); }catch(e){} }
+  return Object.assign(d, o);
 }
 function aiSaveS(p){ localStorage.setItem('udhar_ai_settings', JSON.stringify(Object.assign(aiS(), p))); }
 
@@ -4039,6 +4041,7 @@ function aiAskDone(v){
 /* every internet action: feature switch + explanation + approval each time */
 async function aiInternetApproved(host, purpose, sendsHtml, notSendsHtml){
   if(!aiS().internetOn){ showBanner('Internet features are switched off. Turn them on in Privacy & Permissions first.'); return false; }
+  if(aiS().askEachTime===false){ aiLog(host, purpose, sendsHtml.replace(/<[^>]+>/g,'')); return true; }
   const ok = await aiAsk('Allow internet access?',
     '<p style="margin:0 0 8px;">This one task needs to contact:</p><p style="margin:0 0 8px; font-weight:700;">🌐 '+esc(host)+'</p>'
     + '<p style="margin:0 0 4px;"><b>Purpose:</b> '+esc(purpose)+'</p><p style="margin:0 0 4px;"><b>What will be sent:</b> '+sendsHtml+'</p>'
@@ -4127,6 +4130,7 @@ function aiToWire(msgs, kind){
   });
 }
 async function aiStream(messages, onTok, signal){
+  if(aiS().provider==='free') return aiStreamFree(messages, onTok, signal);
   const s = aiS(), chk = aiCanConnect(s.host); if(!chk.ok) throw new Error(chk.reason);
   const base = s.host.replace(/\/+$/,''), hdr = await aiHeaders(), wire = aiToWire(messages, s.kind);
   aiLog(new URL(base).host, 'Chat with your AI model', 'your messages go to your own AI host');
@@ -4151,6 +4155,7 @@ async function aiStream(messages, onTok, signal){
   }
 }
 async function aiListModels(){
+  if(aiS().provider==='free') return ['openai'];
   const s = aiS(), chk = aiCanConnect(s.host); if(!chk.ok) throw new Error(chk.reason);
   const base = s.host.replace(/\/+$/,''), hdr = await aiHeaders();
   aiLog(new URL(base).host, 'List installed models', 'nothing private');
@@ -4159,8 +4164,107 @@ async function aiListModels(){
   const j = await r.json();
   return s.kind==='ollama' ? (j.models||[]).map(m=>m.name) : (j.data||[]).map(m=>m.id);
 }
+
+/* ---------- default: free online AI (no computer, no key) with automatic fallbacks ---------- */
+const FREE_CHAT = [
+  { name:'text.pollinations.ai/openai', kind:'post', url:'https://text.pollinations.ai/openai' },
+  { name:'gen.pollinations.ai', kind:'get', url:'https://gen.pollinations.ai/text/' },
+  { name:'text.pollinations.ai', kind:'get', url:'https://text.pollinations.ai/' }
+];
+const AI_IMG_ENDPOINTS = [
+  (p,w,h,sd)=>'https://image.pollinations.ai/prompt/'+encodeURIComponent(p)+'?width='+w+'&height='+h+'&seed='+sd+'&nologo=true',
+  (p,w,h,sd)=>'https://gen.pollinations.ai/image/'+encodeURIComponent(p)+'?width='+w+'&height='+h+'&seed='+sd+'&nologo=true'
+];
+function aiFlatten(msgs){
+  let sys = ''; const body = [];
+  msgs.forEach(m=>{ if(m.role==='system') sys = m.content; else body.push((m.role==='user' ? 'User: ' : 'Assistant: ') + m.content); });
+  let t = (sys ? sys.slice(0,1500)+'\n\n' : '') + body.join('\n\n') + '\n\nAssistant:';
+  if(t.length>5500) t = t.slice(t.length-5500);
+  return t;
+}
+async function aiFreeCall(ep, messages, onTok, signal){
+  const s = aiS(), model = s.model || 'openai';
+  aiLog(new URL(ep.url).host, 'Chat with the free online AI', 'your messages (sent over the internet)');
+  if(ep.kind==='post'){
+    const r = await fetch(ep.url, { method:'POST', headers:{ 'Content-Type':'application/json' }, signal, body:JSON.stringify({ model, messages:aiToWire(messages,'openai'), stream:true, temperature:Number(s.temp) }) });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const ct = (r.headers && r.headers.get && r.headers.get('content-type')) || '';
+    if(/json/i.test(ct) && !/event-stream/i.test(ct)){
+      const j = await r.json(), c0 = j.choices && j.choices[0], t = c0 && ((c0.message && c0.message.content) || (c0.delta && c0.delta.content));
+      if(!t) throw new Error('empty answer'); onTok(t); return;
+    }
+    let got = false;
+    await aiReadLines(r, line=>{
+      if(line.indexOf('data:')!==0) return; const d = line.slice(5).trim(); if(d==='[DONE]') return;
+      let j; try{ j = JSON.parse(d); }catch(e){ return; }
+      const t = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content; if(t){ got = true; onTok(t); }
+    });
+    if(!got) throw new Error('no text came back');
+  } else {
+    const r = await fetch(ep.url + encodeURIComponent(aiFlatten(messages)) + '?model=' + encodeURIComponent(model), { signal });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const t = await r.text(); if(!t.trim()) throw new Error('empty answer'); onTok(t);
+  }
+}
+async function aiStreamFree(messages, onTok, signal){
+  let emitted = false, last = '';
+  for(const ep of FREE_CHAT){
+    const ctl = new AbortController(); let timer = setTimeout(()=>ctl.abort(), 30000);
+    const onAbort = ()=>ctl.abort(); if(signal){ if(signal.aborted) throw Object.assign(new Error('aborted'), { name:'AbortError' }); signal.addEventListener('abort', onAbort); }
+    try{
+      await aiFreeCall(ep, messages, t=>{ emitted = true; clearTimeout(timer); timer = setTimeout(()=>ctl.abort(), 30000); onTok(t); }, ctl.signal);
+      clearTimeout(timer); if(signal) signal.removeEventListener('abort', onAbort); return;
+    }catch(e){
+      clearTimeout(timer); if(signal) signal.removeEventListener('abort', onAbort);
+      if(signal && signal.aborted) throw Object.assign(new Error('aborted'), { name:'AbortError' });
+      if(emitted) throw e;
+      last = ep.name+' — '+(e.name==='AbortError' ? 'too slow' : (e.message||'failed'));
+    }
+  }
+  throw new Error('The free online AI could not be reached ('+last+'). Check your internet connection.');
+}
+function aiImgProbe(url, ms){
+  return new Promise(res=>{ const im = new Image(); const t = setTimeout(()=>{ im.src = ''; res(false); }, ms||20000); im.onload = ()=>{ clearTimeout(t); res(true); }; im.onerror = ()=>{ clearTimeout(t); res(false); }; im.src = url; });
+}
+async function aiDiagnose(){
+  const out = document.getElementById('ai-s-diag'); if(!out) return;
+  out.textContent = '⏳ Checking… this can take up to a minute.'; const L = [];
+  L.push((navigator.onLine===false ? '❌' : '✅')+' Internet: '+(navigator.onLine===false ? 'NOT connected' : 'connected'));
+  if(aiS().provider==='free'){
+    let anyChat = false;
+    for(const ep of FREE_CHAT){
+      const ctl = new AbortController(), tm = setTimeout(()=>ctl.abort(), 20000); let txt = '';
+      try{ await aiFreeCall(ep, [{ role:'user', content:'Reply with the single word OK' }], t=>{ txt += t; }, ctl.signal); L.push('✅ Chat: '+ep.name+' answered'); anyChat = true; clearTimeout(tm); break; }
+      catch(e){ clearTimeout(tm); L.push('❌ Chat: '+ep.name+' — '+(e.name==='AbortError'?'too slow':(e.message||'failed'))); }
+    }
+    for(const fn of AI_IMG_ENDPOINTS){ const u = fn('tea cup',64,64,1); const ok = await aiImgProbe(u, 25000); L.push((ok?'✅':'❌')+' Pictures: '+new URL(u).host+(ok?' works':' did not load')); if(ok) break; }
+    if(!anyChat) L.push('\n👉 The no-setup chat service is not answering. Use a free key instead: choose “My own AI program or another service”, tap “I have no computer — free online AI”, and follow the 3 steps (Groq).');
+  } else {
+    try{ const m = await aiListModels(); L.push('✅ Your AI program answered ('+m.length+' model(s))'); }catch(e){ L.push('❌ Your AI program: '+(e.message||'failed')); }
+  }
+  out.textContent = L.join('\n');
+}
+function aiTopCard(){
+  const s = aiS();
+  return '<div class="card"><h3 style="margin-top:0;">🌐 AI source</h3>'
+    + '<select id="ai-s-prov" onchange="aiSetProvider(this.value)"><option value="free"'+(s.provider==='free'?' selected':'')+'>Free online AI — works now, no setup (default)</option><option value="custom"'+(s.provider!=='free'?' selected':'')+'>My own AI program or another service (LM Studio, Ollama, Groq…)</option></select>'
+    + (s.provider==='free' ? '<p class="hint" style="text-align:left; margin:-6px 0 10px;">No computer, no key, nothing to install. Your messages and picture descriptions go over the internet to a free online service, so <b>do not type secrets</b>.</p>' : '')
+    + '<div style="display:flex; gap:8px;"><button style="background:var(--brand); margin:0; padding:10px; font-size:0.85rem;" onclick="aiDiagnose()">🩺 Check connection</button><button class="ghost" style="margin:0; padding:10px; font-size:0.85rem;" onclick="aiResetDefaults()">↩ Reset to default</button></div>'
+    + '<div id="ai-s-diag" class="hint" style="text-align:left; white-space:pre-wrap; margin-top:10px;"></div></div>';
+}
+function aiSetProvider(v){
+  if(v==='free') aiSaveS({ provider:'free', internetOn:true, imgSource:'online', model:'openai' });
+  else aiSaveS({ provider:'custom', model:'', imgSource:'local', internetOn:false });
+  aiRenderStatus(); aiRenderSettings();
+}
+async function aiResetDefaults(){
+  if(!confirm('Reset all My Personal AI settings to the defaults? (Your chats, files and pictures are kept.)')) return;
+  localStorage.removeItem('udhar_ai_settings'); await aiTokenSet(''); aiRenderStatus(); aiRenderSettings(); showBanner('↩ Settings reset — Free online AI is on');
+}
+
 function aiConnHelp(msg){
   const o = location.origin, st = aiS();
+  if(st.provider==='free') return msg + '\n\nTap Settings → Check connection to see which part is not working.';
   const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent||'');
   const local = aiHostClass(st.host)==='device' || aiHostClass(st.imgHost)==='device';
   const phone = (mobile && local) ? '\n\n📱 You are on a phone. "localhost" means THIS PHONE, not your computer, so your AI program cannot be found. Open this app in Chrome on the computer where LM Studio / Ollama is running — or reach the computer through an https link (see Settings → Setup help).' : '';
@@ -4209,7 +4313,7 @@ function aiRenderChatView(kind){
     + '<div style="display:flex; gap:8px;"><button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="document.getElementById(\'ai-img-'+kind+'\').click()">🖼️</button><button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="aiAttachFile(\''+kind+'\')">📄</button>'+(kind==='chat' ? '<button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="aiResearch()">🔎</button>' : '')
     + '<input id="ai-img-'+kind+'" type="file" accept="image/*" class="hidden" onchange="aiAttachImage(event,\''+kind+'\')">'
     + '<button id="ai-send-'+kind+'" style="background:var(--brand); margin:0;" onclick="aiSend(\''+kind+'\')">➤ Send</button></div>'
-    + '<p class="hint" style="margin-top:8px;">🖼️ attach a picture (needs a vision model) · 📄 use one of your imported files as context · 🔎 research online (asks you first)</p></div>';
+    + '<p class="hint" style="margin-top:8px;">🖼️ attach a picture (needs a vision model) · 📄 use one of your imported files as context · 🔎 research online</p>'+(aiS().provider==='free' ? '<p class="hint" style="margin-top:4px;">🌐 Online mode — messages go to a free online AI service. Not private.</p>' : '')+'</div>';
   aiLoadChats(kind).then(()=>{ const st = aiSt[kind]; if(st.cur && !st.list.find(c=>c.id===st.cur.id)) st.cur = null; if(!st.cur && st.list.length) st.cur = st.list[0]; aiRenderChatHead(kind); aiRenderMsgs(kind); aiRenderAtts(kind); });
 }
 function aiRenderChatHead(kind){
@@ -4446,18 +4550,19 @@ async function aiImgGenerate(){
 async function aiImgOnline(f, wh, prompt){
   if(aiImgSrc){ showBanner('Editing from a picture needs your own computer — remove the starting picture first'); return false; }
   if(!aiS().internetOn){
-    const on = await aiAsk('Turn on internet features?', '<p style="margin:0 0 8px;">Online pictures need internet features. Turn them on?</p><p class="hint" style="text-align:left; margin:0;">You will still be asked before every picture. Switch it off any time in Privacy &amp; Permissions.</p>', 'Turn on');
+    const on = await aiAsk('Turn on internet features?', '<p style="margin:0 0 8px;">Online pictures need internet features. Turn them on?</p>', 'Turn on');
     if(!on) return false; aiSaveS({ internetOn:true }); aiRenderStatus();
   }
   const ok = await aiInternetApproved('image.pollinations.ai', 'Make a picture with a free online service', 'your picture description: <b>'+esc(prompt)+'</b>', 'your chats, files, memories, location');
   if(!ok) return false;
   const n = Math.max(1, Math.min(4, Number(f.count)||1)), base = f.seed!=='' ? Number(f.seed) : Math.floor(Math.random()*1000000), out = [];
   for(let i=0;i<n;i++){
-    const seed = base+i, url = 'https://image.pollinations.ai/prompt/'+encodeURIComponent(prompt)+'?width='+wh[0]+'&height='+wh[1]+'&seed='+seed+'&nologo=true';
-    try{
-      const r = await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status);
-      out.push({ id:uid(), b64:b64(await r.arrayBuffer()), prompt:f.prompt.trim(), style:f.style, w:wh[0], h:wh[1], seed });
-    }catch(e){ out.push({ id:uid(), url, prompt:f.prompt.trim(), style:f.style, w:wh[0], h:wh[1], seed }); }
+    const seed = base+i, urls = AI_IMG_ENDPOINTS.map(fn=>fn(prompt, wh[0], wh[1], seed));
+    let item = null;
+    for(const u of urls){
+      try{ const r = await fetch(u); if(!r.ok) throw new Error('HTTP '+r.status); const buf = await r.arrayBuffer(); if(buf.byteLength<2000) throw new Error('too small'); item = { id:uid(), b64:b64(buf), prompt:f.prompt.trim(), style:f.style, w:wh[0], h:wh[1], seed }; break; }catch(e){}
+    }
+    out.push(item || { id:uid(), urls, prompt:f.prompt.trim(), style:f.style, w:wh[0], h:wh[1], seed });
   }
   aiImgOut = out; return true;
 }
@@ -4473,7 +4578,10 @@ function aiRenderImgOut(){
       d.innerHTML = '<img src="data:image/png;base64,'+im.b64+'" alt=""><div class="acts" style="display:flex; gap:5px; flex-wrap:wrap; margin-top:5px;">'
         + '<button type="button" onclick="aiImgSave('+i+')">💾 Save</button><button type="button" onclick="aiImgDl('+i+')">⬇️</button><button type="button" onclick="aiImgVar('+i+')">🔁 Variation</button><button type="button" onclick="aiImgEditFrom('+i+')">✏️ Edit</button><button type="button" onclick="aiImgToVideo('+i+')">🎬</button></div>';
     } else {
-      d.innerHTML = '<img src="'+esc(im.url)+'" alt=""><div class="hint" style="text-align:left; margin-top:4px;">Shown from the online service. Press and hold the picture to save it to your phone.</div>';
+      const img = document.createElement('img'); let k = 0; img.src = im.urls[0];
+      img.onerror = ()=>{ k++; if(k<im.urls.length) img.src = im.urls[k]; else { img.alt = '⚠️ The picture could not be loaded — try again in a moment.'; } };
+      d.appendChild(img);
+      const hn = document.createElement('div'); hn.className = 'hint'; hn.style.cssText = 'text-align:left; margin-top:4px;'; hn.textContent = 'Shown from the online service. Press and hold the picture to save it to your phone.'; d.appendChild(hn);
     }
     d.querySelectorAll('button').forEach(b=>{ b.style.cssText = 'width:auto; margin:0; padding:4px 8px; font-size:0.72rem; background:transparent; color:var(--text); border:1px solid var(--card-border); box-shadow:none;'; });
     g.appendChild(d);
@@ -4732,10 +4840,11 @@ async function aiRenderPrivacy(){
     + '<div class="paidRow"><span>🔒 Internet features</span><b style="color:'+(s.internetOn?'var(--owe)':'var(--paid)')+';">'+(s.internetOn?'ON (asks every time)':'OFF — offline')+'</b></div>'
     + '<div class="paidRow"><span>💬 Chat host</span><b>'+esc(aiHostLabel(cls))+'</b></div><div class="paidRow"><span>🎨 Image host</span><b>'+esc(aiHostLabel(icls))+'</b></div>'
     + '<div class="paidRow"><span>🔐 Encrypted storage</span><b>'+(enc?'ON':'OFF')+'</b></div>'
-    + '<p class="hint" style="text-align:left; margin-top:10px;">This section has no ads, trackers or analytics, and never uploads your chats, files, pictures or memory. The rest of Udhar Book (Drive sync, weather for the forecast) is separate and never receives AI data.</p></div>'
-    + '<div class="card"><h3 style="margin-top:0;">🌐 Internet access</h3><p class="hint" style="text-align:left; margin-bottom:10px;">Off by default. When on, every task that needs the internet (for example downloading a PDF reader or doing research) still shows you the website and exactly what will be sent, and waits for your approval each time.</p>'
-    + '<label class="checkrow"><input type="checkbox" '+(s.internetOn?'checked':'')+' onchange="aiSaveS({internetOn:this.checked}); aiRenderStatus(); aiRenderPrivacy();"> Allow internet features (ask me each time)</label>'
-    + '<button class="ghost" style="margin-top:10px;" onclick="aiResearch()">🔎 Research a topic (Wikipedia) — asks first</button></div>';
+    + '<p class="hint" style="text-align:left; margin-top:10px;">'+(s.provider==='free' ? '<b>Free online AI mode:</b> the messages you send in Chat and the picture descriptions you type are sent over the internet to the free service. Your files, memories, saved chats and pictures are NOT uploaded. For fully private use, switch to your own AI program in Settings. ' : 'Your chats and picture descriptions go only to the AI programs you set up. ')+'This section has no ads, trackers or analytics. The rest of Udhar Book (Drive sync, weather for the forecast) is separate and never receives AI data.</p></div>'
+    + '<div class="card"><h3 style="margin-top:0;">🌐 Internet access</h3><p class="hint" style="text-align:left; margin-bottom:10px;">On by default so chat, pictures and research work without extra steps. Every connection is listed in the activity log below. Turn it off to work fully offline with your own AI program, or tick “Ask me before every internet task” to approve each one.</p>'
+    + '<label class="checkrow"><input type="checkbox" '+(s.internetOn?'checked':'')+' onchange="aiSaveS({internetOn:this.checked}); aiRenderStatus(); aiRenderPrivacy();"> Allow internet features</label>'
+    + '<label class="checkrow"><input type="checkbox" '+(s.askEachTime?'checked':'')+' onchange="aiSaveS({askEachTime:this.checked}); aiRenderPrivacy();"> Ask me before every internet task (stricter, more pop-ups)</label>'
+    + '<button class="ghost" style="margin-top:10px;" onclick="aiResearch()">🔎 Research a topic (Wikipedia)</button></div>';
   if(cls==='remote' || icls==='remote'){
     h += '<div class="card"><h3 style="margin-top:0;">🔑 Remote host authorisation</h3><p class="hint" style="text-align:left; margin-bottom:10px;">Your AI host is outside your own network. Your messages go to it, so only authorise a computer you control, over https.</p>';
     [s.host, s.imgHost].filter((v,i,a)=>aiHostClass(v)==='remote' && a.indexOf(v)===i).forEach(u=>{ let o = ''; try{ o = new URL(u).origin; }catch(e){}; const ok = s.authHosts.indexOf(o)>-1; h += '<div class="paidRow"><span>'+esc(o)+'</span><button type="button" class="ghost" style="width:auto; margin:0; padding:5px 10px; font-size:0.78rem;" onclick="aiAuthHost(\''+esc(o)+'\','+(ok?'false':'true')+')">'+(ok?'Revoke':'Authorise')+'</button></div>'; });
@@ -4822,10 +4931,14 @@ async function aiDoResearch(q, lang){
 
 async function aiRenderSettings(){
   const s = aiS(), body = document.getElementById('ai-body'), o = location.origin;
+  if(s.provider==='free'){
+    body.innerHTML = aiTopCard() + '<div class="card"><h3 style="margin-top:0;">🧩 Options</h3><label>Model name (leave as it is)</label><input value="'+esc(s.model||'openai')+'" onchange="aiSaveS({model:this.value.trim()||\'openai\'})"><label>Creativity (temperature)</label><input type="number" min="0" max="2" step="0.1" value="'+esc(s.temp)+'" onchange="aiSaveS({temp:Number(this.value)||0.7})"><label>Instructions for the AI</label><textarea rows="5" onchange="aiSaveS({system:this.value.trim()||AI_SYS_DEFAULT})">'+esc(s.system)+'</textarea></div>';
+    return;
+  }
   let hasTok = false;
   if(!localStorage.getItem('udhar_ai_tokfix')){ await aiTokenSet(''); localStorage.setItem('udhar_ai_tokfix','1'); }
   try{ hasTok = !!(await aiTokenGet()); }catch(e){}
-  body.innerHTML = '<div class="card"><h3 style="margin-top:0;">🚀 Quick setup (3 steps)</h3>'
+  body.innerHTML = aiTopCard() + '<div class="card"><h3 style="margin-top:0;">🚀 Quick setup (3 steps)</h3>'
     + '<div style="font-size:0.85rem; line-height:1.65;"><b>1.</b> On your <b>computer</b>, install <b>LM Studio</b> (easiest) or <b>Ollama</b>, and download a model.<br>'
     + '<b>2.</b> Start its server. <u>LM Studio:</u> open the <i>Developer</i> tab → turn ON <i>Start server</i> and <i>Enable CORS</i>. <u>Ollama:</u> it starts by itself.<br>'
     + '<b>3.</b> Open <b>this app in Chrome on that same computer</b>, tap your program below, then tap <b>Test connection</b> and pick a model.</div>'
@@ -4924,8 +5037,9 @@ function aiRenderStatus(){
   const s = aiS(), c = aiHostClass(s.host), enc = aiEncInfo();
   const chip = (t,col)=>'<span style="font-size:0.72rem; padding:4px 9px; border-radius:20px; background:var(--brand-light); font-weight:600; color:'+(col||'var(--text)')+';">'+t+'</span>';
   el.innerHTML = '<div style="font-weight:800; font-size:1rem; margin-bottom:6px;">🤖 My Personal AI</div><div style="display:flex; gap:6px; flex-wrap:wrap;">'
-    + chip(s.internetOn ? '🌐 Internet features ON' : '🔒 Offline mode', s.internetOn?'var(--owe)':'var(--paid)')
-    + chip('AI host: '+aiHostLabel(c)) + chip(enc ? (aiKey ? '🔐 Encrypted · unlocked' : '🔐 Encrypted · locked') : '🔓 Not encrypted') + chip(s.memoryOn ? '🧠 Memory on' : '🧠 Memory off') + '</div>';
+    + chip(s.internetOn ? '🌐 Online mode' : '🔒 Offline mode', s.internetOn?'var(--brand)':'var(--paid)')
+    + chip(s.provider==='free' ? 'AI: Free online' : 'AI host: '+aiHostLabel(c))
+    + chip(enc ? (aiKey ? '🔐 Encrypted · unlocked' : '🔐 Encrypted · locked') : '🔓 Not encrypted') + chip(s.memoryOn ? '🧠 Memory on' : '🧠 Memory off') + '</div>';
 }
 async function aiOpen(){
   if(!aiInited){ aiBuild(); aiInited = true; }
@@ -4954,11 +5068,11 @@ function aiShow(v){
 async function aiRenderHome(){
   const s = aiS(), c = await aiCounts(), body = document.getElementById('ai-body');
   const tile = (icon, title, sub, v)=>'<div onclick="aiShow(\''+v+'\')" style="cursor:pointer; padding:14px; border-radius:16px; background:var(--brand-light);"><div style="font-size:1.5rem;">'+icon+'</div><div style="font-weight:700; margin-top:4px;">'+title+'</div><div style="font-size:0.72rem; color:var(--muted);">'+sub+'</div></div>';
-  body.innerHTML = '<div class="card"><h3 style="margin-top:0;">Welcome</h3><p class="hint" style="text-align:left; margin-bottom:12px;">A private AI that runs on <b>your own</b> computer. Offline by default, no uploads, you control every permission.</p>'
+  body.innerHTML = '<div class="card"><h3 style="margin-top:0;">Welcome</h3><p class="hint" style="text-align:left; margin-bottom:12px;">'+(s.provider==='free' ? 'Ready to use right now with a <b>free online AI</b> — no computer or key needed. Messages you type go to that online service, so avoid secrets. For fully private use, switch to your own AI program in Settings.' : 'A private AI that runs on <b>your own</b> computer or service you choose. You control every permission.')+'</p>'
     + (s.model ? '<div class="paidRow"><span>Chat model</span><b>'+esc(s.model)+'</b></div>' : '<div style="padding:10px; border-radius:12px; background:var(--brand-light); font-size:0.85rem; margin-bottom:10px;">👉 First, connect your AI program in <b>Settings</b> and pick a model.</div>')
     + '<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">'
     + tile('💬','Chat', c.chats+' saved chats','chat') + tile('🎨','Images', c.images+' saved pictures','image') + tile('🎬','Video', c.videos+' projects / clips','video') + tile('👨‍💻','Coding','Write, explain, debug','code') + tile('📁','Files', c.files+' files','files') + tile('🧠','Memory', c.memories+' memories','memory') + '</div></div>'
-    + '<div class="card"><h3 style="margin-top:0;">What this can and cannot do</h3><div style="font-size:0.82rem; line-height:1.6;">✅ Works with the AI programs you run yourself (Ollama, LM Studio, Stable Diffusion WebUI).<br>✅ Chats, files, pictures and memory stay on this device (optionally encrypted).<br>⚠️ Speed, quality and video length depend on your computer, models, RAM and GPU.<br>⚠️ A web page cannot run big AI models on its own, and cannot guarantee complete security.<br>⚠️ Tamil quality depends on the model you install.</div></div>';
+    + '<div class="card"><h3 style="margin-top:0;">What this can and cannot do</h3><div style="font-size:0.82rem; line-height:1.6;">✅ Works out of the box with a free online AI, or with AI programs you run yourself (Ollama, LM Studio, Stable Diffusion WebUI).<br>✅ Chats, files, pictures and memory stay on this device (optionally encrypted).<br>⚠️ Speed, quality and video length depend on your computer, models, RAM and GPU.<br>⚠️ A web page cannot run big AI models on its own, and cannot guarantee complete security.<br>⚠️ Tamil quality depends on the model you install.</div></div>';
 }
 
 function copyPurchaseListNameQtyOnly(){
