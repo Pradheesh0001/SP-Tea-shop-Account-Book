@@ -1306,7 +1306,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v76-default-online';
+const APP_VERSION = '2026-10-21-v77-web-search';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -3991,7 +3991,7 @@ async function aiTokenGet(){
 
 /* ---------- settings ---------- */
 function aiS(){
-  const d = { provider:'free', host:'http://localhost:11434', kind:'ollama', model:'openai', temp:0.7, system:AI_SYS_DEFAULT, memoryOn:true, imgHost:'http://127.0.0.1:7860', internetOn:true, askEachTime:false, authHosts:[], imgSource:'online' };
+  const d = { provider:'free', host:'http://localhost:11434', kind:'ollama', model:'openai', temp:0.7, system:AI_SYS_DEFAULT, memoryOn:true, imgHost:'http://127.0.0.1:7860', internetOn:true, askEachTime:false, authHosts:[], imgSource:'online', webSearch:'auto', gKey:'', gCx:'' };
   let o = {}; try{ o = JSON.parse(localStorage.getItem('udhar_ai_settings')||'{}') || {}; }catch(e){ o = {}; }
   if(Object.keys(o).length && !o.provider){ o = { provider:'free' }; try{ localStorage.setItem('udhar_ai_settings', JSON.stringify(o)); }catch(e){} }
   return Object.assign(d, o);
@@ -4129,8 +4129,8 @@ function aiToWire(msgs, kind){
     return { role:m.role, content:m.content };
   });
 }
-async function aiStream(messages, onTok, signal){
-  if(aiS().provider==='free') return aiStreamFree(messages, onTok, signal);
+async function aiStream(messages, onTok, signal, opts){
+  if(aiS().provider==='free') return aiStreamFree(messages, onTok, signal, opts);
   const s = aiS(), chk = aiCanConnect(s.host); if(!chk.ok) throw new Error(chk.reason);
   const base = s.host.replace(/\/+$/,''), hdr = await aiHeaders(), wire = aiToWire(messages, s.kind);
   aiLog(new URL(base).host, 'Chat with your AI model', 'your messages go to your own AI host');
@@ -4182,8 +4182,8 @@ function aiFlatten(msgs){
   if(t.length>5500) t = t.slice(t.length-5500);
   return t;
 }
-async function aiFreeCall(ep, messages, onTok, signal){
-  const s = aiS(), model = s.model || 'openai';
+async function aiFreeCall(ep, messages, onTok, signal, opts){
+  const s = aiS(), model = (opts && opts.model) || s.model || 'openai';
   aiLog(new URL(ep.url).host, 'Chat with the free online AI', 'your messages (sent over the internet)');
   if(ep.kind==='post'){
     const r = await fetch(ep.url, { method:'POST', headers:{ 'Content-Type':'application/json' }, signal, body:JSON.stringify({ model, messages:aiToWire(messages,'openai'), stream:true, temperature:Number(s.temp) }) });
@@ -4206,13 +4206,13 @@ async function aiFreeCall(ep, messages, onTok, signal){
     const t = await r.text(); if(!t.trim()) throw new Error('empty answer'); onTok(t);
   }
 }
-async function aiStreamFree(messages, onTok, signal){
+async function aiStreamFree(messages, onTok, signal, opts){
   let emitted = false, last = '';
   for(const ep of FREE_CHAT){
     const ctl = new AbortController(); let timer = setTimeout(()=>ctl.abort(), 30000);
     const onAbort = ()=>ctl.abort(); if(signal){ if(signal.aborted) throw Object.assign(new Error('aborted'), { name:'AbortError' }); signal.addEventListener('abort', onAbort); }
     try{
-      await aiFreeCall(ep, messages, t=>{ emitted = true; clearTimeout(timer); timer = setTimeout(()=>ctl.abort(), 30000); onTok(t); }, ctl.signal);
+      await aiFreeCall(ep, messages, t=>{ emitted = true; clearTimeout(timer); timer = setTimeout(()=>ctl.abort(), 30000); onTok(t); }, ctl.signal, opts);
       clearTimeout(timer); if(signal) signal.removeEventListener('abort', onAbort); return;
     }catch(e){
       clearTimeout(timer); if(signal) signal.removeEventListener('abort', onAbort);
@@ -4313,7 +4313,7 @@ function aiRenderChatView(kind){
     + '<div style="display:flex; gap:8px;"><button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="document.getElementById(\'ai-img-'+kind+'\').click()">🖼️</button><button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="aiAttachFile(\''+kind+'\')">📄</button>'+(kind==='chat' ? '<button class="ghost" style="width:auto; margin:0; padding:10px 14px;" onclick="aiResearch()">🔎</button>' : '')
     + '<input id="ai-img-'+kind+'" type="file" accept="image/*" class="hidden" onchange="aiAttachImage(event,\''+kind+'\')">'
     + '<button id="ai-send-'+kind+'" style="background:var(--brand); margin:0;" onclick="aiSend(\''+kind+'\')">➤ Send</button></div>'
-    + '<p class="hint" style="margin-top:8px;">🖼️ attach a picture (needs a vision model) · 📄 use one of your imported files as context · 🔎 research online</p>'+(aiS().provider==='free' ? '<p class="hint" style="margin-top:4px;">🌐 Online mode — messages go to a free online AI service. Not private.</p>' : '')+'</div>';
+    + '<p class="hint" style="margin-top:8px;">🖼️ attach a picture (needs a vision model) · 📄 use one of your imported files as context · 🔎 research online</p>'+(aiS().provider==='free' ? '<p class="hint" style="margin-top:4px;">🌐 Online mode — messages go to a free online AI service'+(aiS().webSearch!=='off' ? ' and web searches go to search sites' : '')+'. Not private.</p>' : '')+'</div>';
   aiLoadChats(kind).then(()=>{ const st = aiSt[kind]; if(st.cur && !st.list.find(c=>c.id===st.cur.id)) st.cur = null; if(!st.cur && st.list.length) st.cur = st.list[0]; aiRenderChatHead(kind); aiRenderMsgs(kind); aiRenderAtts(kind); });
 }
 function aiRenderChatHead(kind){
@@ -4377,7 +4377,7 @@ function aiRenderMsgs(kind){
       d.innerHTML = h;
     } else {
       const key = 'm'+(++aiMsgN);
-      d.innerHTML = '<div class="aiBody">'+aiMd(m.content || (m.streaming ? '…' : ''), key)+'</div>'
+      d.innerHTML = '<div class="aiBody">'+aiMd(m.content || (m.streaming ? (m.status || '…') : ''), key)+'</div>'+aiSrcHtml(m)
         + '<div class="acts"><button type="button" onclick="aiCopyMsg(\''+kind+'\','+i+')">📋 Copy</button><button type="button" onclick="aiRemember(\''+kind+'\','+i+')">🧠 Remember</button>'
         + (i===c.messages.length-1 && !m.streaming ? '<button type="button" onclick="aiRegen(\''+kind+'\')">↻ Regenerate</button>' : '') + '</div>';
     }
@@ -4423,8 +4423,108 @@ async function aiAttachImage(e, kind){
   try{ aiSt[kind].atts.push({ type:'image', b64: await aiImgToB64(f, 1024) }); aiRenderAtts(kind); }catch(err){ showBanner('Could not read that picture'); }
   e.target.value = '';
 }
-async function aiBuildMessages(c, query){
+
+/* ---------- web search so answers are current ---------- */
+const AI_STOP = new Set('a an the is are was were be been am do does did what whats which who whom whose when where why how tell me about please can could would should will shall give show find explain now in on at of for to from and or with by this that these those it its my your you i we they he she as if so than then'.split(' '));
+function aiKeywords(t){
+  const w = String(t||'').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu,' ').split(/\s+/).filter(x=>x.length>1 && !AI_STOP.has(x));
+  return w.slice(0,8).join(' ') || String(t||'').slice(0,80);
+}
+function aiNeedsSearch(text, kind){
+  const mode = aiS().webSearch || 'auto', t = String(text||'').replace(/^\[[^\]]*\]\n/,'').trim();
+  if(mode==='off' || !aiS().internetOn || !t) return false;
+  if(mode==='always') return true;
+  if(kind==='code' || t.indexOf('```')>-1) return false;
+  if(t.length<6) return false;
+  if(/^(hi|hello|hey|thanks?|thank you|ok|okay|bye|good (morning|night|evening)|vanakkam|வணக்கம்|நன்றி)\b/i.test(t) && t.length<30) return false;
+  return true;
+}
+async function aiFreeSearchModel(){
+  let c = null; try{ c = JSON.parse(localStorage.getItem('udhar_ai_searchmodel')||'null'); }catch(e){}
+  if(c && Date.now()-c.t < 6*3600000) return c.name;
+  let name = null;
+  try{
+    aiLog('text.pollinations.ai','Look for a web-search-enabled model','nothing private');
+    const list = await fcFetchJson('https://text.pollinations.ai/models', 8000);
+    const hit = (Array.isArray(list) ? list : []).find(m=>/search/i.test((m && (m.name||m.id)) || '') || /search/i.test((m && m.description) || ''));
+    name = hit ? (hit.name || hit.id) : null;
+  }catch(e){ name = null; }
+  try{ localStorage.setItem('udhar_ai_searchmodel', JSON.stringify({ t:Date.now(), name })); }catch(e){}
+  return name;
+}
+async function aiSrcWiki(q, ta){
+  const host = ta ? 'ta.wikipedia.org' : 'en.wikipedia.org';
+  const d = await fcFetchJson('https://'+host+'/w/api.php?action=query&generator=search&gsrsearch='+encodeURIComponent(q)+'&gsrlimit=3&prop=extracts&exintro=1&explaintext=1&exchars=900&format=json&origin=*', 8000);
+  return Object.values((d.query && d.query.pages) || {}).sort((a,b)=>(a.index||0)-(b.index||0)).map(p=>({ t:p.title+' (Wikipedia)', u:'https://'+host+'/?curid='+p.pageid, s:String(p.extract||'').replace(/\s+/g,' ').trim().slice(0,700) }));
+}
+async function aiSrcNews(q){
+  const d = await fcFetchJson('https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent(q)+'&mode=ArtList&maxrecords=8&format=json&timespan=3d&sort=DateDesc', 9000);
+  return (d.articles||[]).slice(0,8).map(a=>({ t:a.title+' — '+(a.domain||''), u:a.url, s:'News headline, '+String(a.seendate||'').replace(/^(\d{4})(\d{2})(\d{2}).*/,'$1-$2-$3') }));
+}
+async function aiSrcDdg(q){
+  const d = await fcFetchJson('https://api.duckduckgo.com/?q='+encodeURIComponent(q)+'&format=json&no_html=1&skip_disambig=1', 7000), out = [];
+  if(d.AbstractText) out.push({ t:(d.Heading||q)+' (DuckDuckGo)', u:d.AbstractURL||'', s:d.AbstractText.slice(0,600) });
+  (d.RelatedTopics||[]).slice(0,3).forEach(r=>{ if(r.Text) out.push({ t:r.Text.slice(0,80), u:r.FirstURL||'', s:r.Text.slice(0,300) }); });
+  return out;
+}
+async function aiSrcGoogle(q, key, cx){
+  const d = await fcFetchJson('https://www.googleapis.com/customsearch/v1?key='+encodeURIComponent(key)+'&cx='+encodeURIComponent(cx)+'&q='+encodeURIComponent(q)+'&num=6', 9000);
+  return (d.items||[]).map(i=>({ t:i.title+' — '+(i.displayLink||''), u:i.link, s:String(i.snippet||'').replace(/\s+/g,' ') }));
+}
+async function aiSrcEvents(){
+  const d = await fcFetchJson('https://en.wikipedia.org/w/api.php?action=parse&page=Portal:Current_events&prop=text&format=json&origin=*', 10000);
+  const html = d.parse && d.parse.text && d.parse.text['*']; if(!html) return [];
+  const doc = new DOMParser().parseFromString(html, 'text/html'), el = doc.querySelector('.current-events-main') || doc.querySelector('.current-events-content');
+  const t = el ? el.textContent.replace(/\s+/g,' ').trim() : '';
+  return t ? [{ t:'Wikipedia: Current events (latest day)', u:'https://en.wikipedia.org/wiki/Portal:Current_events', s:t.slice(0,1800) }] : [];
+}
+async function aiWebSearch(text){
+  const s = aiS(), ta = /[\u0B80-\u0BFF]/.test(text), q = aiKeywords(text), jobs = [];
+  const add = (name, host, p)=>{ aiLog(host, 'Web search for an up-to-date answer', 'your question words'); jobs.push(p.then(r=>({ n:name, r }), e=>({ n:name, err:(e && e.message) || 'failed' }))); };
+  if(s.gKey && s.gCx) add('Google', 'www.googleapis.com', aiSrcGoogle(String(text).slice(0,200), s.gKey, s.gCx));
+  add('Wikipedia', ta?'ta.wikipedia.org':'en.wikipedia.org', aiSrcWiki(q, ta));
+  if(!ta){ add('News', 'api.gdeltproject.org', aiSrcNews(q)); add('DuckDuckGo', 'api.duckduckgo.com', aiSrcDdg(q)); }
+  if(/news|today|latest|current|happening|breaking|headline|இன்று|செய்தி/i.test(text)) add('Wikipedia events', 'en.wikipedia.org', aiSrcEvents());
+  const res = await Promise.all(jobs); let items = []; const failed = [], ok = [];
+  res.forEach(x=>{ if(x.err) failed.push(x.n); else { ok.push(x.n); items = items.concat(x.r); } });
+  items = items.filter(i=>i.s);
+  if(!items.length) return { context:'', sources:[], failed, ok, none:true };
+  let ctx = '', n = 0; const used = [];
+  items.slice(0,14).forEach(i=>{ if(ctx.length>6500) return; n++; ctx += '['+n+'] '+i.t+(i.u?' ('+i.u+')':'')+'\n'+i.s+'\n\n'; used.push({ t:i.t, u:i.u }); });
+  return { context:ctx, sources:used, failed, ok };
+}
+function aiSrcHtml(m){
+  let h = '';
+  if(m.via==='live') h = '🔎 Answered with a live web search.';
+  else if(m.via==='none') h = '⚠️ The web search found nothing, so this answer may be out of date.';
+  else if(m.sources && m.sources.length) h = '🔎 Sources: '+m.sources.slice(0,8).map((x,i)=>/^https?:\/\//.test(x.u||'') ? '<a href="'+esc(x.u)+'" target="_blank" rel="noopener" style="color:var(--brand);">['+(i+1)+'] '+esc(String(x.t).slice(0,38))+'</a>' : '['+(i+1)+'] '+esc(String(x.t).slice(0,38))).join(' · ');
+  return h ? '<div style="font-size:0.72rem; color:var(--muted); margin-top:8px; line-height:1.7;">'+h+'</div>' : '';
+}
+function aiSearchCard(){
+  const s = aiS(), opt = (v,l)=>'<option value="'+v+'"'+((s.webSearch||'auto')===v?' selected':'')+'>'+l+'</option>';
+  return '<div class="card"><h3 style="margin-top:0;">🔎 Web search (for current answers)</h3>'
+    + '<p class="hint" style="text-align:left; margin-bottom:10px;">The AI model\'s own knowledge is old and it does not know today\'s date. With web search on, the app looks things up on the internet first, and the AI answers from today\'s results and shows the sources. Your question words are sent to the search sites.</p>'
+    + '<label>When should it search?</label><select onchange="aiSaveS({webSearch:this.value})">'+opt('auto','Automatically for questions (recommended)')+opt('always','Always')+opt('off','Never')+'</select>'
+    + '<label>Google search (optional — best results)</label>'
+    + '<input type="password" name="ai-g-key" autocomplete="new-password" autocapitalize="off" placeholder="Google API key" value="'+esc(s.gKey||'')+'" onchange="aiSaveS({gKey:this.value.trim()})">'
+    + '<input type="text" name="ai-g-cx" autocomplete="off" autocapitalize="off" placeholder="Search engine ID (cx)" value="'+esc(s.gCx||'')+'" onchange="aiSaveS({gCx:this.value.trim()})">'
+    + '<details style="margin-bottom:12px; font-size:0.8rem; line-height:1.6;"><summary style="cursor:pointer; font-weight:600;">How to get a free Google key (100 searches a day)</summary>'
+    + '1. Open <b>programmablesearchengine.google.com</b> → Add → choose <i>Search the entire web</i> → create → copy the <b>Search engine ID</b>.<br>2. Open <b>console.cloud.google.com</b> → enable <i>Custom Search API</i> → Credentials → Create credentials → <b>API key</b>.<br>3. Paste both above. They are saved on this phone only.</details>'
+    + '<button style="background:var(--brand);" onclick="aiTestSearch()">🧪 Test web search</button><div id="ai-s-sres" class="hint" style="text-align:left; white-space:pre-wrap;"></div></div>';
+}
+async function aiTestSearch(){
+  const el = document.getElementById('ai-s-sres'); el.textContent = '⏳ Searching…';
+  try{
+    const r = await aiWebSearch('latest news India today');
+    el.textContent = (r.sources.length ? '✅ '+r.sources.length+' result(s) from: '+r.ok.join(', ')+'\n\n'+r.sources.slice(0,3).map((x,i)=>(i+1)+'. '+x.t).join('\n') : '❌ No results.') + (r.failed.length ? '\n\n⚠️ Not reachable: '+r.failed.join(', ') : '') + (!r.sources.length ? '\nCheck your internet, or add a Google key for dependable results.' : '');
+  }catch(e){ el.textContent = '⚠️ '+(e.message||'Search failed'); }
+}
+
+async function aiBuildMessages(c, query, web){
   const s = aiS(); let sys = s.system || AI_SYS_DEFAULT;
+  sys += '\n\nCurrent date and time: '+new Date().toLocaleString('en-IN',{ dateStyle:'full', timeStyle:'short' })+' ('+(Intl.DateTimeFormat().resolvedOptions().timeZone||'local time')+'). Your own training knowledge is out of date, so never assume the year — use this date.';
+  if(web && web.context) sys += '\n\nWEB RESULTS fetched just now from the internet:\n'+web.context+'\nAnswer using these results for anything recent or factual and mention the source number, for example [2]. If they do not contain the answer, say you could not find current information — do not guess from old knowledge.';
+  else if(web && web.none) sys += '\n\nA web search was attempted but returned nothing. Tell the user you could not verify current information, and say your knowledge may be out of date.';
   if(s.memoryOn){ try{ const mem = await aiAll('memories'); if(mem.length) sys += '\n\nThings the owner asked you to remember:\n' + mem.map(m=>'- '+m.text).join('\n'); }catch(e){} }
   if(c.docIds && c.docIds.length){
     const docs = []; for(const id of c.docIds){ const f = await aiGetRec('files', id); if(f) docs.push(f); }
@@ -4461,8 +4561,23 @@ async function aiRun(kind, query){
   aiRenderChatHead(kind); aiRenderMsgs(kind);
   let raf = 0; const paint = ()=>{ raf = 0; aiRenderMsgs(kind); };
   try{
-    const msgs = await aiBuildMessages(Object.assign({}, c, { messages:c.messages.slice(0,-1) }), query);
-    await aiStream(msgs, t=>{ am.content += t; if(!raf) raf = requestAnimationFrame(paint); }, st.ctl.signal);
+    const base = Object.assign({}, c, { messages:c.messages.slice(0,-1) }), sset = aiS(), need = aiNeedsSearch(query, kind), signal = st.ctl.signal;
+    const onTok = t=>{ am.content += t; if(!raf) raf = requestAnimationFrame(paint); };
+    let done = false;
+    if(need && sset.provider==='free'){
+      am.status = '🔎 Searching the web…'; aiRenderMsgs(kind);
+      const sm = await aiFreeSearchModel().catch(()=>null);
+      if(sm){
+        try{ await aiStream(await aiBuildMessages(base, query, null), onTok, signal, { model:sm }); done = true; am.via = 'live'; }
+        catch(e){ if(e.name==='AbortError' || am.content) throw e; }
+      }
+    }
+    if(!done){
+      let web = null;
+      if(need){ am.status = '🔎 Searching the web…'; aiRenderMsgs(kind); web = await aiWebSearch(query); am.sources = web.sources; am.via = web.sources.length ? 'web' : 'none'; }
+      am.status = '✍️ Writing the answer…'; aiRenderMsgs(kind);
+      await aiStream(await aiBuildMessages(base, query, web), onTok, signal);
+    }
   }catch(e){
     if(e.name==='AbortError'){ if(!am.content) am.content = '(stopped)'; }
     else { am.content = (am.content ? am.content+'\n\n' : '') + '⚠️ '+aiConnHelp(e.message || 'Could not reach your AI host.'); am.err = true; }
@@ -4932,13 +5047,13 @@ async function aiDoResearch(q, lang){
 async function aiRenderSettings(){
   const s = aiS(), body = document.getElementById('ai-body'), o = location.origin;
   if(s.provider==='free'){
-    body.innerHTML = aiTopCard() + '<div class="card"><h3 style="margin-top:0;">🧩 Options</h3><label>Model name (leave as it is)</label><input value="'+esc(s.model||'openai')+'" onchange="aiSaveS({model:this.value.trim()||\'openai\'})"><label>Creativity (temperature)</label><input type="number" min="0" max="2" step="0.1" value="'+esc(s.temp)+'" onchange="aiSaveS({temp:Number(this.value)||0.7})"><label>Instructions for the AI</label><textarea rows="5" onchange="aiSaveS({system:this.value.trim()||AI_SYS_DEFAULT})">'+esc(s.system)+'</textarea></div>';
+    body.innerHTML = aiTopCard() + aiSearchCard() + '<div class="card"><h3 style="margin-top:0;">🧩 Options</h3><label>Model name (leave as it is)</label><input value="'+esc(s.model||'openai')+'" onchange="aiSaveS({model:this.value.trim()||\'openai\'})"><label>Creativity (temperature)</label><input type="number" min="0" max="2" step="0.1" value="'+esc(s.temp)+'" onchange="aiSaveS({temp:Number(this.value)||0.7})"><label>Instructions for the AI</label><textarea rows="5" onchange="aiSaveS({system:this.value.trim()||AI_SYS_DEFAULT})">'+esc(s.system)+'</textarea></div>';
     return;
   }
   let hasTok = false;
   if(!localStorage.getItem('udhar_ai_tokfix')){ await aiTokenSet(''); localStorage.setItem('udhar_ai_tokfix','1'); }
   try{ hasTok = !!(await aiTokenGet()); }catch(e){}
-  body.innerHTML = aiTopCard() + '<div class="card"><h3 style="margin-top:0;">🚀 Quick setup (3 steps)</h3>'
+  body.innerHTML = aiTopCard() + aiSearchCard() + '<div class="card"><h3 style="margin-top:0;">🚀 Quick setup (3 steps)</h3>'
     + '<div style="font-size:0.85rem; line-height:1.65;"><b>1.</b> On your <b>computer</b>, install <b>LM Studio</b> (easiest) or <b>Ollama</b>, and download a model.<br>'
     + '<b>2.</b> Start its server. <u>LM Studio:</u> open the <i>Developer</i> tab → turn ON <i>Start server</i> and <i>Enable CORS</i>. <u>Ollama:</u> it starts by itself.<br>'
     + '<b>3.</b> Open <b>this app in Chrome on that same computer</b>, tap your program below, then tap <b>Test connection</b> and pick a model.</div>'
