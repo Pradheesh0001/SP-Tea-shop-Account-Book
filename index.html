@@ -1306,7 +1306,7 @@ let gDriveFileId = localStorage.getItem('udhar_gdrive_fileid') || null;
 let driveConnectedThisSession = false;
 
 const BAKED_CLIENT_ID = '722533202167-fbcrctn31nojoc0vg8d0mfisk69mhihl.apps.googleusercontent.com';
-const APP_VERSION = '2026-10-21-v77-web-search';
+const APP_VERSION = '2026-10-21-v78-gemini-search';
 
 function setDriveStatus(msg){
   ['driveStatus','authDriveStatus','dashDriveStatus'].forEach(id=>{
@@ -3950,14 +3950,14 @@ async function aiGetRec(store, id){
   return r;
 }
 async function aiEnableEncryption(pass){
-  const tok = await aiTokenGet(), all = {};
+  const tok = await aiTokenGet(), gk = await aiGkeyGet(), all = {};
   for(const s of AI_STORES) all[s] = await aiAll(s);
   const salt = crypto.getRandomValues(new Uint8Array(16));
   aiKey = await aiDerive(pass, salt);
   const chk = await aiEnc({ ok:'udhar' });
   localStorage.setItem('udhar_ai_enc', JSON.stringify({ salt:b64(salt), check:{ iv:b64(chk.iv), ct:b64(chk.ct) } }));
   for(const s of AI_STORES) for(const r of all[s]) await aiPut(s, r);
-  await aiTokenSet(tok);
+  await aiTokenSet(tok); await aiGkeySet(gk);
 }
 async function aiUnlock(pass){
   const info = aiEncInfo(); if(!info) return true;
@@ -3969,16 +3969,29 @@ async function aiUnlock(pass){
 }
 async function aiDisableEncryption(){
   if(!aiKey) return;
-  const tok = await aiTokenGet(), all = {};
+  const tok = await aiTokenGet(), gk = await aiGkeyGet(), all = {};
   for(const s of AI_STORES) all[s] = await aiAll(s);
   localStorage.removeItem('udhar_ai_enc'); aiKey = null;
   for(const s of AI_STORES) for(const r of all[s]) await idbPut(s, r);
-  await aiTokenSet(tok);
+  await aiTokenSet(tok); await aiGkeySet(gk);
 }
 async function aiTokenSet(t){
   if(!t){ localStorage.removeItem('udhar_ai_tok'); return; }
   if(aiKey){ const e = await aiEnc({ t }); localStorage.setItem('udhar_ai_tok', JSON.stringify({ enc:{ iv:b64(e.iv), ct:b64(e.ct) } })); }
   else localStorage.setItem('udhar_ai_tok', JSON.stringify({ t }));
+}
+async function aiGkeySet(v){
+  if(!v){ localStorage.removeItem('udhar_ai_gkey'); return; }
+  if(aiKey){ const e = await aiEnc({ t:v }); localStorage.setItem('udhar_ai_gkey', JSON.stringify({ enc:{ iv:b64(e.iv), ct:b64(e.ct) } })); }
+  else localStorage.setItem('udhar_ai_gkey', JSON.stringify({ t:v }));
+}
+async function aiGkeyGet(){
+  try{
+    const o = JSON.parse(localStorage.getItem('udhar_ai_gkey')||'null'); if(!o) return '';
+    if(o.t) return o.t;
+    if(o.enc && aiKey){ const d = await aiDec({ iv:unb64(o.enc.iv), ct:unb64(o.enc.ct) }); return d.t; }
+  }catch(e){}
+  return '';
 }
 async function aiTokenGet(){
   try{
@@ -3991,7 +4004,7 @@ async function aiTokenGet(){
 
 /* ---------- settings ---------- */
 function aiS(){
-  const d = { provider:'free', host:'http://localhost:11434', kind:'ollama', model:'openai', temp:0.7, system:AI_SYS_DEFAULT, memoryOn:true, imgHost:'http://127.0.0.1:7860', internetOn:true, askEachTime:false, authHosts:[], imgSource:'online', webSearch:'auto', gKey:'', gCx:'' };
+  const d = { provider:'free', host:'http://localhost:11434', kind:'ollama', model:'openai', temp:0.7, system:AI_SYS_DEFAULT, memoryOn:true, imgHost:'http://127.0.0.1:7860', internetOn:true, askEachTime:false, authHosts:[], imgSource:'online', webSearch:'auto' };
   let o = {}; try{ o = JSON.parse(localStorage.getItem('udhar_ai_settings')||'{}') || {}; }catch(e){ o = {}; }
   if(Object.keys(o).length && !o.provider){ o = { provider:'free' }; try{ localStorage.setItem('udhar_ai_settings', JSON.stringify(o)); }catch(e){} }
   return Object.assign(d, o);
@@ -4130,6 +4143,7 @@ function aiToWire(msgs, kind){
   });
 }
 async function aiStream(messages, onTok, signal, opts){
+  if(aiS().provider==='gemini') return aiStreamGemini(messages, onTok, signal, opts);
   if(aiS().provider==='free') return aiStreamFree(messages, onTok, signal, opts);
   const s = aiS(), chk = aiCanConnect(s.host); if(!chk.ok) throw new Error(chk.reason);
   const base = s.host.replace(/\/+$/,''), hdr = await aiHeaders(), wire = aiToWire(messages, s.kind);
@@ -4156,6 +4170,7 @@ async function aiStream(messages, onTok, signal, opts){
 }
 async function aiListModels(){
   if(aiS().provider==='free') return ['openai'];
+  if(aiS().provider==='gemini') return ['gemini-2.5-flash'];
   const s = aiS(), chk = aiCanConnect(s.host); if(!chk.ok) throw new Error(chk.reason);
   const base = s.host.replace(/\/+$/,''), hdr = await aiHeaders();
   aiLog(new URL(base).host, 'List installed models', 'nothing private');
@@ -4239,6 +4254,9 @@ async function aiDiagnose(){
     }
     for(const fn of AI_IMG_ENDPOINTS){ const u = fn('tea cup',64,64,1); const ok = await aiImgProbe(u, 25000); L.push((ok?'✅':'❌')+' Pictures: '+new URL(u).host+(ok?' works':' did not load')); if(ok) break; }
     if(!anyChat) L.push('\n👉 The no-setup chat service is not answering. Use a free key instead: choose “My own AI program or another service”, tap “I have no computer — free online AI”, and follow the 3 steps (Groq).');
+  } else if(aiS().provider==='gemini'){
+    try{ const j = await aiGeminiCall([{ role:'user', parts:[{ text:'Reply with the single word OK' }] }], '', false), p = aiGeminiParse(j); L.push('✅ Google Gemini answered: '+p.text.slice(0,40)); }
+    catch(e){ L.push('❌ Google Gemini: '+(e.message||'failed')); }
   } else {
     try{ const m = await aiListModels(); L.push('✅ Your AI program answered ('+m.length+' model(s))'); }catch(e){ L.push('❌ Your AI program: '+(e.message||'failed')); }
   }
@@ -4247,13 +4265,15 @@ async function aiDiagnose(){
 function aiTopCard(){
   const s = aiS();
   return '<div class="card"><h3 style="margin-top:0;">🌐 AI source</h3>'
-    + '<select id="ai-s-prov" onchange="aiSetProvider(this.value)"><option value="free"'+(s.provider==='free'?' selected':'')+'>Free online AI — works now, no setup (default)</option><option value="custom"'+(s.provider!=='free'?' selected':'')+'>My own AI program or another service (LM Studio, Ollama, Groq…)</option></select>'
+    + '<select id="ai-s-prov" onchange="aiSetProvider(this.value)"><option value="free"'+(s.provider==='free'?' selected':'')+'>Free online AI — works now, no setup (default)</option><option value="gemini"'+(s.provider==='gemini'?' selected':'')+'>Google Gemini + Google Search (needs your free key)</option><option value="custom"'+(s.provider==='custom'?' selected':'')+'>My own AI program or another service (LM Studio, Ollama, Groq…)</option></select>'
+    + (s.provider==='gemini' ? '<p class="hint" style="text-align:left; margin:-6px 0 10px;">Answers come from <b>Google Gemini</b> and use <b>Google Search</b> for current facts. Add your key in the Web search card below. Your messages go to Google, so <b>do not type secrets</b>.</p>' : '')
     + (s.provider==='free' ? '<p class="hint" style="text-align:left; margin:-6px 0 10px;">No computer, no key, nothing to install. Your messages and picture descriptions go over the internet to a free online service, so <b>do not type secrets</b>.</p>' : '')
     + '<div style="display:flex; gap:8px;"><button style="background:var(--brand); margin:0; padding:10px; font-size:0.85rem;" onclick="aiDiagnose()">🩺 Check connection</button><button class="ghost" style="margin:0; padding:10px; font-size:0.85rem;" onclick="aiResetDefaults()">↩ Reset to default</button></div>'
     + '<div id="ai-s-diag" class="hint" style="text-align:left; white-space:pre-wrap; margin-top:10px;"></div></div>';
 }
 function aiSetProvider(v){
   if(v==='free') aiSaveS({ provider:'free', internetOn:true, imgSource:'online', model:'openai' });
+  else if(v==='gemini') aiSaveS({ provider:'gemini', internetOn:true, imgSource:'online', model:'gemini-2.5-flash' });
   else aiSaveS({ provider:'custom', model:'', imgSource:'local', internetOn:false });
   aiRenderStatus(); aiRenderSettings();
 }
@@ -4264,7 +4284,7 @@ async function aiResetDefaults(){
 
 function aiConnHelp(msg){
   const o = location.origin, st = aiS();
-  if(st.provider==='free') return msg + '\n\nTap Settings → Check connection to see which part is not working.';
+  if(st.provider==='free' || st.provider==='gemini') return msg + '\n\nTap Settings → Check connection to see which part is not working.';
   const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent||'');
   const local = aiHostClass(st.host)==='device' || aiHostClass(st.imgHost)==='device';
   const phone = (mobile && local) ? '\n\n📱 You are on a phone. "localhost" means THIS PHONE, not your computer, so your AI program cannot be found. Open this app in Chrome on the computer where LM Studio / Ollama is running — or reach the computer through an https link (see Settings → Setup help).' : '';
@@ -4467,9 +4487,54 @@ async function aiSrcDdg(q){
   (d.RelatedTopics||[]).slice(0,3).forEach(r=>{ if(r.Text) out.push({ t:r.Text.slice(0,80), u:r.FirstURL||'', s:r.Text.slice(0,300) }); });
   return out;
 }
-async function aiSrcGoogle(q, key, cx){
-  const d = await fcFetchJson('https://www.googleapis.com/customsearch/v1?key='+encodeURIComponent(key)+'&cx='+encodeURIComponent(cx)+'&q='+encodeURIComponent(q)+'&num=6', 9000);
-  return (d.items||[]).map(i=>({ t:i.title+' — '+(i.displayLink||''), u:i.link, s:String(i.snippet||'').replace(/\s+/g,' ') }));
+function aiGeminiContents(messages){
+  const sys = (messages.find(m=>m.role==='system')||{}).content || '';
+  const contents = messages.filter(m=>m.role!=='system').map(m=>({ role:m.role==='assistant' ? 'model' : 'user', parts:[{ text:m.content||' ' }].concat((m.images||[]).map(b=>({ inlineData:{ mimeType:'image/jpeg', data:b } }))) }));
+  return { sys, contents };
+}
+async function aiGeminiCall(contents, system, withSearch, signal){
+  const key = await aiGkeyGet(); if(!key) throw new Error('Add your Google Gemini key first (Settings → Web search).');
+  const s = aiS(), model = (s.provider==='gemini' && s.model) ? s.model : 'gemini-2.5-flash';
+  const body = { contents, generationConfig:{ temperature:Number(s.temp) } };
+  if(system) body.systemInstruction = { parts:[{ text:system }] };
+  if(withSearch) body.tools = [{ google_search:{} }];
+  const surfaces = [
+    { id:'studio', url:'https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent' },
+    { id:'vertex', url:'https://aiplatform.googleapis.com/v1/publishers/google/models/'+encodeURIComponent(model)+':generateContent' }
+  ];
+  const pref = localStorage.getItem('udhar_ai_gsurface'); if(pref==='vertex') surfaces.reverse();
+  let last = '';
+  for(const sf of surfaces){
+    aiLog(new URL(sf.url).host, withSearch ? 'Ask Google Gemini (with Google Search)' : 'Ask Google Gemini', 'your messages (sent to Google)');
+    let r; try{ r = await fetch(sf.url, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-goog-api-key':key }, signal, body:JSON.stringify(body) }); }
+    catch(e){ if(e.name==='AbortError') throw e; last = 'could not connect ('+(e.message||'network')+')'; continue; }
+    if(r.ok){ try{ localStorage.setItem('udhar_ai_gsurface', sf.id); }catch(e){} return r.json(); }
+    let msg = ''; try{ const j = await r.json(); msg = (j.error && j.error.message) || ''; }catch(e){}
+    last = 'HTTP '+r.status+(msg ? ' — '+msg.slice(0,160) : '');
+    if(r.status===404 || r.status===429 || r.status===400) throw new Error(last);
+  }
+  throw new Error('Google did not accept the key ('+last+'). Create a fresh key at aistudio.google.com/apikey and paste it again.');
+}
+function aiGeminiParse(j){
+  const c = j && j.candidates && j.candidates[0];
+  const text = ((c && c.content && c.content.parts) || []).map(p=>p.text||'').join('');
+  const gm = c && c.groundingMetadata;
+  const sources = ((gm && gm.groundingChunks) || []).map(x=>x.web).filter(Boolean).map(w=>({ t:w.title||w.uri, u:w.uri }));
+  return { text, sources, queries:(gm && gm.webSearchQueries) || [] };
+}
+async function aiStreamGemini(messages, onTok, signal, opts){
+  const g = aiGeminiContents(messages), j = await aiGeminiCall(g.contents, g.sys, !!(opts && opts.search), signal), p = aiGeminiParse(j);
+  if(!p.text){ const fr = j && j.promptFeedback && j.promptFeedback.blockReason; throw new Error(fr ? 'Google blocked this request ('+fr+')' : 'Google returned an empty answer'); }
+  if(opts && opts.onSources && p.sources.length) opts.onSources(p.sources, p.queries);
+  onTok(p.text);
+}
+async function aiSrcGemini(text){
+  const now = new Date().toLocaleString('en-IN', { dateStyle:'full', timeStyle:'short' });
+  const j = await aiGeminiCall([{ role:'user', parts:[{ text:String(text).slice(0,400) }] }], 'Today is '+now+'. Use Google Search and answer factually and briefly with current information.', true), p = aiGeminiParse(j);
+  const out = [];
+  if(p.text) out.push({ t:'Google Search (via Gemini)', u:'', s:p.text.slice(0,1800) });
+  p.sources.slice(0,6).forEach(x=>out.push({ t:x.t, u:x.u, s:'Source used by Google Search' }));
+  return out;
 }
 async function aiSrcEvents(){
   const d = await fcFetchJson('https://en.wikipedia.org/w/api.php?action=parse&page=Portal:Current_events&prop=text&format=json&origin=*', 10000);
@@ -4481,7 +4546,7 @@ async function aiSrcEvents(){
 async function aiWebSearch(text){
   const s = aiS(), ta = /[\u0B80-\u0BFF]/.test(text), q = aiKeywords(text), jobs = [];
   const add = (name, host, p)=>{ aiLog(host, 'Web search for an up-to-date answer', 'your question words'); jobs.push(p.then(r=>({ n:name, r }), e=>({ n:name, err:(e && e.message) || 'failed' }))); };
-  if(s.gKey && s.gCx) add('Google', 'www.googleapis.com', aiSrcGoogle(String(text).slice(0,200), s.gKey, s.gCx));
+  if(await aiGkeyGet()) add('Google', 'generativelanguage.googleapis.com', aiSrcGemini(text));
   add('Wikipedia', ta?'ta.wikipedia.org':'en.wikipedia.org', aiSrcWiki(q, ta));
   if(!ta){ add('News', 'api.gdeltproject.org', aiSrcNews(q)); add('DuckDuckGo', 'api.duckduckgo.com', aiSrcDdg(q)); }
   if(/news|today|latest|current|happening|breaking|headline|இன்று|செய்தி/i.test(text)) add('Wikipedia events', 'en.wikipedia.org', aiSrcEvents());
@@ -4503,23 +4568,36 @@ function aiSrcHtml(m){
 function aiSearchCard(){
   const s = aiS(), opt = (v,l)=>'<option value="'+v+'"'+((s.webSearch||'auto')===v?' selected':'')+'>'+l+'</option>';
   return '<div class="card"><h3 style="margin-top:0;">🔎 Web search (for current answers)</h3>'
-    + '<p class="hint" style="text-align:left; margin-bottom:10px;">The AI model\'s own knowledge is old and it does not know today\'s date. With web search on, the app looks things up on the internet first, and the AI answers from today\'s results and shows the sources. Your question words are sent to the search sites.</p>'
+    + '<p class="hint" style="text-align:left; margin-bottom:10px;">The AI model\'s own knowledge is old and it does not know today\'s date. With web search on, the app looks things up on the internet first and shows the sources. Your question words are sent to the search services.</p>'
     + '<label>When should it search?</label><select onchange="aiSaveS({webSearch:this.value})">'+opt('auto','Automatically for questions (recommended)')+opt('always','Always')+opt('off','Never')+'</select>'
-    + '<label>Google search (optional — best results)</label>'
-    + '<input type="password" name="ai-g-key" autocomplete="new-password" autocapitalize="off" placeholder="Google API key" value="'+esc(s.gKey||'')+'" onchange="aiSaveS({gKey:this.value.trim()})">'
-    + '<input type="text" name="ai-g-cx" autocomplete="off" autocapitalize="off" placeholder="Search engine ID (cx)" value="'+esc(s.gCx||'')+'" onchange="aiSaveS({gCx:this.value.trim()})">'
-    + '<details style="margin-bottom:12px; font-size:0.8rem; line-height:1.6;"><summary style="cursor:pointer; font-weight:600;">How to get a free Google key (100 searches a day)</summary>'
-    + '1. Open <b>programmablesearchengine.google.com</b> → Add → choose <i>Search the entire web</i> → create → copy the <b>Search engine ID</b>.<br>2. Open <b>console.cloud.google.com</b> → enable <i>Custom Search API</i> → Credentials → Create credentials → <b>API key</b>.<br>3. Paste both above. They are saved on this phone only.</details>'
+    + '<label>Google Gemini key — gives real Google Search results</label>'
+    + '<input id="ai-s-gkey" type="password" name="ai-gem-key" autocomplete="new-password" autocapitalize="off" value="" placeholder="paste your key (starts with AQ. or AIza)">'
+    + '<div style="display:flex; gap:8px; margin:-4px 0 8px;"><button style="background:var(--brand); margin:0; padding:9px; font-size:0.82rem;" onclick="aiSaveGkey()">💾 Save key</button><button class="ghost" style="margin:0; padding:9px; font-size:0.82rem;" onclick="aiClearGkey()">Remove key</button></div>'
+    + '<div id="ai-s-gstate" class="hint" style="text-align:left; margin:0 0 8px;"></div>'
+    + '<details style="margin-bottom:12px; font-size:0.8rem; line-height:1.6;"><summary style="cursor:pointer; font-weight:600;">How to get a free Gemini key</summary>'
+    + '1. Open <b>aistudio.google.com/apikey</b> and sign in with Google.<br>2. Tap <b>Create API key</b> and copy it.<br>3. Paste it above and tap <b>Save key</b>, then <b>Test web search</b>.<br><b>Never share the key with anyone</b> — if it leaks, delete it there and make a new one.</details>'
     + '<button style="background:var(--brand);" onclick="aiTestSearch()">🧪 Test web search</button><div id="ai-s-sres" class="hint" style="text-align:left; white-space:pre-wrap;"></div></div>';
 }
-async function aiTestSearch(){
-  const el = document.getElementById('ai-s-sres'); el.textContent = '⏳ Searching…';
-  try{
-    const r = await aiWebSearch('latest news India today');
-    el.textContent = (r.sources.length ? '✅ '+r.sources.length+' result(s) from: '+r.ok.join(', ')+'\n\n'+r.sources.slice(0,3).map((x,i)=>(i+1)+'. '+x.t).join('\n') : '❌ No results.') + (r.failed.length ? '\n\n⚠️ Not reachable: '+r.failed.join(', ') : '') + (!r.sources.length ? '\nCheck your internet, or add a Google key for dependable results.' : '');
-  }catch(e){ el.textContent = '⚠️ '+(e.message||'Search failed'); }
+async function aiRefreshGstate(){ const el = document.getElementById('ai-s-gstate'); if(!el) return; el.textContent = (await aiGkeyGet()) ? '✅ A Gemini key is saved on this phone.' : 'No key saved — only the basic free search sources are used.'; }
+async function aiSaveGkey(){
+  const v = (document.getElementById('ai-s-gkey').value||'').trim();
+  if(v.length<20){ showBanner('That does not look like a full key'); return; }
+  await aiGkeySet(v); document.getElementById('ai-s-gkey').value = ''; showBanner('✅ Key saved — tap “Test web search”'); aiRefreshGstate();
 }
-
+async function aiClearGkey(){ await aiGkeySet(''); showBanner('🗑️ Key removed'); aiRefreshGstate(); }
+async function aiTestSearch(){
+  const el = document.getElementById('ai-s-sres'); el.textContent = '⏳ Searching…'; let L = [];
+  try{
+    if(await aiGkeyGet()){
+      try{ const j = await aiGeminiCall([{ role:'user', parts:[{ text:'What is today\'s date and one top news headline from India today?' }] }], 'Use Google Search.', true), p = aiGeminiParse(j);
+        L.push('✅ Google Search via Gemini works.\n'+p.text.slice(0,260)+(p.sources.length ? '\nSources: '+p.sources.slice(0,3).map(x=>x.t).join(', ') : '')); }
+      catch(e){ L.push('❌ Google key: '+(e.message||'failed')); }
+    } else L.push('ℹ️ No Gemini key saved — using the basic free sources.');
+    const r = await aiWebSearch('latest news India today');
+    L.push((r.sources.length ? '✅ '+r.sources.length+' result(s) from: '+r.ok.join(', ') : '❌ No results from the free sources.') + (r.failed.length ? '\n⚠️ Not reachable: '+r.failed.join(', ') : ''));
+  }catch(e){ L.push('⚠️ '+(e.message||'Search failed')); }
+  el.textContent = L.join('\n\n');
+}
 async function aiBuildMessages(c, query, web){
   const s = aiS(); let sys = s.system || AI_SYS_DEFAULT;
   sys += '\n\nCurrent date and time: '+new Date().toLocaleString('en-IN',{ dateStyle:'full', timeStyle:'short' })+' ('+(Intl.DateTimeFormat().resolvedOptions().timeZone||'local time')+'). Your own training knowledge is out of date, so never assume the year — use this date.';
@@ -4564,6 +4642,11 @@ async function aiRun(kind, query){
     const base = Object.assign({}, c, { messages:c.messages.slice(0,-1) }), sset = aiS(), need = aiNeedsSearch(query, kind), signal = st.ctl.signal;
     const onTok = t=>{ am.content += t; if(!raf) raf = requestAnimationFrame(paint); };
     let done = false;
+    if(need && sset.provider==='gemini'){
+      am.status = '🔎 Searching Google…'; aiRenderMsgs(kind);
+      await aiStream(await aiBuildMessages(base, query, null), onTok, signal, { search:true, onSources:(src)=>{ am.sources = src; am.via = 'web'; } });
+      if(!am.sources) am.via = 'live'; done = true;
+    }
     if(need && sset.provider==='free'){
       am.status = '🔎 Searching the web…'; aiRenderMsgs(kind);
       const sm = await aiFreeSearchModel().catch(()=>null);
@@ -4991,7 +5074,7 @@ async function aiDeleteAll(){
   if(!confirm('Delete ALL chats, files, pictures, videos and memories of My Personal AI from this device?')) return;
   if(!confirm('Really delete everything? This cannot be undone.')) return;
   for(const s of AI_STORES) await idbClear(s);
-  ['udhar_ai_settings','udhar_ai_tok','udhar_ai_netlog','udhar_ai_enc'].forEach(k=>localStorage.removeItem(k)); aiKey = null;
+  ['udhar_ai_settings','udhar_ai_tok','udhar_ai_gkey','udhar_ai_netlog','udhar_ai_enc'].forEach(k=>localStorage.removeItem(k)); aiKey = null;
   aiSt.chat.cur = null; aiSt.code.cur = null; showBanner('🗑️ All AI data deleted'); aiRenderStatus(); aiRenderPrivacy();
 }
 async function aiAuthHost(origin, on){
@@ -5046,9 +5129,9 @@ async function aiDoResearch(q, lang){
 
 async function aiRenderSettings(){
   const s = aiS(), body = document.getElementById('ai-body'), o = location.origin;
-  if(s.provider==='free'){
-    body.innerHTML = aiTopCard() + aiSearchCard() + '<div class="card"><h3 style="margin-top:0;">🧩 Options</h3><label>Model name (leave as it is)</label><input value="'+esc(s.model||'openai')+'" onchange="aiSaveS({model:this.value.trim()||\'openai\'})"><label>Creativity (temperature)</label><input type="number" min="0" max="2" step="0.1" value="'+esc(s.temp)+'" onchange="aiSaveS({temp:Number(this.value)||0.7})"><label>Instructions for the AI</label><textarea rows="5" onchange="aiSaveS({system:this.value.trim()||AI_SYS_DEFAULT})">'+esc(s.system)+'</textarea></div>';
-    return;
+  if(s.provider==='free' || s.provider==='gemini'){
+    body.innerHTML = aiTopCard() + aiSearchCard() + '<div class="card"><h3 style="margin-top:0;">🧩 Options</h3><label>Model name (leave as it is)</label><input value="'+esc(s.model||(s.provider==='gemini'?'gemini-2.5-flash':'openai'))+'" onchange="aiSaveS({model:this.value.trim()||(aiS().provider===\'gemini\'?\'gemini-2.5-flash\':\'openai\')})"><label>Creativity (temperature)</label><input type="number" min="0" max="2" step="0.1" value="'+esc(s.temp)+'" onchange="aiSaveS({temp:Number(this.value)||0.7})"><label>Instructions for the AI</label><textarea rows="5" onchange="aiSaveS({system:this.value.trim()||AI_SYS_DEFAULT})">'+esc(s.system)+'</textarea></div>';
+    aiRefreshGstate(); return;
   }
   let hasTok = false;
   if(!localStorage.getItem('udhar_ai_tokfix')){ await aiTokenSet(''); localStorage.setItem('udhar_ai_tokfix','1'); }
@@ -5153,11 +5236,15 @@ function aiRenderStatus(){
   const chip = (t,col)=>'<span style="font-size:0.72rem; padding:4px 9px; border-radius:20px; background:var(--brand-light); font-weight:600; color:'+(col||'var(--text)')+';">'+t+'</span>';
   el.innerHTML = '<div style="font-weight:800; font-size:1rem; margin-bottom:6px;">🤖 My Personal AI</div><div style="display:flex; gap:6px; flex-wrap:wrap;">'
     + chip(s.internetOn ? '🌐 Online mode' : '🔒 Offline mode', s.internetOn?'var(--brand)':'var(--paid)')
-    + chip(s.provider==='free' ? 'AI: Free online' : 'AI host: '+aiHostLabel(c))
+    + chip(s.provider==='free' ? 'AI: Free online' : (s.provider==='gemini' ? 'AI: Google Gemini' : 'AI host: '+aiHostLabel(c)))
     + chip(enc ? (aiKey ? '🔐 Encrypted · unlocked' : '🔐 Encrypted · locked') : '🔓 Not encrypted') + chip(s.memoryOn ? '🧠 Memory on' : '🧠 Memory off') + '</div>';
+}
+async function aiMigrateGkey(){
+  try{ const o = JSON.parse(localStorage.getItem('udhar_ai_settings')||'{}'); if(o.gKey){ if(!(await aiGkeyGet())) await aiGkeySet(o.gKey); delete o.gKey; delete o.gCx; localStorage.setItem('udhar_ai_settings', JSON.stringify(o)); } }catch(e){}
 }
 async function aiOpen(){
   if(!aiInited){ aiBuild(); aiInited = true; }
+  await aiMigrateGkey();
   aiRenderStatus();
   if(!window.indexedDB){ document.getElementById('ai-body').innerHTML = '<div class="card"><p>This browser does not allow local storage for the AI section (private mode?). Open the app in a normal browser window.</p></div>'; return; }
   if(aiEncInfo() && !aiKey){ aiRenderUnlock(); return; }
