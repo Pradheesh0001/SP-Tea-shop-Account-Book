@@ -4170,7 +4170,7 @@ async function aiStream(messages, onTok, signal, opts){
 }
 async function aiListModels(){
   if(aiS().provider==='free') return ['openai'];
-  if(aiS().provider==='gemini') return ['gemini-3.8-flash'];
+  if(aiS().provider==='gemini') return ['gemini-2.5-flash'];
   const s = aiS(), chk = aiCanConnect(s.host); if(!chk.ok) throw new Error(chk.reason);
   const base = s.host.replace(/\/+$/,''), hdr = await aiHeaders();
   aiLog(new URL(base).host, 'List installed models', 'nothing private');
@@ -4273,7 +4273,7 @@ function aiTopCard(){
 }
 function aiSetProvider(v){
   if(v==='free') aiSaveS({ provider:'free', internetOn:true, imgSource:'online', model:'openai' });
-  else if(v==='gemini') aiSaveS({ provider:'gemini', internetOn:true, imgSource:'online', model:'gemini-3.8-flash' });
+  else if(v==='gemini') aiSaveS({ provider:'gemini', internetOn:true, imgSource:'online', model:'gemini-2.5-flash' });
   else aiSaveS({ provider:'custom', model:'', imgSource:'local', internetOn:false });
   aiRenderStatus(); aiRenderSettings();
 }
@@ -4494,7 +4494,7 @@ function aiGeminiContents(messages){
 }
 async function aiGeminiCall(contents, system, withSearch, signal){
   const key = await aiGkeyGet(); if(!key) throw new Error('Add your Google Gemini key first (Settings → Web search).');
-  const s = aiS(), model = (s.provider==='gemini' && s.model) ? s.model : 'gemini-3.8-flash';
+  const s = aiS(), model = (s.provider==='gemini' && s.model) ? s.model : 'gemini-2.5-flash';
   const body = { contents, generationConfig:{ temperature:Number(s.temp) } };
   if(system) body.systemInstruction = { parts:[{ text:system }] };
   if(withSearch) body.tools = [{ google_search:{} }];
@@ -5130,7 +5130,7 @@ async function aiDoResearch(q, lang){
 async function aiRenderSettings(){
   const s = aiS(), body = document.getElementById('ai-body'), o = location.origin;
   if(s.provider==='free' || s.provider==='gemini'){
-    body.innerHTML = aiTopCard() + aiSearchCard() + '<div class="card"><h3 style="margin-top:0;">🧩 Options</h3><label>Model name (leave as it is)</label><input value="'+esc(s.model||(s.provider==='gemini'?'gemini-3.8-flash':'openai'))+'" onchange="aiSaveS({model:this.value.trim()||(aiS().provider===\'gemini\'?\'gemini-2.5-flash\':\'openai\')})"><label>Creativity (temperature)</label><input type="number" min="0" max="2" step="0.1" value="'+esc(s.temp)+'" onchange="aiSaveS({temp:Number(this.value)||0.7})"><label>Instructions for the AI</label><textarea rows="5" onchange="aiSaveS({system:this.value.trim()||AI_SYS_DEFAULT})">'+esc(s.system)+'</textarea></div>';
+    body.innerHTML = aiTopCard() + aiSearchCard() + '<div class="card"><h3 style="margin-top:0;">🧩 Options</h3><label>Model name (leave as it is)</label><input value="'+esc(s.model||(s.provider==='gemini'?'gemini-2.5-flash':'openai'))+'" onchange="aiSaveS({model:this.value.trim()||(aiS().provider===\'gemini\'?\'gemini-2.5-flash\':\'openai\')})"><label>Creativity (temperature)</label><input type="number" min="0" max="2" step="0.1" value="'+esc(s.temp)+'" onchange="aiSaveS({temp:Number(this.value)||0.7})"><label>Instructions for the AI</label><textarea rows="5" onchange="aiSaveS({system:this.value.trim()||AI_SYS_DEFAULT})">'+esc(s.system)+'</textarea></div>';
     aiRefreshGstate(); return;
   }
   let hasTok = false;
