@@ -481,14 +481,14 @@ window.addEventListener('error', function(e){
     <div class="appShell">
     <nav class="sideNav tabGrid">
       <button id="tab-machine-btn" onclick="showMachineTab()" style="background:var(--brand);">🏠 Home</button>
-      <button id="tab-dashboard-btn" onclick="showDashboardTab()" class="ghost" style="margin-top:0;">📊 Dashboard</button>
-      <button id="tab-forecast-btn" onclick="showForecastTab()" class="ghost" style="margin-top:0;">🔮 Smart Forecast</button>
-      <button id="tab-ai-btn" onclick="showAiTab()" class="ghost" style="margin-top:0;">🤖 My Personal AI</button>
+      <button id="tab-dashboard-btn" onclick="showDashboardTab()" class="ghost" style="margin-top:0;">📊 Analytics</button>
+      <button id="tab-forecast-btn" onclick="showForecastTab()" class="ghost" style="margin-top:0;">🔮 Demand Forecast</button>
+      <button id="tab-ai-btn" onclick="showAiTab()" class="ghost" style="margin-top:0;">🤖 Assistant</button>
       <button id="tab-sales-btn" onclick="showSalesTab()" class="ghost" style="margin-top:0;">💵 Daily Sales</button>
       <button id="tab-expenses-btn" onclick="showExpensesTab()" class="ghost" style="margin-top:0;">💸 Shop Expenses</button>
-      <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Customer Accounts</button>
-      <button id="tab-personal-btn" onclick="showPersonalTab()" class="ghost" style="margin-top:0;">🧍 Personal Expenses</button>
-      <button id="tab-purchase-btn" onclick="showPurchaseTab()" class="ghost" style="margin-top:0;">🛒 Master Sheet</button>
+      <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Udhar Ledger</button>
+      <button id="tab-personal-btn" onclick="showPersonalTab()" class="ghost" style="margin-top:0;">🧍 Personal Finance</button>
+      <button id="tab-purchase-btn" onclick="showPurchaseTab()" class="ghost" style="margin-top:0;">🛒 Procurement</button>
       <button class="ghost sideNavSettings" onclick="showSettings()">⚙️ Settings</button>
     </nav>
     <div class="mainContent">
@@ -7640,6 +7640,70 @@ document.querySelectorAll('label').forEach(function(l){
   const p = new URLSearchParams(location.search);
   if(p.get('pa') && p.get('am')){ renderPayPage(p); return; }
   if(currentUser && loadUsers()[currentUser]){ enterApp(); }
+})();
+</script>
+<style>
+#bnav{display:none}
+@media(max-width:699px){.tabGrid{display:none!important}body{padding-bottom:74px}
+#bnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:900;background:var(--card);border-top:1px solid var(--card-border);padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 18px rgba(15,23,42,.08)}
+#bnav button{flex:1;margin:0;width:auto;background:transparent;color:var(--muted);border:0;box-shadow:none;font-size:.68rem;font-weight:700;padding:6px 2px;line-height:1.25}
+#bnav button.on{color:var(--brand)}#bnav button b{display:block;font-size:1.15rem}}
+.enhCard h3{margin:0 0 8px}.enhRow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--card-border);font-size:.9rem}
+#enhSheet{position:fixed;inset:0;z-index:950;background:rgba(0,0,0,.45);display:none;align-items:flex-end}
+#enhSheet>div{background:var(--card);width:100%;border-radius:20px 20px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px))}
+#enhSheet button{margin:6px 0}
+#pinLock{position:fixed;inset:0;z-index:9998;background:var(--bg);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:24px;text-align:center}
+</style>
+<div id="bnav"></div><div id="enhSheet"><div id="enhSheetBody"></div></div>
+<div id="pinLock"><div style="font-size:2.4rem">🔒</div><h3 style="margin:0">Udhar Book locked</h3><input id="pinIn" type="password" inputmode="numeric" maxlength="6" placeholder="Enter PIN" style="max-width:220px;text-align:center"><button onclick="enhUnlock()" style="max-width:220px">Unlock</button><p id="pinErr" class="hint" style="color:var(--owe)"></p></div>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)},LS=localStorage;
+var NAV=[['machine','🏠','Home','showMachineTab'],['dashboard','📊','Analytics','showDashboardTab'],['customers','📒','Ledger','showCustomersTab'],['sales','💵','Sales','showSalesTab']];
+var MORE=[['🔮 Demand Forecast','showForecastTab'],['🤖 Assistant','showAiTab'],['💸 Shop Expenses','showExpensesTab'],['🧍 Personal Finance','showPersonalTab'],['🛒 Procurement','showPurchaseTab']];
+function nav(){var h='';NAV.forEach(function(n){h+='<button id="bn-'+n[0]+'" onclick="'+n[3]+'()"><b>'+n[1]+'</b>'+n[2]+'</button>'});
+h+='<button onclick="enhMore()"><b>☰</b>More</button>';$('bnav').innerHTML=h}
+function mark(){NAV.forEach(function(n){var p=$(n[0]+'Tab'),b=$('bn-'+n[0]);if(p&&b)b.classList.toggle('on',!p.classList.contains('hidden'))})}
+window.enhMore=function(){var h='<h3 style="margin:0 0 6px">More</h3>';MORE.forEach(function(m){h+='<button class="ghost" onclick="enhGo(\''+m[1]+'\')">'+m[0]+'</button>'});
+h+='<button class="ghost" onclick="enhExport()">⬇️ Export full backup</button><button class="ghost" onclick="enhPin()">🔒 '+(LS.getItem('udhar_pin')?'Change / remove PIN':'Set PIN lock')+'</button><button onclick="enhClose()">Close</button>';
+$('enhSheetBody').innerHTML=h;$('enhSheet').style.display='flex'};
+window.enhClose=function(){$('enhSheet').style.display='none'};
+window.enhGo=function(f){enhClose();window[f]()};
+window.enhExport=function(){try{var b=new Blob([JSON.stringify(buildPayload(),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='udhar-book-backup-'+todayStr()+'.json';document.body.appendChild(a);a.click();a.remove();LS.setItem('udhar_last_backup',Date.now());showBanner('✅ Backup downloaded')}catch(e){showBanner('⚠️ Export failed')}enhClose()};
+/* PIN lock */
+window.enhPin=function(){enhClose();if(LS.getItem('udhar_pin')){if(confirm('Remove PIN lock? (Cancel = change PIN)')){LS.removeItem('udhar_pin');showBanner('PIN removed');return}}
+var p=prompt('Enter new PIN (4-6 digits)');if(p===null)return;if(!/^\d{4,6}$/.test(p)){showBanner('PIN must be 4-6 digits');return}
+var s=Date.now().toString(36)+Math.random().toString(36).slice(2);LS.setItem('udhar_pin',JSON.stringify({s:s,h:hashPass(p,s)}));showBanner('🔒 PIN set')};
+function lock(){if(!LS.getItem('udhar_pin')||!LS.getItem('udhar_current'))return;$('pinLock').style.display='flex';$('pinIn').value='';$('pinErr').textContent=''}
+window.enhUnlock=function(){var o=JSON.parse(LS.getItem('udhar_pin')||'null');if(!o){$('pinLock').style.display='none';return}
+if(hashPass($('pinIn').value,o.s)===o.h){$('pinLock').style.display='none';touch()}else $('pinErr').textContent='Wrong PIN'};
+var last=Date.now(),hid=0;function touch(){last=Date.now()}
+['click','keydown','touchstart'].forEach(function(e){document.addEventListener(e,touch,{passive:true})});
+setInterval(function(){if(Date.now()-last>120000)lock()},10000);
+document.addEventListener('visibilitychange',function(){if(document.hidden)hid=Date.now();else if(hid&&Date.now()-hid>60000)lock()});
+/* backup + storage warnings */
+var _s=window.syncToDrive;if(_s)window.syncToDrive=async function(){var r=await _s.apply(this,arguments);if(r===true)LS.setItem('udhar_last_backup',Date.now());return r};
+function checks(){var lb=+LS.getItem('udhar_last_backup')||0,d=(Date.now()-lb)/864e5;
+if(!lb||d>3)showBanner('⚠️ No backup for '+(lb?Math.floor(d)+' days':'a while')+' — connect Drive or use More → Export');
+var n=0;for(var k in LS)n+=(LS[k]||'').length*2;if(n>4e6)setTimeout(function(){showBanner('⚠️ Phone storage '+(n/1e6).toFixed(1)+' MB of ~5 MB full — export a backup now')},4500)}
+/* profit card + top defaulters */
+function card(id,before){var e=$(id);if(!e){e=document.createElement('div');e.id=id;e.className='card enhCard';before.parentNode.insertBefore(e,before)}return e}
+function profit(){var h=$('homeTodayCard');if(!h)return;var t=todayStr(),m=t.slice(0,7),all=loadDailySalesAll(),sa=0,sm=0;
+Object.keys(all).forEach(function(k){var v=all[k],x=(+v.cashSales||0)+(+v.onlineSales||0);if(k===t)sa+=x;if(k.slice(0,7)===m)sm+=x});
+var ea=0,em=0;loadExpenses().forEach(function(x){var d=String(x.date||'');if(d===t)ea+=+x.amount||0;if(d.slice(0,7)===m)em+=+x.amount||0});
+function r(l,v){return '<div class="enhRow"><span>'+l+'</span><b style="color:'+(v<0?'var(--owe)':'var(--paid)')+'">'+fmtMoney(v)+'</b></div>'}
+card('profitCard',h).innerHTML='<h3>📈 Profit (sales − shop expenses)</h3>'+r('Today',sa-ea)+r('This month',sm-em)}
+function defaulters(){var c=$('custListCard');if(!c)return;var bal={},names={};loadCustomers().forEach(function(x){names[x.id]=x.name});
+loadTxns().forEach(function(t){bal[t.customerId]=(bal[t.customerId]||0)+(t.type==='credit'?t.amount:-t.amount)});
+var a=Object.keys(bal).filter(function(k){return bal[k]>0&&names[k]}).sort(function(x,y){return bal[y]-bal[x]}).slice(0,5);
+var h='<h3>🚨 Top 5 pending (udhar)</h3>';a.forEach(function(k){h+='<div class="enhRow"><span>'+esc(names[k])+'</span><b style="color:var(--owe)">'+fmtMoney(bal[k])+'</b></div>'});
+card('topDefCard',c).innerHTML=a.length?h:'<h3>🚨 Top pending</h3><p class="hint">No pending udhar 🎉</p>'}
+function wrap(f,fn){var o=window[f];if(!o)return;window[f]=function(){var r=o.apply(this,arguments);try{fn()}catch(e){}setTimeout(mark,50);return r}}
+['showMachineTab','showDashboardTab','showForecastTab','showAiTab','showSalesTab','showExpensesTab','showPersonalTab','showPurchaseTab'].forEach(function(f){wrap(f,function(){if(f==='showMachineTab')profit()})});
+wrap('showCustomersTab',defaulters);
+var _rc=window.renderCustomers;if(_rc)window.renderCustomers=function(){var r=_rc.apply(this,arguments);try{defaulters()}catch(e){}return r};
+nav();setInterval(function(){var a=$('authView');$('bnav').style.visibility=(a&&!a.classList.contains('hidden'))?'hidden':'visible'},800);
+setTimeout(function(){lock();if(LS.getItem('udhar_current'))checks()},1500);
 })();
 </script>
 </body>
