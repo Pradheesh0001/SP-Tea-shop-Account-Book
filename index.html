@@ -483,7 +483,7 @@ window.addEventListener('error', function(e){
       <button id="tab-machine-btn" onclick="showMachineTab()" style="background:var(--brand);">🏠 Home</button>
       <button id="tab-dashboard-btn" onclick="showDashboardTab()" class="ghost" style="margin-top:0;">📊 Analytics</button>
       <button id="tab-forecast-btn" onclick="showForecastTab()" class="ghost" style="margin-top:0;">🔮 Demand Forecast</button>
-      <button id="tab-ai-btn" onclick="showAiTab()" class="ghost" style="margin-top:0;">🤖 Assistant</button>
+      <button id="tab-ai-btn" onclick="showAiTab()" class="ghost" style="margin-top:0;">🖼️ Photo Editor</button>
       <button id="tab-sales-btn" onclick="showSalesTab()" class="ghost" style="margin-top:0;">💵 Daily Sales</button>
       <button id="tab-expenses-btn" onclick="showExpensesTab()" class="ghost" style="margin-top:0;">💸 Shop Expenses</button>
       <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Udhar Ledger</button>
@@ -950,7 +950,7 @@ window.addEventListener('error', function(e){
     </div>
 
     <!-- MY PERSONAL AI TAB -->
-    <div id="aiTab" class="hidden"><div id="ai-root"></div></div>
+    <div id="aiTab" class="hidden"><div id="pe-root"></div></div>
 
     <!-- SMART FORECAST TAB -->
     <div id="forecastTab" class="hidden">
@@ -5232,7 +5232,7 @@ async function aiDeleteModel(){
 /* ---------- shell: status, navigation, overview ---------- */
 const AI_VIEWS = [['home','🏠 Overview'],['chat','💬 Chat'],['image','🎨 Images'],['video','🎬 Video'],['code','👨‍💻 Coding'],['files','📁 Files'],['memory','🧠 Memory'],['privacy','🛡️ Privacy'],['settings','⚙️ Settings']];
 let aiView = 'home', aiInited = false;
-function showAiTab(){ activateTab('ai'); aiOpen(); }
+function showAiTab(){ activateTab('ai'); if(window.peInit) peInit(); }
 function aiBuild(){
   document.getElementById('ai-root').innerHTML = '<div class="card" id="ai-status"></div><div class="aiNav" id="ai-nav"></div><div id="ai-body"></div>';
   document.getElementById('ai-nav').innerHTML = AI_VIEWS.map(v=>'<button type="button" id="ai-nv-'+v[0]+'" class="ghost" onclick="aiShow(\''+v[0]+'\')">'+v[1]+'</button>').join('');
@@ -7665,7 +7665,7 @@ document.querySelectorAll('label').forEach(function(l){
 (function(){
 var $=function(i){return document.getElementById(i)},LS=localStorage;
 var NAV=[['machine','🏠','Home','showMachineTab'],['dashboard','📊','Analytics','showDashboardTab'],['customers','📒','Ledger','showCustomersTab'],['sales','💵','Sales','showSalesTab']];
-var MORE=[['🔮 Demand Forecast','showForecastTab'],['🤖 Assistant','showAiTab'],['💸 Shop Expenses','showExpensesTab'],['🧍 Personal Finance','showPersonalTab'],['🛒 Procurement','showPurchaseTab'],['🎬 Cinematic Studio','cinOpen'],['💻 Code Animation','vidMakerOpen']];
+var MORE=[['🔮 Demand Forecast','showForecastTab'],['🖼️ Private Photo Editor','showAiTab'],['💸 Shop Expenses','showExpensesTab'],['🧍 Personal Finance','showPersonalTab'],['🛒 Procurement','showPurchaseTab']];
 function nav(){var h='';NAV.forEach(function(n){h+='<button id="bn-'+n[0]+'" onclick="'+n[3]+'()"><b>'+n[1]+'</b>'+n[2]+'</button>'});
 h+='<button onclick="enhMore()"><b>☰</b>More</button>';$('bnav').innerHTML=h}
 function mark(){NAV.forEach(function(n){var p=$(n[0]+'Tab'),b=$('bn-'+n[0]);if(p&&b)b.classList.toggle('on',!p.classList.contains('hidden'))})}
@@ -7700,168 +7700,205 @@ nav();setInterval(function(){var a=$('authView');$('bnav').style.visibility=(a&&
 setTimeout(function(){if(LS.getItem('udhar_current'))checks()},1500);
 })();
 </script>
-<div id="vmk" style="display:none;position:fixed;inset:0;z-index:960;background:var(--bg);overflow:auto;padding:calc(12px + env(safe-area-inset-top,0px)) 14px calc(20px + env(safe-area-inset-bottom,0px))">
-<div style="max-width:560px;margin:0 auto">
-<h3 style="margin:0 0 6px">🎬 HTML Video Maker (free)</h3>
-<p class="hint" style="text-align:left;margin:0 0 8px">Describe the video. The AI writes HTML animation code, then the app records it as a video file you can download.</p>
-<textarea id="vmkPrompt" placeholder="e.g. Tea shop offer video: 'SP Tea Shop – Special Tea ₹10' with steam, moving cups and colourful text (Tamil or English)" style="min-height:90px"></textarea>
-<div style="display:flex;gap:8px;margin:8px 0"><select id="vmkDur"><option value="6">6 sec</option><option value="10" selected>10 sec</option><option value="15">15 sec</option></select>
-<select id="vmkShape"><option value="p">Portrait 9:16</option><option value="l">Landscape 16:9</option></select></div>
-<button onclick="vmkGen()">✨ Generate code with AI</button>
-<textarea id="vmkCode" placeholder="Video HTML code appears here (you can edit it)" spellcheck="false" style="min-height:140px;font:12px monospace;margin-top:8px"></textarea>
-<button style="background:var(--paid)" onclick="vmkRec()">▶ Preview &amp; record video</button>
-<p id="vmkMsg" class="hint" style="text-align:left"></p>
-<div id="vmkBox" style="width:100%;background:#000;border-radius:12px;overflow:hidden;display:none"><iframe id="vmkFrame" style="border:0;width:100%;display:block"></iframe></div>
-<div id="vmkOut" style="display:none;margin-top:10px"><video id="vmkVid" controls playsinline style="width:100%;border-radius:12px"></video><a id="vmkDl" download="udhar-video.webm"><button type="button" style="margin-top:8px">⬇️ Download video</button></a></div>
-<button class="ghost" onclick="document.getElementById('vmk').style.display='none'">Close</button>
-</div></div>
 <script>
 (function(){
-var $=function(i){return document.getElementById(i)},busy=false;
-function msg(t){$('vmkMsg').textContent=t}
-window.vidMakerOpen=function(){$('vmk').style.display='block'};
-window.vmkGen=async function(){
-  var p=($('vmkPrompt').value||'').trim(); if(!p){msg('Write what the video should show');return}
-  if(busy)return; busy=true;
-  var d=$('vmkDur').value,W=$('vmkShape').value==='p'?[720,1280]:[1280,720],txt='';
-  var sys='You write ONE complete self-contained HTML file that plays an animated video on a single <canvas id="c" width="'+W[0]+'" height="'+W[1]+'"> using JavaScript and requestAnimationFrame. No external files, no images, no audio: draw only shapes, gradients, particles and text (Tamil text allowed, font "Noto Sans Tamil, sans-serif"). Use big readable text, smooth motion and bright colours. Animate for exactly '+d+' seconds from page load, then freeze on the last frame. Reply with ONLY the code inside one ```html block.';
-  msg('🤖 AI is writing the video code…');
-  try{
-    await aiStream([{role:'system',content:sys},{role:'user',content:p}],function(t){txt+=t;$('vmkCode').value=txt},undefined,{});
-    var m=txt.match(/```(?:html)?\s*([\s\S]*?)```/i); var code=m?m[1]:txt; var i=code.search(/<!doctype|<html|<canvas/i); if(i>0)code=code.slice(i);
-    if(!/<canvas/i.test(code)){msg('⚠️ AI did not return video code. Tap Generate again.')}else{$('vmkCode').value=code.trim();msg('✅ Code ready. Tap Preview & record.')}
-  }catch(e){msg('⚠️ AI error: '+((e&&e.message)||'failed')+' — try again')}
-  busy=false;
-};
-window.vmkRec=function(){
-  var code=($('vmkCode').value||'').trim(); if(!code){msg('Generate or paste code first');return}
-  if(typeof MediaRecorder==='undefined'||!HTMLCanvasElement.prototype.captureStream){msg('This browser cannot record video — use Chrome');return}
-  var m=code.match(/width\s*=\s*["']?(\d+)["']?\s+height\s*=\s*["']?(\d+)/i),w=m?+m[1]:720,h=m?+m[2]:1280,dur=+$('vmkDur').value;
-  var fr=$('vmkFrame'),box=$('vmkBox'); box.style.display='block'; $('vmkOut').style.display='none';
-  var css='<style>html,body{margin:0;background:#000}canvas{width:100%!important;height:auto!important;display:block}</style>';
-  fr.style.height=Math.round(box.clientWidth*h/w)+'px';
-  fr.srcdoc=/<head[^>]*>/i.test(code)?code.replace(/<head[^>]*>/i,function(x){return x+css}):css+code;
-  msg('🎥 Recording… please keep this screen open ('+dur+' sec)');
-  fr.onload=function(){ setTimeout(function(){
-    try{
-      var cv=fr.contentDocument.querySelector('canvas'); if(!cv){msg('⚠️ No canvas found in the code');return}
-      var st=cv.captureStream(30),mt=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(function(x){return MediaRecorder.isTypeSupported(x)})||'';
-      var rc=new MediaRecorder(st,mt?{mimeType:mt,videoBitsPerSecond:3000000}:undefined),ch=[];
-      rc.ondataavailable=function(e){if(e.data&&e.data.size)ch.push(e.data)};
-      rc.onstop=function(){var b=new Blob(ch,{type:'video/webm'}),u=URL.createObjectURL(b);$('vmkVid').src=u;$('vmkDl').href=u;$('vmkOut').style.display='block';msg('✅ Video ready — play or download')};
-      rc.start(); setTimeout(function(){try{rc.stop()}catch(e){}},dur*1000+700);
-    }catch(e){msg('⚠️ Recording failed: '+((e&&e.message)||'error'))}
-  },400)};
-};
-})();
-</script>
-<div id="cin" style="display:none;position:fixed;inset:0;z-index:965;background:var(--bg);overflow:auto;padding:calc(12px + env(safe-area-inset-top,0px)) 14px calc(20px + env(safe-area-inset-bottom,0px))">
-<div style="max-width:620px;margin:0 auto">
-<h3 style="margin:0 0 6px">🎬 Cinematic Studio (free)</h3>
-<p class="hint" style="text-align:left;margin:0 0 8px">AI plans the scenes, makes cinematic pictures, then adds camera motion, film look, titles and music into one video with sound.</p>
-<textarea id="cinPrompt" placeholder="e.g. Cinematic ad for SP Tea Shop: early morning, steam rising from fresh tea, busy street, happy customers (Tamil or English)" style="min-height:90px"></textarea>
-<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap"><select id="cinMood" style="flex:1"><option value="epic">Epic music</option><option value="calm">Calm music</option><option value="happy">Happy music</option><option value="mystery">Mystery music</option></select>
-<select id="cinScenes" style="flex:1"><option value="4">4 scenes</option><option value="5" selected>5 scenes</option><option value="6">6 scenes</option></select>
-<select id="cinDur" style="flex:1"><option value="4">4 sec each</option><option value="5" selected>5 sec each</option><option value="6">6 sec each</option></select>
-<select id="cinShape" style="flex:1"><option value="l">Landscape 16:9</option><option value="p">Portrait 9:16</option></select></div>
-<button onclick="cinMake()">🎬 Make cinematic video</button>
-<p id="cinMsg" class="hint" style="text-align:left"></p>
-<canvas id="cinCv" width="1280" height="720" style="width:100%;border-radius:12px;background:#000;display:none"></canvas>
-<div id="cinOut" style="display:none;margin-top:10px"><video id="cinVid" controls playsinline style="width:100%;border-radius:12px"></video><a id="cinDl" download="cinematic-video.webm"><button type="button" style="margin-top:8px">⬇️ Download video (with sound)</button></a></div>
-<button class="ghost" onclick="document.getElementById('cin').style.display='none'">Close</button>
-</div></div>
-<script>
-(function(){
-var $=function(i){return document.getElementById(i)},busy=false;
-function msg(t){$('cinMsg').textContent=t}
-window.cinOpen=function(){$('cin').style.display='block'};
-function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
-async function plan(p,n){
-  var sys='You are a film director. Return ONLY valid JSON: {"scenes":[{"img":"very detailed cinematic image prompt in English with camera angle, lighting, mood","cap":"short caption, max 7 words, in the same language as the idea"}],"title":"short title"} with exactly '+n+' scenes telling a story with a beginning, middle and end.';
-  var txt='';
-  try{ await aiStream([{role:'system',content:sys},{role:'user',content:p}],function(t){txt+=t},undefined,{});
-    var m=txt.match(/\{[\s\S]*\}/); var j=JSON.parse(m[0]); if(j.scenes&&j.scenes.length) return {title:j.title||'',scenes:j.scenes.slice(0,n)};
-  }catch(e){}
-  var views=['wide establishing shot at sunrise','close-up detail shot','medium shot with people, warm light','low angle dramatic shot','golden hour final wide shot','slow motion macro shot'];
-  return {title:p.slice(0,40),scenes:views.slice(0,n).map(function(v,i){return {img:p+', '+v,cap:i===0?p.slice(0,40):''}})};
-}
-async function loadImg(prompt,W,H,seed){
-  var url='https://image.pollinations.ai/prompt/'+encodeURIComponent(prompt+', cinematic film still, 35mm, dramatic lighting, rich colour grading, highly detailed')+'?width='+W+'&height='+H+'&nologo=true&seed='+seed;
-  for(var k=0;k<2;k++){
-    try{ var c=new AbortController(),tm=setTimeout(function(){c.abort()},45000); var r=await fetch(url,{signal:c.signal}); clearTimeout(tm);
-      if(!r.ok)throw new Error('HTTP '+r.status); return await createImageBitmap(await r.blob());
-    }catch(e){ await sleep(1500); }
+var $=function(i){return document.getElementById(i)};
+var MAXS=2600,HMAX=10,orig=null,cur=null,hist=[],cv,cx,mode='view',sel=null,drag=null,sbase=null,built=false,emo='';
+function mk(w,h){var c=document.createElement('canvas');c.width=Math.max(1,Math.round(w));c.height=Math.max(1,Math.round(h));return c}
+function X(c){return c.getContext('2d',{willReadFrequently:true})}
+function cp(c){var o=mk(c.width,c.height);X(o).drawImage(c,0,0);return o}
+function px(c,fn){var o=mk(c.width,c.height),id=X(c).getImageData(0,0,c.width,c.height);fn(id.data);X(o).putImageData(id,0,0);return o}
+function msg(t){var e=$('pe-msg');if(e)e.textContent=t}
+/*P1*/
+function peParse(src){
+  var ops=[],unk=[],s0=String(src||'').trim(),s=s0,tOp=null;
+  var COL={red:'#ef4444',white:'#ffffff',yellow:'#facc15',black:'#000000',blue:'#3b82f6',green:'#22c55e',pink:'#ec4899',orange:'#f97316'};
+  var m=s0.match(/(?:add text|write|caption|text|எழுது)\s*[:\-]?\s*(?:["“'‘]([^"”’']+)["”’']([\s\S]*)|([\s\S]+?))\s*$/i);
+  if(m){
+    var q=m[1]!==undefined,txt=(q?m[1]:m[3]).trim(),scan=q?(m[2]||''):txt,rest='';
+    var low=scan.toLowerCase(),pos=/\btop\b/.test(low)?'top':(/\b(center|centre|middle)\b/.test(low)?'center':'bottom'),col='#ffffff',size=7;
+    for(var k in COL){if(new RegExp('\\b'+k+'\\b').test(low))col=COL[k]}
+    if(/\b(big|large|huge|bigger)\b/.test(low))size=11;else if(/\b(small|tiny|smaller)\b/.test(low))size=4.5;
+    var strip=function(x){return x.replace(/\b(at|in|on)?\s*(the\s+)?(top|bottom|center|centre|middle)\b/ig,' ').replace(/\b(in\s+)?(red|white|yellow|black|blue|green|pink|orange)(\s+colou?r)?\b/ig,' ').replace(/\b(big|large|huge|small|tiny)\b/ig,' ').replace(/\s+/g,' ').trim()};
+    if(q){rest=strip(m[2]||'').replace(/^(,|and|then)\s*/i,'')}else{txt=strip(txt)}
+    if(txt)tOp={t:'text',txt:txt,pos:pos,color:col,size:size};
+    s=s0.slice(0,m.index)+(/[a-z]/i.test(rest)?' , '+rest:'');
   }
-  return null;
+  s=s.toLowerCase().replace(/black\s*(and|&)\s*white/g,' bw ').replace(/கருப்பு\s*வெள்ளை/g,' bw ');
+  s.split(/\s*(?:,|;|\bthen\b|\band\b|&|பின்னர்|மற்றும்)\s*/).forEach(function(seg){
+    seg=seg.trim(); if(!seg||/^(and|the|it|please|make|my|photo|image|picture|pic|also)$/.test(seg))return;
+    var nn=seg.match(/(\d+(?:\.\d+)?)/),n=nn?+nn[1]:null;
+    var less=/\b(less|reduce|decrease|lower|minus|down|dim|reduced)\b|குறை/.test(seg);
+    var big=/\b(a lot|very|much|too|max|extra|lots)\b/.test(seg)?2:(/\b(little|slight|slightly|bit)\b/.test(seg)?0.4:1);
+    if(/\bundo\b/.test(seg))ops.push({t:'undo'});
+    else if(/\b(reset|original|revert|start over)\b/.test(seg))ops.push({t:'reset'});
+    else if(/background|erase|remove (the )?(object|person|man|woman|people)|swap|replace|change (the )?(hair|cloth|dress|face|colou?r of)|generate|ai edit/.test(seg))ops.push({t:'limit',seg:seg});
+    else if(/rotate|turn|spin|சுழற்று/.test(seg)){var a=/upside|180/.test(seg)?180:(/left|anti|counter|இடது/.test(seg)?-90:90);if(n!==null&&a!==180)a=(a<0?-1:1)*n;ops.push({t:'rot',v:a})}
+    else if(/flip|mirror|திருப்பு/.test(seg))ops.push({t:'flip',v:/vert|upside|up and down|up down/.test(seg)?'v':'h'});
+    else if(/crop|\bcut\b/.test(seg)){var r=/9:16|story|reel|vertical/.test(seg)?'9:16':(/16:9|wide|youtube|landscape/.test(seg)?'16:9':(/4:5|instagram post/.test(seg)?'4:5':(/3:4/.test(seg)?'3:4':(/4:3/.test(seg)?'4:3':'1:1'))));ops.push({t:'crop',v:r})}
+    else if(/resize|scale|shrink|smaller|bigger|enlarge|compress|reduce size/.test(seg)){var rv=/half/.test(seg)?{pct:50}:(n!==null?(/%|percent/.test(seg)||n<=300?{pct:n}:{w:n}):{pct:/bigger|enlarge/.test(seg)?150:50});ops.push({t:'resize',v:rv})}
+    else if(/\bbw\b|grayscale|greyscale|monochrome|gray\b|grey\b/.test(seg))ops.push({t:'bw'});
+    else if(/sepia|old photo|antique/.test(seg))ops.push({t:'sepia'});
+    else if(/vintage|retro|film look|cinematic|movie/.test(seg))ops.push({t:'vintage'});
+    else if(/drama|moody|punchy|hdr/.test(seg))ops.push({t:'drama'});
+    else if(/\bfade|faded|matte/.test(seg))ops.push({t:'fade'});
+    else if(/invert|negative/.test(seg))ops.push({t:'invert'});
+    else if(/vignette|dark corners|dark edges/.test(seg))ops.push({t:'vig'});
+    else if(/pixel|mosaic/.test(seg))ops.push({t:'pix'});
+    else if(/smooth|soft skin|skin|beauty|glow/.test(seg))ops.push({t:'smooth'});
+    else if(/sharp|crisp|\bhd\b|detail|deblur|unblur|focus|clarity/.test(seg)||(/clear/.test(seg)&&!/brightness/.test(seg)))ops.push({t:'sharp'});
+    else if(/blur|மங்கல/.test(seg))ops.push({t:'blur',v:n!==null?Math.min(30,n):4*big});
+    else if(/\bauto\b|enhance|fix|improve|beautif|better|perfect|professional|pro look|touch ?up/.test(seg))ops.push({t:'auto'});
+    else if(/warm|golden|sunset|summer/.test(seg))ops.push({t:'warm',v:30*big});
+    else if(/cool|cold|winter|blue tone/.test(seg))ops.push({t:'cool',v:30*big});
+    else if(/contrast/.test(seg))ops.push({t:'contrast',v:(less?-1:1)*(n!==null?n:25*big)});
+    else if(/saturat|vivid|colou?rful|colou?r|pop\b|dull|pale|mute/.test(seg))ops.push({t:'sat',v:((less||/dull|pale|mute|desaturat/.test(seg))?-1:1)*(n!==null?n:30*big)});
+    else if(/dark|dim|இருட்டு/.test(seg)&&!/bright|light up|lighten/.test(seg))ops.push({t:'bright',v:-(n!==null?n:20*big)});
+    else if(/bright|lighten|lighter|light up|exposure|பிரகாசம்/.test(seg))ops.push({t:'bright',v:(less?-1:1)*(n!==null?n:20*big)});
+    else unk.push(seg);
+  });
+  if(tOp)ops.push(tOp);
+  return {ops:ops,unk:unk};
 }
-function music(ac,dest,total,D,mood){
-  var M={epic:{r:55,s:[0,3,7],p:[0,-4,-2,-5],bpm:100,kick:1},calm:{r:65.4,s:[0,4,7],p:[0,5,3,7],bpm:60},happy:{r:98,s:[0,4,7],p:[0,5,7,5],bpm:120,arp:1},mystery:{r:58.3,s:[0,3,6],p:[0,1,0,-2],bpm:70}}[mood]||{r:55,s:[0,3,7],p:[0,-4,-2,-5],bpm:100};
-  var g=ac.createGain(); g.gain.value=0.6; g.connect(dest); var t0=ac.currentTime+0.1;
-  g.gain.setValueAtTime(0.6,t0+total-1.2); g.gain.linearRampToValueAtTime(0,t0+total);
-  var beat=60/M.bpm,bar=beat*4,nb=Math.ceil(total/bar);
-  function env(o,t,a,h,r,v){var e=ac.createGain();e.gain.setValueAtTime(0.0001,t);e.gain.linearRampToValueAtTime(v,t+a);e.gain.setValueAtTime(v,t+a+h);e.gain.linearRampToValueAtTime(0.0001,t+a+h+r);o.connect(e);e.connect(g);if(o.start){o.start(t);o.stop(t+a+h+r+0.05)}}
-  function osc(type,f,det){var o=ac.createOscillator();o.type=type;o.frequency.value=f;o.detune.value=det||0;return o}
-  for(var b=0;b<nb;b++){
-    var t=t0+b*bar,root=M.r*Math.pow(2,M.p[b%4]/12);
-    M.s.forEach(function(s){var f=root*2*Math.pow(2,s/12);[-7,7].forEach(function(d){var o=osc('sawtooth',f,d),lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=900;o.connect(lp);o.start(t);o.stop(t+bar+1.2);env(lp,t,0.7,bar-0.6,0.9,0.05)})});
-    env(osc('sine',root,0),t,0.05,bar-0.4,0.4,0.3);
-    for(var i=0;i<4;i++){
-      var bt=t+i*beat;
-      if(M.kick){var k=osc('sine',140,0);k.frequency.setValueAtTime(140,bt);k.frequency.exponentialRampToValueAtTime(40,bt+0.14);env(k,bt,0.005,0.02,0.2,0.7)}
-      if(M.arp){for(var j=0;j<2;j++){var at=bt+j*beat/2,sc=M.s[(i*2+j)%3];env(osc('triangle',root*4*Math.pow(2,sc/12),0),at,0.01,0.05,0.18,0.08)}}
-    }
-    if(!M.arp&&!M.kick) env(osc('sine',root*4*Math.pow(2,M.s[b%3]/12),0),t+beat,0.02,0.1,1.2,0.07);
+/*P2*/
+function adj(c,o){var B=(o.b||0)*2.55,C=(o.c||0)*2.55,f=(259*(C+255))/(255*(259-C)),S=1+(o.s||0)/100,W=(o.w||0)*0.6;
+  return px(c,function(d){for(var i=0;i<d.length;i+=4){var r=d[i]+B,g=d[i+1]+B,b=d[i+2]+B;r=f*(r-128)+128;g=f*(g-128)+128;b=f*(b-128)+128;var y=.299*r+.587*g+.114*b;d[i]=y+(r-y)*S+W;d[i+1]=y+(g-y)*S;d[i+2]=y+(b-y)*S-W}})}
+function sepia(c,a){return px(c,function(d){for(var i=0;i<d.length;i+=4){var r=d[i],g=d[i+1],b=d[i+2];d[i]=r+(.393*r+.769*g+.189*b-r)*a;d[i+1]=g+(.349*r+.686*g+.168*b-g)*a;d[i+2]=b+(.272*r+.534*g+.131*b-b)*a}})}
+function inv(c){return px(c,function(d){for(var i=0;i<d.length;i+=4){d[i]=255-d[i];d[i+1]=255-d[i+1];d[i+2]=255-d[i+2]}})}
+function vig(c,a){var o=cp(c),x=X(o),w=o.width,h=o.height,g=x.createRadialGradient(w/2,h/2,Math.min(w,h)*0.3,w/2,h/2,Math.hypot(w,h)/2);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,'+a+')');x.fillStyle=g;x.fillRect(0,0,w,h);return o}
+function pixel(c,bl){var w=c.width,h=c.height,s=mk(Math.ceil(w/bl),Math.ceil(h/bl)),sx=X(s);sx.imageSmoothingEnabled=false;sx.drawImage(c,0,0,s.width,s.height);var o=mk(w,h),x=X(o);x.imageSmoothingEnabled=false;x.drawImage(s,0,0,w,h);return o}
+function boxBlur(c,r){r=Math.max(1,Math.round(r));var w=c.width,h=c.height,o=mk(w,h),id=X(c).getImageData(0,0,w,h),a=id.data,t=new Uint8ClampedArray(a.length);
+  function pass(i,u,hz){var n=hz?w:h,m=hz?h:w,st=hz?4:4*w,ln=hz?4*w:4,d=2*r+1;
+    for(var l=0;l<m;l++){var b=l*ln;for(var ch=0;ch<3;ch++){var s=0,k;for(k=-r;k<=r;k++)s+=i[b+Math.min(n-1,Math.max(0,k))*st+ch];
+      for(k=0;k<n;k++){u[b+k*st+ch]=s/d;s+=i[b+Math.min(n-1,k+r+1)*st+ch]-i[b+Math.max(0,k-r)*st+ch]}}}}
+  for(var q=0;q<2;q++){pass(a,t,true);pass(t,a,false)}
+  X(o).putImageData(id,0,0);return o}
+function unsharp(c,amt,r){var b=X(boxBlur(c,r)).getImageData(0,0,c.width,c.height).data;return px(c,function(d){for(var i=0;i<d.length;i+=4){for(var k=0;k<3;k++)d[i+k]=d[i+k]+amt*(d[i+k]-b[i+k])}})}
+function mix(a,b,t){var bd=X(b).getImageData(0,0,b.width,b.height).data;return px(a,function(d){for(var i=0;i<d.length;i+=4){for(var k=0;k<3;k++)d[i+k]=d[i+k]*(1-t)+bd[i+k]*t}})}
+function auto(c){var w=c.width,h=c.height,id=X(c).getImageData(0,0,w,h).data,lut=[];
+  for(var ch=0;ch<3;ch++){var H=new Array(256).fill(0),i;for(i=ch;i<id.length;i+=4)H[id[i]]++;var tot=w*h,lo=0,hi=255,s=0;
+    for(i=0;i<256;i++){s+=H[i];if(s>tot*0.005){lo=i;break}}s=0;for(i=255;i>=0;i--){s+=H[i];if(s>tot*0.005){hi=i;break}}
+    if(hi-lo<20){lo=0;hi=255}var L=[];for(i=0;i<256;i++)L.push(Math.max(0,Math.min(255,(i-lo)*255/(hi-lo))));lut.push(L)}
+  return adj(px(c,function(d){for(var i=0;i<d.length;i+=4){d[i]=lut[0][d[i]];d[i+1]=lut[1][d[i+1]];d[i+2]=lut[2][d[i+2]]}}),{s:12,c:6})}
+function rot(c,deg){var a=deg*Math.PI/180,w=c.width,h=c.height,nw=Math.abs(w*Math.cos(a))+Math.abs(h*Math.sin(a)),nh=Math.abs(w*Math.sin(a))+Math.abs(h*Math.cos(a));
+  var o=mk(nw,nh),x=X(o);x.translate(o.width/2,o.height/2);x.rotate(a);x.drawImage(c,-w/2,-h/2);return o}
+function flip(c,v){var o=mk(c.width,c.height),x=X(o);if(v==='h'){x.translate(c.width,0);x.scale(-1,1)}else{x.translate(0,c.height);x.scale(1,-1)}x.drawImage(c,0,0);return o}
+function cropR(c,r){var p=r.split(':'),R=p[0]/p[1],w=c.width,h=c.height,nw=w,nh=h;if(w/h>R)nw=h*R;else nh=w/R;return sub(c,(w-nw)/2,(h-nh)/2,nw,nh)}
+function sub(c,x,y,w,h){x=Math.max(0,Math.round(x));y=Math.max(0,Math.round(y));w=Math.max(1,Math.min(c.width-x,Math.round(w)));h=Math.max(1,Math.min(c.height-y,Math.round(h)));var o=mk(w,h);X(o).drawImage(c,x,y,w,h,0,0,w,h);return o}
+function resz(c,v){var f=v.w?v.w/c.width:v.pct/100;f=Math.min(f,MAXS/Math.max(c.width,c.height));f=Math.max(0.05,f);var o=mk(c.width*f,c.height*f),x=X(o);x.imageSmoothingQuality='high';x.drawImage(c,0,0,o.width,o.height);return o}
+function txtAt(c,t,x,y,pct,col,bold,pos){var x2=X(c),fs=Math.round(Math.min(c.width,c.height)*pct/100*1.2),lh=fs*1.2;x2.font=(bold===false?'500 ':'800 ')+fs+'px "Plus Jakarta Sans","Noto Sans Tamil",sans-serif';x2.textAlign='center';x2.textBaseline='middle';
+  var w=t.split(' '),L=[],cu='';w.forEach(function(s){var tt=cu?cu+' '+s:s;if(x2.measureText(tt).width>c.width*0.9&&cu){L.push(cu);cu=s}else cu=tt});if(cu)L.push(cu);
+  var cx0=x==null?c.width/2:x,m=fs*0.9,y0=y!=null?y-(L.length-1)*lh/2:(pos==='top'?m+fs/2:(pos==='center'?c.height/2-(L.length-1)*lh/2:c.height-m-fs/2-(L.length-1)*lh));
+  x2.lineJoin='round';x2.lineWidth=fs*0.14;x2.strokeStyle=col==='#000000'?'#ffffff':'#000000';x2.fillStyle=col;L.forEach(function(s,i){x2.strokeText(s,cx0,y0+i*lh);x2.fillText(s,cx0,y0+i*lh)})}
+function emoAt(c,e,x,y,pct){var x2=X(c),fs=Math.round(Math.min(c.width,c.height)*pct/100*2.5);x2.font=fs+'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';x2.textAlign='center';x2.textBaseline='middle';x2.fillText(e,x,y)}
+function rad(c,v){return Math.max(1,Math.round(v*Math.max(c.width,c.height)/800))}
+function op(o){
+  switch(o.t){
+    case 'bright':cur=adj(cur,{b:o.v});break;case 'contrast':cur=adj(cur,{c:o.v});break;case 'sat':cur=adj(cur,{s:o.v});break;
+    case 'warm':cur=adj(cur,{w:o.v||30,s:8});break;case 'cool':cur=adj(cur,{w:-(o.v||30),s:5});break;
+    case 'bw':cur=adj(cur,{s:-100});break;case 'sepia':cur=sepia(cur,1);break;
+    case 'vintage':cur=vig(adj(sepia(cur,.6),{c:-10,b:4}),.5);break;
+    case 'fade':cur=adj(cur,{c:-18,b:12,s:-10});break;
+    case 'drama':cur=vig(adj(cur,{c:35,s:-12,b:-6}),.55);break;
+    case 'invert':cur=inv(cur);break;case 'vig':cur=vig(cur,.6);break;
+    case 'pix':cur=pixel(cur,Math.max(8,Math.round(Math.min(cur.width,cur.height)/60)));break;
+    case 'blur':cur=boxBlur(cur,rad(cur,o.v||4));break;
+    case 'sharp':cur=unsharp(cur,1.3,Math.max(1,Math.round(Math.max(cur.width,cur.height)/900)));break;
+    case 'smooth':cur=mix(cur,boxBlur(cur,Math.round(Math.max(cur.width,cur.height)/350)+1),.6);break;
+    case 'auto':cur=auto(cur);break;
+    case 'rot':cur=rot(cur,o.v);break;case 'flip':cur=flip(cur,o.v);break;
+    case 'crop':cur=cropR(cur,o.v);break;case 'resize':cur=resz(cur,o.v);break;
+    case 'text':txtAt(cur,o.txt,null,null,o.size,o.color,true,o.pos);break;
   }
-  var nbuf=ac.createBuffer(1,ac.sampleRate*3,ac.sampleRate),d=nbuf.getChannelData(0);for(var q=0;q<d.length;q++)d[q]=Math.random()*2-1;
-  function noise(t,len,f0,f1,type,v){var s=ac.createBufferSource();s.buffer=nbuf;var f=ac.createBiquadFilter();f.type=type;f.frequency.setValueAtTime(f0,t);f.frequency.exponentialRampToValueAtTime(f1,t+len);var e=ac.createGain();e.gain.setValueAtTime(0.0001,t);e.gain.linearRampToValueAtTime(v,t+len*0.6);e.gain.linearRampToValueAtTime(0.0001,t+len);s.connect(f);f.connect(e);e.connect(g);s.start(t);s.stop(t+len+0.05)}
-  for(var k2=1;k2*D<total-1;k2++) noise(t0+k2*D-0.4,1.1,300,3500,'bandpass',0.22);
-  noise(t0+total-3,3,400,7000,'highpass',0.25);
-  return t0;
 }
-window.cinMake=async function(){
-  var p=($('cinPrompt').value||'').trim(); if(!p){msg('Write your video idea first');return}
-  if(busy)return; if(typeof MediaRecorder==='undefined'||!HTMLCanvasElement.prototype.captureStream){msg('Please use Chrome to record video');return}
-  busy=true; $('cinOut').style.display='none';
-  try{
-    var n=+$('cinScenes').value,D=+$('cinDur').value,land=$('cinShape').value==='l',W=land?1280:720,H=land?720:1280,total=n*D,cv=$('cinCv'),x=cv.getContext('2d');
-    cv.width=W;cv.height=H;cv.style.display='block';
-    msg('🤖 Planning scenes…'); var pl=await plan(p,n),imgs=[];
-    for(var i=0;i<pl.scenes.length;i++){msg('🖼️ Making picture '+(i+1)+' of '+pl.scenes.length+'…');imgs.push(await loadImg(pl.scenes[i].img,W,H,Math.floor(Math.random()*1e6)))}
-    var N=imgs.length; total=N*D;
-    var gc=document.createElement('canvas');gc.width=160;gc.height=90;var gx=gc.getContext('2d'),gd=gx.createImageData(160,90),fr=0;
-    function grain(){for(var i=0;i<gd.data.length;i+=4){var v=Math.random()*255;gd.data[i]=gd.data[i+1]=gd.data[i+2]=v;gd.data[i+3]=255}gx.putImageData(gd,0,0)}
-    function draw(i,u,a){x.globalAlpha=a;var b=imgs[i];
-      if(!b){var gr=x.createLinearGradient(0,0,W,H);gr.addColorStop(0,'hsl('+(i*57%360)+',60%,25%)');gr.addColorStop(1,'hsl('+((i*57+60)%360)+',70%,10%)');x.fillStyle=gr;x.fillRect(0,0,W,H);return}
-      var z=1.04+0.14*(i%2?1-u:u),s=Math.max(W/b.width,H/b.height)*z,dw=b.width*s,dh=b.height*s,dx=((i%3)-1)*0.03*W*(u-0.5);
-      x.drawImage(b,(W-dw)/2+dx,(H-dh)/2,dw,dh);x.globalAlpha=1}
-    function wrap(t,mw){var w=t.split(' '),l=[],c='';w.forEach(function(s){var tt=c?c+' '+s:s;if(x.measureText(tt).width>mw&&c){l.push(c);c=s}else c=tt});if(c)l.push(c);return l}
-    function frame(t){
-      var i=Math.min(N-1,Math.floor(t/D)),l=t-i*D,F=0.9;
-      x.globalAlpha=1;x.fillStyle='#000';x.fillRect(0,0,W,H);
-      if(i>0&&l<F){draw(i-1,1,1);draw(i,l/D,l/F)}else draw(i,l/D,1);
-      x.globalAlpha=1;x.globalCompositeOperation='soft-light';x.fillStyle='rgba(255,140,40,0.22)';x.fillRect(0,0,W,H);x.globalCompositeOperation='source-over';
-      var vg=x.createRadialGradient(W/2,H/2,Math.min(W,H)*0.35,W/2,H/2,Math.max(W,H)*0.75);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.6)');x.fillStyle=vg;x.fillRect(0,0,W,H);
-      if(fr++%2===0)grain();x.globalAlpha=0.07;x.drawImage(gc,0,0,W,H);x.globalAlpha=1;
-      var bars=land?H*0.1:0;if(bars){x.fillStyle='#000';x.fillRect(0,0,W,bars);x.fillRect(0,H-bars,W,bars)}
-      var cap=(pl.scenes[i]&&pl.scenes[i].cap)||'';
-      if(cap&&l>0.6&&l<D-0.3){var ca=Math.min(1,(l-0.6)/0.6,(D-0.3-l)/0.4);x.globalAlpha=Math.max(0,ca);var fs=Math.round(H*(land?0.052:0.036));x.font='700 '+fs+'px "Plus Jakarta Sans","Noto Sans Tamil",sans-serif';x.textAlign='center';x.fillStyle='#fff';x.shadowColor='rgba(0,0,0,0.85)';x.shadowBlur=14;var ls=wrap(cap,W*0.82);ls.forEach(function(s,k){x.fillText(s,W/2,H-bars-H*0.06-(ls.length-1-k)*fs*1.25)});x.shadowBlur=0;x.globalAlpha=1}
-      if(pl.title&&t<3){var ta=Math.min(1,t/0.8,(3-t)/0.8);x.globalAlpha=Math.max(0,ta);x.font='800 '+Math.round(H*(land?0.085:0.05))+'px "Plus Jakarta Sans","Noto Sans Tamil",sans-serif';x.textAlign='center';x.fillStyle='#fff';x.shadowColor='rgba(0,0,0,0.9)';x.shadowBlur=20;wrap(pl.title,W*0.85).forEach(function(s,k){x.fillText(s,W/2,H*0.45+k*H*0.09)});x.shadowBlur=0;x.globalAlpha=1}
-      var fd=Math.min(1,t/0.8,(total-t)/1.0);if(fd<1){x.globalAlpha=1-Math.max(0,fd);x.fillStyle='#000';x.fillRect(0,0,W,H);x.globalAlpha=1}
-    }
-    msg('🎵 Recording video with music… keep this screen open ('+total+' sec)');
-    var AC=window.AudioContext||window.webkitAudioContext,ac=new AC(),dest=ac.createMediaStreamDestination();await ac.resume();
-    music(ac,dest,total,D,$('cinMood').value);
-    var vs=cv.captureStream(30),ms=new MediaStream(vs.getVideoTracks().concat(dest.stream.getAudioTracks()));
-    var mt=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(function(m){return MediaRecorder.isTypeSupported(m)})||'';
-    var rc=new MediaRecorder(ms,mt?{mimeType:mt,videoBitsPerSecond:4000000,audioBitsPerSecond:128000}:undefined),ch=[];
-    rc.ondataavailable=function(e){if(e.data&&e.data.size)ch.push(e.data)};
-    var done=new Promise(function(r){rc.onstop=r});
-    rc.start(); var st=performance.now()+100;
-    await new Promise(function(res){(function loop(){var t=(performance.now()-st)/1000;frame(Math.max(0,Math.min(total,t)));if(t<total+0.3)requestAnimationFrame(loop);else res()})()});
-    rc.stop(); await done; ac.close();
-    var u=URL.createObjectURL(new Blob(ch,{type:'video/webm'}));$('cinVid').src=u;$('cinDl').href=u;$('cinOut').style.display='block';msg('✅ Video ready with music — play or download');
-  }catch(e){msg('⚠️ '+((e&&e.message)||'Something failed')+' — try again')}
-  busy=false;
+function show(){if(!cur)return;if(cv.width!==cur.width||cv.height!==cur.height){cv.width=cur.width;cv.height=cur.height}cx.clearRect(0,0,cv.width,cv.height);cx.drawImage(cur,0,0);
+  if(sel){cx.save();var lw=Math.max(2,cv.width/250);cx.lineWidth=lw;cx.strokeStyle='#fff';cx.setLineDash([lw*4,lw*3]);cx.strokeRect(sel.x,sel.y,sel.w,sel.h);cx.strokeStyle='#4f46e5';cx.lineDashOffset=lw*4;cx.strokeRect(sel.x,sel.y,sel.w,sel.h);cx.restore()}
+  var i=$('pe-info');if(i)i.textContent=cur.width+' × '+cur.height+' px · '+hist.length+' undo step(s)'}
+function push(){if(!cur)return;hist.push(cp(cur));if(hist.length>HMAX)hist.shift()}
+function runOps(ops,unk){
+  if(!cur){msg('Choose a photo first');return}
+  var done=[],lim=[],snap=false;
+  ops.forEach(function(o){
+    if(o.t==='undo'){pe.undo(true);done.push('undo');return}
+    if(o.t==='limit'){lim.push(o.seg);return}
+    if(o.t==='reset'){push();cur=cp(orig);snap=true;done.push('reset');return}
+    if(!snap){push();snap=true}
+    op(o);done.push(o.t==='text'?'text':o.t)});
+  sel=null;show();
+  var m=done.length?'✅ Done: '+done.join(', '):'';
+  if(lim.length)m+=(m?'\n':'')+'⚠️ "'+lim.join('", "')+'" needs an online AI to understand pictures, which would send your photo away — so it is not available here. Use the Area tool to blur or cover parts.';
+  if(unk&&unk.length)m+=(m?'\n':'')+'❓ I did not understand: "'+unk.join('", "')+'". Try: brighter, darker, contrast, black and white, sepia, vintage, warm, cool, blur, sharpen, smooth skin, auto fix, rotate left, flip, crop square, resize 50%, add text "Hello".';
+  msg(m||'Type what you want, e.g. "brighter and black and white"')}
+function pt(e){var r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*cv.width/r.width,y:(e.clientY-r.top)*cv.height/r.height}}
+function ids(a){return a.map(function(i){return $(i)})}
+function vals(){return{b:+$('pe-b').value,c:+$('pe-c').value,s:+$('pe-s').value,w:+$('pe-w').value,bl:+$('pe-bl').value,sh:+$('pe-sh').value}}
+function preview(){if(!cur)return;if(!sbase){var f=Math.min(1,700/Math.max(cur.width,cur.height));sbase=mk(cur.width*f,cur.height*f);X(sbase).drawImage(cur,0,0,sbase.width,sbase.height)}
+  var v=vals(),r=adj(sbase,v);if(v.bl>0)r=boxBlur(r,rad(r,v.bl));if(v.sh>0)r=unsharp(r,v.sh/40,1);cx.drawImage(r,0,0,cv.width,cv.height)}
+var pe=window.pe={
+  open:function(){$('pe-file').click()},
+  load:async function(f){if(!f)return;try{var bm;try{bm=await createImageBitmap(f,{imageOrientation:'from-image'})}catch(e){bm=await createImageBitmap(f)}
+      var s=Math.min(1,MAXS/Math.max(bm.width,bm.height)),c=mk(bm.width*s,bm.height*s);X(c).drawImage(bm,0,0,c.width,c.height);if(bm.close)bm.close();
+      orig=c;cur=cp(c);hist=[];sel=null;sbase=null;$('pe-work').style.display='block';$('pe-empty').style.display='none';show();pe.tab('quick');msg('📷 Photo loaded on this phone only. Tell me what to edit.')}
+    catch(e){msg('⚠️ Could not open this photo')}$('pe-file').value=''},
+  tab:function(n){['quick','adj','filt','xform','draw','text','area'].forEach(function(k){$('pe-p-'+k).style.display=k===n?'block':'none';var b=$('pe-t-'+k);b.className=k===n?'':'ghost'});
+    mode=n==='draw'?'draw':(n==='text'?'text':(n==='area'?'area':'view'));cv.style.touchAction=mode==='view'?'auto':'none';if(n!=='area')sel=null;if(n==='adj'){sbase=null;['b','c','s','w','bl','sh'].forEach(function(k){$('pe-'+k).value=0})}else if(cur)show()},
+  run:function(){var r=peParse($('pe-cmd').value);runOps(r.ops,r.unk)},
+  quick:function(t){$('pe-cmd').value=t;pe.run()},
+  fx:function(t){runOps([{t:t}])},
+  prev:function(){requestAnimationFrame(preview)},
+  adjApply:function(){if(!cur)return;var v=vals();push();cur=adj(cur,v);if(v.bl>0)cur=boxBlur(cur,rad(cur,v.bl));if(v.sh>0)cur=unsharp(cur,v.sh/40,1);sbase=null;['b','c','s','w','bl','sh'].forEach(function(k){$('pe-'+k).value=0});show();msg('✅ Adjustments applied')},
+  adjCancel:function(){['b','c','s','w','bl','sh'].forEach(function(k){$('pe-'+k).value=0});show()},
+  rot:function(d){runOps([{t:'rot',v:d}])},flip:function(v){runOps([{t:'flip',v:v}])},crop:function(r){runOps([{t:'crop',v:r}])},rsz:function(p){runOps([{t:'resize',v:{pct:p}}])},
+  area:function(k){if(!cur)return;if(!sel||sel.w<4||sel.h<4){msg('Drag on the photo to select an area first');return}push();
+    if(k==='crop'){cur=sub(cur,sel.x,sel.y,sel.w,sel.h)}
+    else{var s=sub(cur,sel.x,sel.y,sel.w,sel.h),r;if(k==='blur')r=boxBlur(s,Math.max(4,Math.round(Math.max(s.width,s.height)/12)));else if(k==='pix')r=pixel(s,Math.max(6,Math.round(Math.max(s.width,s.height)/14)));else{r=mk(s.width,s.height);var rx=X(r);rx.fillStyle='#000';rx.fillRect(0,0,r.width,r.height)}
+      X(cur).drawImage(r,Math.round(sel.x),Math.round(sel.y))}
+    sel=null;show();msg('✅ Done')},
+  emo:function(e){emo=(emo===e)?'':e;document.querySelectorAll('.peE').forEach(function(b){b.style.outline=b.textContent===emo?'3px solid var(--brand)':'none'});msg(emo?'Tap the photo to place '+emo:'Tap the photo to place your text')},
+  undo:function(q){if(!hist.length){if(!q)msg('Nothing to undo');return}cur=hist.pop();sel=null;show();if(!q)msg('↩️ Undone')},
+  reset:function(){if(!cur)return;push();cur=cp(orig);sel=null;show();msg('Back to the original photo')},
+  save:function(t){if(!cur)return;cur.toBlob(function(b){var a=document.createElement('a'),u=URL.createObjectURL(b);a.href=u;a.download='my-edited-photo.'+(t==='png'?'png':'jpg');document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},4000);msg('💾 Saved to your phone downloads')},t==='png'?'image/png':'image/jpeg',0.93)},
+  clear:function(){orig=cur=sbase=null;hist=[];sel=null;cv.width=cv.height=1;$('pe-work').style.display='none';$('pe-empty').style.display='block';msg('🗑️ Photo removed from memory')},
+  hold:function(on){if(!cur)return;if(on){cv.width=orig.width;cv.height=orig.height;cx.drawImage(orig,0,0)}else show()}
+};
+window.peInit=function(){
+  if(!built){built=true;
+    var P=function(id,h){return '<div id="pe-p-'+id+'" style="display:none">'+h+'</div>'},B=function(l,f,g){return '<button type="button" class="'+(g?'ghost ':'')+'peB" onclick="'+f+'">'+l+'</button>'},
+    SL=function(id,l,mn,mx){return '<label style="display:block;font-size:.8rem;margin:6px 0 0">'+l+'</label><input id="pe-'+id+'" type="range" min="'+mn+'" max="'+mx+'" value="0" oninput="pe.prev()" style="width:100%">'};
+    var ES=['😀','😍','🔥','❤️','⭐','🎉','👍','🌹','☕','💯','🙏','😎'].map(function(e){return '<button type="button" class="ghost peB peE" onclick="pe.emo(\''+e+'\')">'+e+'</button>'}).join('');
+    $('pe-root').innerHTML=
+    '<style>.peB{width:auto!important;margin:0!important;padding:10px 12px!important;font-size:.82rem!important}.peR{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}#pe-cv{width:100%;border-radius:12px;background:#000;display:block}</style>'+
+    '<div class="card"><h3 style="margin:0 0 4px">🖼️ Private Photo Editor</h3>'+
+    '<p class="hint" style="text-align:left;margin:0 0 8px">🔒 100% private: your photo is edited on this phone only. Nothing is uploaded, no internet is used, and it is never saved in the app or in your Drive backup.</p>'+
+    '<input id="pe-file" type="file" accept="image/*" style="display:none" onchange="pe.load(this.files[0])">'+
+    '<div id="pe-empty"><button type="button" onclick="pe.open()">📷 Choose a photo to edit</button></div>'+
+    '<div id="pe-work" style="display:none"><canvas id="pe-cv" width="1" height="1"></canvas>'+
+    '<p id="pe-info" class="hint" style="text-align:left;margin:4px 0"></p>'+
+    '<div class="peR">'+B('↩️ Undo','pe.undo()',1)+B('♻️ Original','pe.reset()',1)+'<button type="button" class="ghost peB" onpointerdown="pe.hold(true)" onpointerup="pe.hold(false)" onpointerleave="pe.hold(false)">👁️ Hold: before</button>'+B('💾 Save JPG','pe.save(\'jpg\')')+B('💾 PNG','pe.save(\'png\')',1)+B('📷 New','pe.open()',1)+B('🗑️ Clear','pe.clear()',1)+'</div>'+
+    '<div class="peR" style="overflow-x:auto;flex-wrap:nowrap">'+['quick:✨ Ask','adj:🎚️ Adjust','filt:🎨 Looks','xform:📐 Crop/Rotate','draw:✏️ Draw','text:🔤 Text','area:🔲 Area'].map(function(t){var p=t.split(':');return '<button type="button" id="pe-t-'+p[0]+'" class="ghost peB" style="white-space:nowrap!important" onclick="pe.tab(\''+p[0]+'\')">'+p[1]+'</button>'}).join('')+'</div>'+
+    P('quick','<textarea id="pe-cmd" placeholder="Tell me what to do… e.g. make it brighter, black and white, smooth skin, add text &quot;Happy Birthday&quot; at the top in yellow" style="min-height:70px"></textarea><div class="peR">'+B('✨ Do it','pe.run()')+B('Auto fix','pe.quick(\'auto fix\')',1)+B('Brighter','pe.quick(\'brighter\')',1)+B('B&amp;W','pe.quick(\'black and white\')',1)+B('Smooth skin','pe.quick(\'smooth skin\')',1)+B('Vintage','pe.quick(\'vintage\')',1)+B('Sharpen','pe.quick(\'sharpen\')',1)+'</div>')+
+    P('adj',SL('b','Brightness',-100,100)+SL('c','Contrast',-100,100)+SL('s','Colour / saturation',-100,100)+SL('w','Warmth (cool ↔ warm)',-100,100)+SL('bl','Blur',0,20)+SL('sh','Sharpen',0,40)+'<div class="peR">'+B('✅ Apply','pe.adjApply()')+B('Cancel','pe.adjCancel()',1)+'</div>')+
+    P('filt','<div class="peR">'+[['auto','Auto fix'],['bw','B&amp;W'],['sepia','Sepia'],['vintage','Vintage'],['warm','Warm'],['cool','Cool'],['sat','Vivid'],['fade','Fade'],['drama','Dramatic'],['vig','Vignette'],['invert','Invert'],['pix','Pixelate'],['smooth','Smooth skin'],['sharp','Sharpen'],['blur','Blur']].map(function(a){return B(a[1],'pe.fx(\''+a[0]+'\')',1)}).join('')+'</div>')+
+    P('xform','<div class="peR">'+B('⟲ Left','pe.rot(-90)',1)+B('⟳ Right','pe.rot(90)',1)+B('↔ Flip','pe.flip(\'h\')',1)+B('↕ Flip','pe.flip(\'v\')',1)+'</div><div class="peR">'+B('Crop 1:1','pe.crop(\'1:1\')',1)+B('4:5','pe.crop(\'4:5\')',1)+B('16:9','pe.crop(\'16:9\')',1)+B('9:16','pe.crop(\'9:16\')',1)+'</div><div class="peR">'+B('Resize 75%','pe.rsz(75)',1)+B('50%','pe.rsz(50)',1)+B('25%','pe.rsz(25)',1)+'</div>')+
+    P('draw','<p class="hint" style="text-align:left">Draw with your finger on the photo.</p><div style="display:flex;gap:10px;align-items:center"><input id="pe-dcol" type="color" value="#ef4444" style="width:54px;height:42px;padding:2px"><input id="pe-dsz" type="range" min="1" max="20" value="6" style="flex:1"></div>')+
+    P('text','<input id="pe-ttxt" type="text" placeholder="Type text, then tap the photo to place it"><div style="display:flex;gap:10px;align-items:center;margin-top:8px"><input id="pe-tcol" type="color" value="#ffffff" style="width:54px;height:42px;padding:2px"><input id="pe-tsz" type="range" min="3" max="20" value="7" style="flex:1"></div><p class="hint" style="text-align:left;margin:6px 0 0">Or pick an emoji sticker (tap it again to switch back to text):</p><div class="peR">'+ES+'</div>')+
+    P('area','<p class="hint" style="text-align:left">Drag on the photo to select an area (hide faces, numbers, names).</p><div class="peR">'+B('✂️ Crop to area','pe.area(\'crop\')',1)+B('🌫️ Blur area','pe.area(\'blur\')',1)+B('🔳 Pixelate area','pe.area(\'pix\')',1)+B('⬛ Cover black','pe.area(\'cover\')',1)+'</div>')+
+    '</div><p id="pe-msg" class="hint" style="text-align:left;white-space:pre-line"></p></div>';
+    cv=$('pe-cv');cx=X(cv);
+    var dn=false,moved=false,st=null,lastP=null;
+    cv.addEventListener('pointerdown',function(e){if(!cur||mode==='view')return;e.preventDefault();cv.setPointerCapture(e.pointerId);dn=true;moved=false;st=pt(e);lastP=st;
+      if(mode==='draw'){push();var x=X(cur);x.lineCap=x.lineJoin='round';x.strokeStyle=$('pe-dcol').value;x.lineWidth=+$('pe-dsz').value*Math.max(cur.width,cur.height)/600;x.beginPath();x.moveTo(st.x,st.y);x.lineTo(st.x+0.1,st.y);x.stroke();show()}
+      if(mode==='area'){sel={x:st.x,y:st.y,w:0,h:0}}});
+    cv.addEventListener('pointermove',function(e){if(!dn)return;e.preventDefault();var p=pt(e);if(Math.hypot(p.x-st.x,p.y-st.y)>cur.width/150)moved=true;
+      if(mode==='draw'){var x=X(cur);x.beginPath();x.moveTo(lastP.x,lastP.y);x.lineTo(p.x,p.y);x.stroke();lastP=p;show()}
+      if(mode==='area'){sel={x:Math.min(st.x,p.x),y:Math.min(st.y,p.y),w:Math.abs(p.x-st.x),h:Math.abs(p.y-st.y)};show()}});
+    function up(e){if(!dn)return;dn=false;var p=pt(e);
+      if(mode==='text'&&!moved){var t=($('pe-ttxt').value||'').trim(),sz=+$('pe-tsz').value;
+        if(emo){push();emoAt(cur,emo,p.x,p.y,sz);show()}else if(t){push();txtAt(cur,t,p.x,p.y,sz,$('pe-tcol').value,true);show()}else msg('Type some text first, or pick an emoji')}
+      if(mode==='area'&&sel&&(sel.w<4||sel.h<4)){sel=null;show()}}
+    cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+    pe.tab('quick');msg('Choose a photo to start. Everything stays on this phone.');
+  }
 };
 })();
 </script>
