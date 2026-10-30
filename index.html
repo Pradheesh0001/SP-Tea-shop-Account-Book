@@ -7799,11 +7799,11 @@ function music(ac,dest,total,D,mood){
   var g=ac.createGain(); g.gain.value=0.6; g.connect(dest); var t0=ac.currentTime+0.1;
   g.gain.setValueAtTime(0.6,t0+total-1.2); g.gain.linearRampToValueAtTime(0,t0+total);
   var beat=60/M.bpm,bar=beat*4,nb=Math.ceil(total/bar);
-  function env(o,t,a,h,r,v){var e=ac.createGain();e.gain.setValueAtTime(0.0001,t);e.gain.linearRampToValueAtTime(v,t+a);e.gain.setValueAtTime(v,t+a+h);e.gain.linearRampToValueAtTime(0.0001,t+a+h+r);o.connect(e);e.connect(g);o.start(t);o.stop(t+a+h+r+0.05)}
+  function env(o,t,a,h,r,v){var e=ac.createGain();e.gain.setValueAtTime(0.0001,t);e.gain.linearRampToValueAtTime(v,t+a);e.gain.setValueAtTime(v,t+a+h);e.gain.linearRampToValueAtTime(0.0001,t+a+h+r);o.connect(e);e.connect(g);if(o.start){o.start(t);o.stop(t+a+h+r+0.05)}}
   function osc(type,f,det){var o=ac.createOscillator();o.type=type;o.frequency.value=f;o.detune.value=det||0;return o}
   for(var b=0;b<nb;b++){
     var t=t0+b*bar,root=M.r*Math.pow(2,M.p[b%4]/12);
-    M.s.forEach(function(s){var f=root*2*Math.pow(2,s/12);[-7,7].forEach(function(d){var o=osc('sawtooth',f,d),lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=900;o.connect(lp);env(lp,t,0.7,bar-0.6,0.9,0.05)})});
+    M.s.forEach(function(s){var f=root*2*Math.pow(2,s/12);[-7,7].forEach(function(d){var o=osc('sawtooth',f,d),lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=900;o.connect(lp);o.start(t);o.stop(t+bar+1.2);env(lp,t,0.7,bar-0.6,0.9,0.05)})});
     env(osc('sine',root,0),t,0.05,bar-0.4,0.4,0.3);
     for(var i=0;i<4;i++){
       var bt=t+i*beat;
