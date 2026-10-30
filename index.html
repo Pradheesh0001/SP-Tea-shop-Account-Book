@@ -4007,7 +4007,7 @@ function aiS(){
   const d = { provider:'free', host:'http://localhost:11434', kind:'ollama', model:'openai', temp:0.7, system:AI_SYS_DEFAULT, memoryOn:true, imgHost:'http://127.0.0.1:7860', internetOn:true, askEachTime:false, authHosts:[], imgSource:'online', webSearch:'auto' };
   let o = {}; try{ o = JSON.parse(localStorage.getItem('udhar_ai_settings')||'{}') || {}; }catch(e){ o = {}; }
   if(Object.keys(o).length && !o.provider){ o = { provider:'free' }; try{ localStorage.setItem('udhar_ai_settings', JSON.stringify(o)); }catch(e){} }
-  return Object.assign(d, o);
+  const r = Object.assign(d, o); if(r.model==='gemini-2.5-flash') r.model='gemini-3.8-flash'; return r;
 }
 function aiSaveS(p){ localStorage.setItem('udhar_ai_settings', JSON.stringify(Object.assign(aiS(), p))); }
 
@@ -4170,7 +4170,7 @@ async function aiStream(messages, onTok, signal, opts){
 }
 async function aiListModels(){
   if(aiS().provider==='free') return ['openai'];
-  if(aiS().provider==='gemini') return ['gemini-2.5-flash'];
+  if(aiS().provider==='gemini') return ['gemini-3.8-flash'];
   const s = aiS(), chk = aiCanConnect(s.host); if(!chk.ok) throw new Error(chk.reason);
   const base = s.host.replace(/\/+$/,''), hdr = await aiHeaders();
   aiLog(new URL(base).host, 'List installed models', 'nothing private');
@@ -4273,7 +4273,7 @@ function aiTopCard(){
 }
 function aiSetProvider(v){
   if(v==='free') aiSaveS({ provider:'free', internetOn:true, imgSource:'online', model:'openai' });
-  else if(v==='gemini') aiSaveS({ provider:'gemini', internetOn:true, imgSource:'online', model:'gemini-2.5-flash' });
+  else if(v==='gemini') aiSaveS({ provider:'gemini', internetOn:true, imgSource:'online', model:'gemini-3.8-flash' });
   else aiSaveS({ provider:'custom', model:'', imgSource:'local', internetOn:false });
   aiRenderStatus(); aiRenderSettings();
 }
@@ -4494,7 +4494,7 @@ function aiGeminiContents(messages){
 }
 async function aiGeminiCall(contents, system, withSearch, signal){
   const key = await aiGkeyGet(); if(!key) throw new Error('Add your Google Gemini key first (Settings → Web search).');
-  const s = aiS(), model = (s.provider==='gemini' && s.model) ? s.model : 'gemini-2.5-flash';
+  const s = aiS(), model = (s.provider==='gemini' && s.model && s.model!=='gemini-2.5-flash') ? s.model : 'gemini-3.8-flash';
   const body = { contents, generationConfig:{ temperature:Number(s.temp) } };
   if(system) body.systemInstruction = { parts:[{ text:system }] };
   if(withSearch) body.tools = [{ google_search:{} }];
@@ -5130,7 +5130,7 @@ async function aiDoResearch(q, lang){
 async function aiRenderSettings(){
   const s = aiS(), body = document.getElementById('ai-body'), o = location.origin;
   if(s.provider==='free' || s.provider==='gemini'){
-    body.innerHTML = aiTopCard() + aiSearchCard() + '<div class="card"><h3 style="margin-top:0;">🧩 Options</h3><label>Model name (leave as it is)</label><input value="'+esc(s.model||(s.provider==='gemini'?'gemini-2.5-flash':'openai'))+'" onchange="aiSaveS({model:this.value.trim()||(aiS().provider===\'gemini\'?\'gemini-2.5-flash\':\'openai\')})"><label>Creativity (temperature)</label><input type="number" min="0" max="2" step="0.1" value="'+esc(s.temp)+'" onchange="aiSaveS({temp:Number(this.value)||0.7})"><label>Instructions for the AI</label><textarea rows="5" onchange="aiSaveS({system:this.value.trim()||AI_SYS_DEFAULT})">'+esc(s.system)+'</textarea></div>';
+    body.innerHTML = aiTopCard() + aiSearchCard() + '<div class="card"><h3 style="margin-top:0;">🧩 Options</h3><label>Model name (leave as it is)</label><input value="'+esc(s.model||(s.provider==='gemini'?'gemini-3.8-flash':'openai'))+'" onchange="aiSaveS({model:this.value.trim()||(aiS().provider===\'gemini\'?\'gemini-2.5-flash\':\'openai\')})"><label>Creativity (temperature)</label><input type="number" min="0" max="2" step="0.1" value="'+esc(s.temp)+'" onchange="aiSaveS({temp:Number(this.value)||0.7})"><label>Instructions for the AI</label><textarea rows="5" onchange="aiSaveS({system:this.value.trim()||AI_SYS_DEFAULT})">'+esc(s.system)+'</textarea></div>';
     aiRefreshGstate(); return;
   }
   let hasTok = false;
@@ -7652,10 +7652,8 @@ document.querySelectorAll('label').forEach(function(l){
 #enhSheet{position:fixed;inset:0;z-index:950;background:rgba(0,0,0,.45);display:none;align-items:flex-end}
 #enhSheet>div{background:var(--card);width:100%;border-radius:20px 20px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px))}
 #enhSheet button{margin:6px 0}
-#pinLock{position:fixed;inset:0;z-index:9998;background:var(--bg);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:24px;text-align:center}
 </style>
 <div id="bnav"></div><div id="enhSheet"><div id="enhSheetBody"></div></div>
-<div id="pinLock"><div style="font-size:2.4rem">🔒</div><h3 style="margin:0">Udhar Book locked</h3><input id="pinIn" type="password" inputmode="numeric" maxlength="6" placeholder="Enter PIN" style="max-width:220px;text-align:center"><button onclick="enhUnlock()" style="max-width:220px">Unlock</button><p id="pinErr" class="hint" style="color:var(--owe)"></p></div>
 <script>
 (function(){
 var $=function(i){return document.getElementById(i)},LS=localStorage;
@@ -7665,22 +7663,11 @@ function nav(){var h='';NAV.forEach(function(n){h+='<button id="bn-'+n[0]+'" onc
 h+='<button onclick="enhMore()"><b>☰</b>More</button>';$('bnav').innerHTML=h}
 function mark(){NAV.forEach(function(n){var p=$(n[0]+'Tab'),b=$('bn-'+n[0]);if(p&&b)b.classList.toggle('on',!p.classList.contains('hidden'))})}
 window.enhMore=function(){var h='<h3 style="margin:0 0 6px">More</h3>';MORE.forEach(function(m){h+='<button class="ghost" onclick="enhGo(\''+m[1]+'\')">'+m[0]+'</button>'});
-h+='<button class="ghost" onclick="enhExport()">⬇️ Export full backup</button><button class="ghost" onclick="enhPin()">🔒 '+(LS.getItem('udhar_pin')?'Change / remove PIN':'Set PIN lock')+'</button><button onclick="enhClose()">Close</button>';
+h+='<button class="ghost" onclick="enhExport()">⬇️ Export full backup</button><button onclick="enhClose()">Close</button>';
 $('enhSheetBody').innerHTML=h;$('enhSheet').style.display='flex'};
 window.enhClose=function(){$('enhSheet').style.display='none'};
 window.enhGo=function(f){enhClose();window[f]()};
 window.enhExport=function(){try{var b=new Blob([JSON.stringify(buildPayload(),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='udhar-book-backup-'+todayStr()+'.json';document.body.appendChild(a);a.click();a.remove();LS.setItem('udhar_last_backup',Date.now());showBanner('✅ Backup downloaded')}catch(e){showBanner('⚠️ Export failed')}enhClose()};
-/* PIN lock */
-window.enhPin=function(){enhClose();if(LS.getItem('udhar_pin')){if(confirm('Remove PIN lock? (Cancel = change PIN)')){LS.removeItem('udhar_pin');showBanner('PIN removed');return}}
-var p=prompt('Enter new PIN (4-6 digits)');if(p===null)return;if(!/^\d{4,6}$/.test(p)){showBanner('PIN must be 4-6 digits');return}
-var s=Date.now().toString(36)+Math.random().toString(36).slice(2);LS.setItem('udhar_pin',JSON.stringify({s:s,h:hashPass(p,s)}));showBanner('🔒 PIN set')};
-function lock(){if(!LS.getItem('udhar_pin')||!LS.getItem('udhar_current'))return;$('pinLock').style.display='flex';$('pinIn').value='';$('pinErr').textContent=''}
-window.enhUnlock=function(){var o=JSON.parse(LS.getItem('udhar_pin')||'null');if(!o){$('pinLock').style.display='none';return}
-if(hashPass($('pinIn').value,o.s)===o.h){$('pinLock').style.display='none';touch()}else $('pinErr').textContent='Wrong PIN'};
-var last=Date.now(),hid=0;function touch(){last=Date.now()}
-['click','keydown','touchstart'].forEach(function(e){document.addEventListener(e,touch,{passive:true})});
-setInterval(function(){if(Date.now()-last>120000)lock()},10000);
-document.addEventListener('visibilitychange',function(){if(document.hidden)hid=Date.now();else if(hid&&Date.now()-hid>60000)lock()});
 /* backup + storage warnings */
 var _s=window.syncToDrive;if(_s)window.syncToDrive=async function(){var r=await _s.apply(this,arguments);if(r===true)LS.setItem('udhar_last_backup',Date.now());return r};
 function checks(){var lb=+LS.getItem('udhar_last_backup')||0,d=(Date.now()-lb)/864e5;
@@ -7703,7 +7690,7 @@ function wrap(f,fn){var o=window[f];if(!o)return;window[f]=function(){var r=o.ap
 wrap('showCustomersTab',defaulters);
 var _rc=window.renderCustomers;if(_rc)window.renderCustomers=function(){var r=_rc.apply(this,arguments);try{defaulters()}catch(e){}return r};
 nav();setInterval(function(){var a=$('authView');$('bnav').style.visibility=(a&&!a.classList.contains('hidden'))?'hidden':'visible'},800);
-setTimeout(function(){lock();if(LS.getItem('udhar_current'))checks()},1500);
+setTimeout(function(){if(LS.getItem('udhar_current'))checks()},1500);
 })();
 </script>
 </body>
