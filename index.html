@@ -3436,7 +3436,7 @@ async function fcRefresh(force){
       }catch(e){ if(cache.holidays[key]){ fcData.holidays[key] = cache.holidays[key].data; st.holidays = 'cached'; } else st.holidays = 'fail'; }
     }
   }
-  if(cfg.useNews && cfg.place){
+  if(false){
     try{
       if(force || !fcFresh(cache.news, 60*60000)){
         const city = cfg.place.split(',')[0].trim();
@@ -3461,7 +3461,7 @@ function fcTagNews(arts){
   });
 }
 function fcNewsEffect(){
-  const cfg = loadFcCfg(); if(!cfg.useNews || !fcData.news) return null;
+  const cfg = loadFcCfg(); return null;
   const negN = fcData.news.filter(a=>a.neg.length).length, posN = fcData.news.filter(a=>!a.neg.length && a.pos.length).length;
   const pct = Math.max(-10, Math.min(10, Math.max(-12, -4*negN) + Math.min(6, 3*posN)));
   if(!pct) return null;
@@ -3618,8 +3618,8 @@ function fcRenderStatus(){
   const cfg = loadFcCfg(), st = fcData.status;
   const chip = (n,k)=>{ const v = st[k]; const m = v==='ok' ? '✅' : (v==='cached' ? '🕘' : (v==='fail' ? '⚠️' : '•')); return '<span style="font-size:0.72rem; padding:3px 8px; border-radius:20px; background:var(--brand-light);">'+n+' '+m+'</span>'; };
   el.innerHTML = '<div class="toprow" style="margin-bottom:8px;"><h3 style="margin:0;">🔮 Smart Forecast</h3><button class="ghost" style="width:auto; margin:0; padding:7px 12px; font-size:0.8rem;" onclick="fcRefresh(true)">'+(fcBusy?'⏳ Updating…':'🔄 Refresh')+'</button></div>'
-    + '<p class="hint" style="text-align:left; margin:0 0 8px;">Predicts your sales from past sales, weather, holidays, calendar events, nearby landmarks and local news. It is a guide, not a guarantee.</p>'
-    + (cfg.configured ? '<div style="display:flex; gap:6px; flex-wrap:wrap;">'+chip('Weather','weather')+chip('Holidays','holidays')+chip('News','news')+'</div>' : '');
+    + '<p class="hint" style="text-align:left; margin:0 0 8px;">Predicts your sales from past sales, weather, holidays, calendar events and nearby landmarks. It is a guide, not a guarantee.</p>'
+    + (cfg.configured ? '<div style="display:flex; gap:6px; flex-wrap:wrap;">'+chip('Weather','weather')+chip('Holidays','holidays')+'</div>' : '');
 }
 function fcRenderSetup(){
   const el = document.getElementById('fc-setupCard'); if(!el) return;
@@ -3645,7 +3645,7 @@ function fcRenderSetup(){
   h += '<div style="display:flex; gap:8px; margin-top:10px;"><input id="fc-lmName" placeholder="Name, e.g. Govt School" style="margin-bottom:10px;"><select id="fc-lmType" style="margin-bottom:10px; max-width:48%;">'+FC_LM.map(t=>'<option value="'+t.k+'">'+esc(t.l)+'</option>').join('')+'</select></div>'
     + '<div style="display:flex; gap:8px; margin-bottom:14px;"><button type="button" class="ghost" style="margin:0; padding:9px; font-size:0.82rem;" onclick="fcAddLandmark()">+ Add place</button><button type="button" class="ghost" style="margin:0; padding:9px; font-size:0.82rem;" onclick="fcFindLandmarks()">🔍 Find nearby automatically</button></div>'
     + '<label>4. Usual sales on a normal day (₹) — optional, used only until you have a week of data</label><input id="fc-typical" type="number" min="0" value="'+esc(d.typical)+'" oninput="fcDraft.typical=this.value">'
-    + '<label class="checkrow" style="margin-bottom:12px;"><input type="checkbox" id="fc-useNews" '+(d.useNews?'checked':'')+' onchange="fcDraft.useNews=this.checked"> Include local news (bandh, protests, festivals…) in the prediction</label>'
+    + ''
     + '<button style="background:var(--paid);" onclick="fcSaveSetup()">💾 Save &amp; show my forecast</button>'
     + (cfg.configured ? '<button class="ghost" onclick="fcCancelSetup()">Cancel</button>' : '');
   el.innerHTML = h;
@@ -3780,7 +3780,7 @@ function fcRenderWeek(){
   el.innerHTML = h;
 }
 function fcRenderNews(){
-  const el = document.getElementById('fc-newsCard'); if(!el) return;
+  const el = document.getElementById('fc-newsCard'); if(!el) return; el.classList.add('hidden'); return;
   const cfg = loadFcCfg(); if(!cfg.configured){ el.classList.add('hidden'); return; } el.classList.remove('hidden');
   let h = '<h3 style="margin-top:0;">🗞️ News that may affect sales</h3>';
   if(!cfg.useNews){ el.innerHTML = h + '<p class="hint" style="text-align:left; margin:0;">News is switched off in setup.</p>'; return; }
@@ -7692,11 +7692,96 @@ var a=Object.keys(bal).filter(function(k){return bal[k]>0&&names[k]}).sort(funct
 var h='<h3>🚨 Top 5 pending (udhar)</h3>';a.forEach(function(k){h+='<div class="enhRow"><span>'+esc(names[k])+'</span><b style="color:var(--owe)">'+fmtMoney(bal[k])+'</b></div>'});
 card('topDefCard',c).innerHTML=a.length?h:'<h3>🚨 Top pending</h3><p class="hint">No pending udhar 🎉</p>'}
 function wrap(f,fn){var o=window[f];if(!o)return;window[f]=function(){var r=o.apply(this,arguments);try{fn()}catch(e){}setTimeout(mark,50);return r}}
-['showMachineTab','showDashboardTab','showForecastTab','showSalesTab','showExpensesTab','showPersonalTab','showPurchaseTab'].forEach(function(f){wrap(f,function(){if(f==='showMachineTab')profit()})});
+['showMachineTab','showDashboardTab','showForecastTab','showSalesTab','showExpensesTab','showPersonalTab','showPurchaseTab'].forEach(function(f){wrap(f,function(){})});
 wrap('showCustomersTab',defaulters);
 var _rc=window.renderCustomers;if(_rc)window.renderCustomers=function(){var r=_rc.apply(this,arguments);try{defaulters()}catch(e){}return r};
 nav();setInterval(function(){var a=$('authView');$('bnav').style.visibility=(a&&!a.classList.contains('hidden'))?'hidden':'visible'},800);
 setTimeout(function(){if(LS.getItem('udhar_current'))checks()},1500);
+})();
+</script>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)},LS=localStorage;
+function M(n){return fmtMoney(n)}
+function shop(){try{return (loadUpi().shopName||'').trim()||'My Tea Shop'}catch(e){return 'My Tea Shop'}}
+function owed(){try{return customerBalances().reduce(function(s,c){return s+Math.max(0,c.bal)},0)}catch(e){return 0}}
+function tile(l,v,c){return '<div style="flex:1 1 30%;min-width:98px;background:var(--brand-light);border-radius:14px;padding:10px"><div style="font-size:.64rem;font-weight:700;color:var(--muted)">'+l+'</div><div style="font-size:1.05rem;font-weight:800'+(c?';color:'+c:'')+'">'+v+'</div></div>'}
+function cardBefore(id,ref){var e=$(id);if(!e){e=document.createElement('div');e.id=id;e.className='card';ref.parentNode.insertBefore(e,ref)}return e}
+function arrow(c,p){if(!(p>0))return '<span style="color:var(--muted)">new</span>';var d=(c-p)/p*100,up=d>=0;return '<b style="color:'+(up?'var(--paid)':'var(--owe)')+'">'+(up?'▲ ':'▼ ')+Math.abs(Math.round(d))+'%</b>'}
+/* ---------- 1. Home: today at a glance ---------- */
+function glance(){var h=$('homeTodayCard');if(!h)return;var t=todayStr(),m=computeDayMetrics(t),coll=m.custCash+m.custOnline,mo=computeRangeMetrics(t.slice(0,8)+'01',t);
+  var e=cardBefore('glanceCard',h);
+  e.innerHTML='<h3 style="margin-top:0">⚡ Today at a glance</h3><div style="display:flex;gap:8px;flex-wrap:wrap">'
+   +tile('SALES SO FAR',M(m.totalSales))+tile('CASH IN HAND',m.recorded?M(m.expectedClosingCash):'—')+tile('TO COLLECT (UDHAR)',M(owed()),owed()>0?'var(--owe)':'')
+   +tile('COLLECTED TODAY',M(coll),'var(--paid)')+tile('MONTH PROFIT',M(mo.totalProfit),mo.totalProfit>=0?'var(--paid)':'var(--owe)')+'</div>'
+   +'<button type="button" style="margin-top:12px" onclick="enhClosing()">🔒 Close today &amp; share summary</button>'}
+var _rh=window.renderHomeToday;if(_rh)window.renderHomeToday=function(){var r=_rh.apply(this,arguments);try{glance()}catch(e){console.error(e)}return r};
+/* ---------- 2. Daily closing summary ---------- */
+var CL=null;
+function clMsg(act){var m=CL.m,t=CL.t,L=['🏪 *'+shop()+'* — '+t,'💰 Sales '+M(m.totalSales)+' (Cash '+M(m.cashSales)+' · Online '+M(m.onlineSales)+')','💸 Expenses '+M(m.expenses+m.staffSalary),'📈 Profit '+M(m.estimatedProfit),'📒 Udhar collected '+M(m.custCash+m.custOnline)+' · Pending '+M(CL.owed)];
+  if(act!==null&&act!==''&&!isNaN(+act)){var d=+act-m.expectedClosingCash;L.push('💵 Cash counted '+M(+act)+(Math.abs(d)<1?' ✅ matches':(d<0?' ⚠️ short by '+M(-d):' ➕ extra '+M(d))))}
+  else L.push('💵 Expected cash '+M(m.expectedClosingCash));return L.join('\n')}
+window.enhClosing=function(){var t=todayStr(),m=computeDayMetrics(t);CL={t:t,m:m,owed:owed()};
+  var row=function(a,b,c){return '<div class="enhRow"><span>'+a+'</span><b'+(c?' style="color:'+c+'"':'')+'>'+b+'</b></div>'};
+  var act=(m.closingCashActual===null||m.closingCashActual===undefined)?'':m.closingCashActual;
+  $('enhSheetBody').innerHTML='<div style="max-height:78vh;overflow:auto"><h3 style="margin:0 0 6px">🔒 Close today · '+t+'</h3>'
+   +row('Opening cash',M(m.openingCash))+row('+ Cash sales',M(m.cashSales))+row('+ Udhar cash received',M(m.custCash))+row('− Cash expenses &amp; salary',M(m.expensesCash+m.staffSalaryCash))+row('= Cash expected in drawer',M(m.expectedClosingCash),'var(--brand)')
+   +'<label style="display:block;margin:10px 0 4px;font-size:.85rem;font-weight:700">Cash you counted now (₹)</label><input id="cl-act" type="number" inputmode="decimal" value="'+act+'" oninput="enhClCalc()" placeholder="Count the drawer and type">'
+   +'<p id="cl-diff" class="hint" style="text-align:left;margin:6px 0"></p>'
+   +'<textarea id="cl-msg" readonly style="min-height:150px;font-size:.85rem"></textarea>'
+   +'<button type="button" onclick="enhClSave()">💾 Save cash count &amp; close day</button><button type="button" class="ghost" onclick="enhClShare()">📤 Share on WhatsApp</button><button type="button" class="ghost" onclick="enhClCopy()">📋 Copy summary</button><button type="button" class="ghost" onclick="enhClose()">Close</button></div>';
+  $('enhSheet').style.display='flex';enhClCalc()};
+window.enhClCalc=function(){var v=$('cl-act').value;$('cl-msg').value=clMsg(v);var d=$('cl-diff');
+  if(v===''){d.textContent='Expected in drawer: '+M(CL.m.expectedClosingCash);return}
+  var x=+v-CL.m.expectedClosingCash;d.textContent=Math.abs(x)<1?'✅ Cash matches':(x<0?'⚠️ Short by '+M(-x)+' — check expenses or sales entered':'➕ Extra '+M(x)+' — maybe a sale or payment is not entered')};
+window.enhClSave=function(){var v=$('cl-act').value;if(v===''||isNaN(+v)){showBanner('Type the cash you counted');return}
+  if(CL.m.totalSales<=0){showBanner('Enter and save today\'s sales in Daily Sales first');return}
+  if(isDayClosed(CL.t)&&!confirm('Today is already closed. Update the cash count?'))return;
+  upsertDailySales(CL.t,{closingCashActual:+v,closed:true});var nx=addDays(CL.t,1),r=loadDailySalesAll()[nx];if(!(r&&Number(r.openingCash)>0))upsertDailySales(nx,{openingCash:+v});
+  afterDataChange();try{renderHomeToday()}catch(e){}showBanner('🔒 Day closed and cash saved');enhClCalc()};
+window.enhClShare=function(){window.open('https://wa.me/?text='+encodeURIComponent($('cl-msg').value),'_blank')};
+window.enhClCopy=function(){var v=$('cl-msg').value;if(navigator.clipboard)navigator.clipboard.writeText(v).then(function(){showBanner('📋 Copied')},function(){$('cl-msg').select()});else{$('cl-msg').select();try{document.execCommand('copy');showBanner('📋 Copied')}catch(e){}}};
+/* ---------- 3 & 4. Analytics insights ---------- */
+function insights(){var tab=$('dashboardTab');if(!tab)return;var e=$('insightsCard');if(!e){e=document.createElement('div');e.id='insightsCard';e.className='card';tab.appendChild(e)}
+  var t=todayStr(),days=computeRangeMetrics(addDays(t,-364),t).days.filter(function(d){return d.totalSales>0});
+  var nm=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'],S=[0,0,0,0,0,0,0],N=[0,0,0,0,0,0,0],lim=addDays(t,-84);
+  days.forEach(function(d){if(d.date>=lim){var w=parseISODate(d.date).getDay();S[w]+=d.totalSales;N[w]++}});
+  var A=S.map(function(s,i){return N[i]?s/N[i]:0}),mx=Math.max.apply(null,A),ok=A.filter(function(x){return x>0}).length>=2,bi=-1,wi=-1;
+  if(ok){A.forEach(function(x,i){if(x>0&&(bi<0||x>A[bi]))bi=i;if(x>0&&(wi<0||x<A[wi]))wi=i})}
+  var h='<h3 style="margin-top:0">📈 Insights</h3>';
+  if(ok){h+='<div style="font-weight:700;margin-bottom:6px">Average sales by weekday <span class="hint">(last 12 weeks)</span></div>';
+    [1,2,3,4,5,6,0].forEach(function(i){if(!A[i])return;h+='<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:.8rem"><span style="width:34px">'+nm[i].slice(0,3)+'</span><div style="flex:1;background:var(--brand-light);border-radius:8px;height:14px;overflow:hidden"><div style="height:100%;width:'+Math.round(A[i]/mx*100)+'%;background:'+(i===bi?'var(--paid)':(i===wi?'var(--owe)':'var(--brand)'))+'"></div></div><b style="width:64px;text-align:right">'+M(A[i])+'</b></div>'});
+    h+='<p style="margin:8px 0;font-size:.88rem">🏆 Best day: <b>'+nm[bi]+'</b> · 🐌 Slowest day: <b>'+nm[wi]+'</b></p>'}
+  else h+='<p class="hint" style="text-align:left">Enter sales for a few weeks to see your best and slowest weekdays.</p>';
+  var by={};days.forEach(function(d){var k=d.date.slice(0,7);by[k]=(by[k]||0)+d.totalSales});var ks=Object.keys(by).sort(),best=ks.reduce(function(a,k){return (a===null||by[k]>by[a])?k:a},null);
+  if(best){var dd=parseISODate(best+'-01');h+='<p style="margin:8px 0;font-size:.88rem">📅 Best month (last 12 months): <b>'+dd.toLocaleDateString('en-IN',{month:'long',year:'numeric'})+'</b> · '+M(by[best])+'</p>'}
+  var w1=computeRangeMetrics(addDays(t,-6),t),w0=computeRangeMetrics(addDays(t,-13),addDays(t,-7)),mf=t.slice(0,8)+'01',pd=parseISODate(mf);pd.setMonth(pd.getMonth()-1);
+  var pf=toISODate(pd),pl=new Date(pd.getFullYear(),pd.getMonth()+1,0).getDate(),pt=pf.slice(0,8)+String(Math.min(+t.slice(8),pl)).padStart(2,'0'),m1=computeRangeMetrics(mf,t),m0=computeRangeMetrics(pf,pt);
+  var cr=function(l,a,b){return '<div style="margin:10px 0 4px;font-weight:700">'+l+'</div><div class="enhRow"><span>Sales '+M(a.totalSales)+' <span class="hint">vs '+M(b.totalSales)+'</span></span>'+arrow(a.totalSales,b.totalSales)+'</div><div class="enhRow"><span>Profit '+M(a.totalProfit)+' <span class="hint">vs '+M(b.totalProfit)+'</span></span>'+arrow(a.totalProfit,b.totalProfit)+'</div>'};
+  h+=cr('Last 7 days vs the 7 days before',w1,w0)+cr('This month so far vs same days last month',m1,m0);
+  e.innerHTML=h}
+var _rd=window.renderDashboard;if(_rd)window.renderDashboard=function(){var r=_rd.apply(this,arguments);try{insights()}catch(e){console.error(e)}return r};
+/* ---------- 5. Forecast: how much to make tomorrow ---------- */
+function mcfg(){var o={};try{o=JSON.parse(LS.getItem('udhar_make_cfg')||'{}')}catch(e){}return {tp:+o.tp||10,ts:o.ts>=0&&o.ts!==undefined&&o.ts!==''?+o.ts:70,sp:+o.sp||10}}
+window.enhMakeSave=function(){var tp=+$('mk-tp').value,ts=+$('mk-ts').value,sp=+$('mk-sp').value;if(!(tp>0)||!(sp>0)||ts<0||ts>100){showBanner('Check the numbers');return}LS.setItem('udhar_make_cfg',JSON.stringify({tp:tp,ts:ts,sp:sp}));makeCard()};
+function r5(x){return Math.max(0,Math.round(x/5)*5)}
+function makeCard(){var wrap=$('fc-daysWrap'),cfg=loadFcCfg();if(!wrap||!cfg.configured)return;var old=$('makeCard');if(old)old.remove();
+  var p=fcPredict(addDays(todayStr(),1),fcHistory(),fcData.weather),c=mcfg(),e=document.createElement('div');e.id='makeCard';e.className='card';
+  var h='<h3 style="margin-top:0">🍵 Make for tomorrow</h3>';
+  if(p.src==='none'||!p.pred){h+='<p class="hint" style="text-align:left">Enter about a week of daily sales (or a usual daily figure in forecast setup) to get quantities.</p>'}
+  else{var ts=c.ts/100,cup=function(v){return r5(v*ts/c.tp)},sn=function(v){return r5(v*(1-ts)/c.sp)};
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+tile('☕ TEA / COFFEE','~'+cup(p.pred)+' cups')+tile('🍟 SNACKS','~'+sn(p.pred)+' pieces')+'</div><div class="hint" style="text-align:left;margin-top:6px">Likely range: '+cup(p.low)+'–'+cup(p.high)+' cups · '+sn(p.low)+'–'+sn(p.high)+' snacks (from predicted sales '+fcMoney(p.pred)+')</div>'}
+  h+='<details style="margin-top:8px"><summary style="font-weight:700;font-size:.85rem">Adjust to my shop</summary><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><div style="flex:1 1 30%"><label style="font-size:.72rem">Price per cup ₹</label><input id="mk-tp" type="number" value="'+c.tp+'"></div><div style="flex:1 1 30%"><label style="font-size:.72rem">% sales from tea</label><input id="mk-ts" type="number" value="'+c.ts+'"></div><div style="flex:1 1 30%"><label style="font-size:.72rem">Price per snack ₹</label><input id="mk-sp" type="number" value="'+c.sp+'"></div></div><button type="button" class="ghost" onclick="enhMakeSave()" style="margin-top:8px">Save</button></details>';
+  e.innerHTML=h;wrap.appendChild(e);
+  /* ---------- 6. mark festival / rainy day ---------- */
+  var m=$('markCard');if(m)m.remove();m=document.createElement('div');m.id='markCard';m.className='card';
+  m.innerHTML='<h3 style="margin-top:0">🎉 Mark a festival day</h3><p class="hint" style="text-align:left;margin:0 0 6px">Tell the forecast about a festival and it adjusts that day\'s prediction.</p><input id="mk-date" type="date" value="'+addDays(todayStr(),1)+'"><button type="button" style="margin-top:8px" onclick="enhMark(\'festival\')">🎉 Mark festival</button><p class="hint" style="text-align:left;margin:6px 0 0">You can change or delete it in the events list below.</p>';
+  wrap.appendChild(m)}
+window.enhMark=function(k){var d=$('mk-date').value;if(!d){showBanner('Pick a date');return}var l=loadFcEvents();
+  if(l.some(function(x){return x.date===d&&x.kind===k})){showBanner('Already marked for '+d);return}
+  l.push({id:uid(),title:'Festival day',date:d,kind:'festival',impact:'up',updatedAt:Date.now()});
+  saveFcEvents(l);fcRenderAll();afterDataChange();showBanner('🎉 Festival marked')};
+var _fd=window.fcRenderDays;if(_fd)window.fcRenderDays=function(){var r=_fd.apply(this,arguments);try{makeCard()}catch(e){console.error(e)}return r};
 })();
 </script>
 </body>
