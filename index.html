@@ -526,7 +526,7 @@ window.addEventListener('error', function(e){
 
       <div class="totalbox hidden" id="db-personalBox" style="background:var(--paid);">
         <div class="amt" id="db-inhandProfit">₹0</div>
-        <div class="sub">🤲 In Hand Profit — Online Sales − Online Expenses − Own Money Added (all-time)</div>
+        <div class="sub" id="db-inhandLabel">🤲 In Hand Profit — Online Sales − Online Expenses − Own Money Added</div>
       </div>
 
       <div class="card" id="db-insights"></div>
@@ -1751,7 +1751,11 @@ function activateTab(name){
   });
 }
 
-function showDashboardTab(){ activateTab('dashboard'); setDashMode(dashMode); renderDashboard(); }
+function showDashboardTab(){
+  activateTab('dashboard'); setDashMode(dashMode);
+  if(window._dashDay !== todayStr()){ window._dashDay = todayStr(); dashAnchorDate = todayStr(); }
+  if(!window._dashInit){ window._dashInit = 1; setDashRange('monthly'); } else renderDashboard();
+}
 function showSalesTab(){ activateTab('sales'); loadDailySalesForm(); }
 
 function showExpensesTab(){
@@ -6297,7 +6301,8 @@ function renderDashboard(){
     document.getElementById('db-profit').textContent = fmtMoney(m.totalProfit);
     document.getElementById('db-profitLabel').textContent = 'Estimated Profit (Total Sales − Expenses − Staff Salary)';
   }
-  document.getElementById('db-inhandProfit').textContent = fmtMoney(computeInHandProfitAllTime());
+  document.getElementById('db-inhandProfit').textContent = fmtMoney(m.days.reduce((t,d)=>t+d.onlineProfit-d.ownMoneyAdded,0));
+  document.getElementById('db-inhandLabel').textContent = '🤲 In Hand Profit — Online Sales − Online Expenses − Own Money Added · ' + label;
 
   let html = '';
   if(m.incompleteDaysCount>0){
