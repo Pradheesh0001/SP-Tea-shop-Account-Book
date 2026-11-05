@@ -3569,7 +3569,9 @@ function fcPredict(date, hist, weather){
   const w = weather && weather.days ? weather.days[date] : null;
   fcWeatherFactors(w, cfg).forEach(f=>factors.push(f));
   const hol = fcHolidayOn(date), isWeekend = (dow===0 || dow===6);
-  if(hol && !isWeekend){ const he = fcHolidayEffect(cfg); if(he.pct) factors.push({ label:'Holiday: '+hol.name+' — '+he.why, pct:he.pct, foot:true }); }
+  const fe = (typeof festFactor==='function') ? festFactor(date) : null;
+  if(fe) factors.push(fe);
+  if(hol && !isWeekend && !fe){ const he = fcHolidayEffect(cfg); if(he.pct) factors.push({ label:'Holiday: '+hol.name+' — '+he.why, pct:he.pct, foot:true }); }
   const evs = fcEventsOn(date);
   evs.forEach(e=>{
     let p = FC_IMPACT[e.impact], label = 'Event: '+e.title;
@@ -3605,6 +3607,9 @@ function fcTips(p, cfg){
   if(p.factors.some(x=>x.label.indexOf('Muhurtham')===0 && x.pct>=15)) t.push('Wedding day near a marriage hall — guests and relatives will pass by. Open early, keep extra tea, snacks and cold water ready.');
   else if(p.factors.some(x=>x.label.indexOf('Muhurtham')===0)) t.push('Wedding day — a little extra crowd and traffic is likely.');
   if(p.factors.some(x=>x.label.indexOf('Local news')===0 && x.pct<0)) t.push('Check local news — a bandh or protest may keep people at home.');
+  const ff = p.factors.find(x=>x.label.indexOf('Festival:')===0);
+  if(ff && ff.pct<=-10) t.push('Festival travel rush — many regular customers are away in their hometowns. Buy about '+Math.min(40,Math.abs(ff.pct))+'% less milk and perishables, and collect pending udhar early.');
+  else if(ff && ff.pct>=10) t.push('Festival crowd expected — keep extra stock and change ready.');
   if(!t.length) t.push('A normal day is expected — stock as usual.');
   return t;
 }
@@ -7790,6 +7795,79 @@ window.enhMark=function(k){var d=$('mk-date').value;if(!d){showBanner('Pick a da
 var _fd=window.fcRenderDays;if(_fd)window.fcRenderDays=function(){var r=_fd.apply(this,arguments);try{makeCard()}catch(e){console.error(e)}return r};
 })();
 </script>
+<script>
+/* ===== Festival season awareness (Tamil Nadu) — offline calendar, works without internet ===== */
+var FEST_CAL=[
+['2025-01-14','Pongal','பொங்கல்','pongal'],['2025-01-15','Thiruvalluvar Day','திருவள்ளுவர் தினம்','minor'],['2025-01-16','Uzhavar Thirunal','உழவர் திருநாள்','minor'],
+['2025-03-31','Ramzan','ரம்ஜான்','ramzan'],['2025-04-14','Tamil New Year','தமிழ் புத்தாண்டு','tamilny'],['2025-06-07','Bakrid','பக்ரீத்','bakrid'],
+['2025-10-01','Ayudha Pooja','ஆயுத பூஜை','ayudha'],['2025-10-02','Vijayadasami','விஜயதசமி','minor'],['2025-10-20','Deepavali','தீபாவளி','diwali'],['2025-12-25','Christmas','கிறிஸ்துமஸ்','xmas'],
+['2026-01-01','New Year','புத்தாண்டு','minor'],['2026-01-15','Pongal','பொங்கல்','pongal'],['2026-01-16','Thiruvalluvar Day','திருவள்ளுவர் தினம்','minor'],['2026-01-17','Uzhavar Thirunal','உழவர் திருநாள்','minor'],
+['2026-01-26','Republic Day','குடியரசு தினம்','minor'],['2026-02-01','Thaipoosam','தைப்பூசம்','minor'],['2026-03-21','Ramzan','ரம்ஜான்','ramzan'],['2026-04-03','Good Friday','புனித வெள்ளி','minor'],
+['2026-04-14','Tamil New Year','தமிழ் புத்தாண்டு','tamilny'],['2026-05-01','May Day','மே தினம்','minor'],['2026-05-28','Bakrid','பக்ரீத்','bakrid'],['2026-08-15','Independence Day','சுதந்திர தினம்','minor'],
+['2026-08-26','Milad-un-Nabi','மிலாது நபி','minor'],['2026-09-14','Vinayagar Chathurthi','விநாயகர் சதுர்த்தி','minor'],['2026-10-02','Gandhi Jayanthi','காந்தி ஜெயந்தி','minor'],
+['2026-10-19','Ayudha Pooja','ஆயுத பூஜை','ayudha'],['2026-10-20','Vijayadasami','விஜயதசமி','minor'],['2026-11-08','Deepavali','தீபாவளி','diwali'],['2026-12-25','Christmas','கிறிஸ்துமஸ்','xmas'],
+['2027-01-01','New Year','புத்தாண்டு','minor'],['2027-01-15','Pongal','பொங்கல்','pongal'],['2027-01-16','Thiruvalluvar Day','திருவள்ளுவர் தினம்','minor'],['2027-01-17','Uzhavar Thirunal','உழவர் திருநாள்','minor'],
+['2027-01-22','Thaipoosam','தைப்பூசம்','minor'],['2027-01-26','Republic Day','குடியரசு தினம்','minor'],['2027-03-10','Ramzan','ரம்ஜான்','ramzan'],['2027-03-26','Good Friday','புனித வெள்ளி','minor'],
+['2027-04-14','Tamil New Year','தமிழ் புத்தாண்டு','tamilny'],['2027-05-01','May Day','மே தினம்','minor'],['2027-05-17','Bakrid','பக்ரீத்','bakrid'],['2027-08-15','Independence Day','சுதந்திர தினம்','minor'],
+['2027-08-25','Krishna Jayanthi','கிருஷ்ண ஜெயந்தி','minor'],['2027-09-04','Vinayagar Chathurthi','விநாயகர் சதுர்த்தி','minor'],['2027-10-02','Gandhi Jayanthi','காந்தி ஜெயந்தி','minor'],
+['2027-10-08','Ayudha Pooja','ஆயுத பூஜை','ayudha'],['2027-10-09','Vijayadasami','விஜயதசமி','minor'],['2027-10-28','Deepavali','தீபாவளி','diwali'],['2027-12-25','Christmas','கிறிஸ்துமஸ்','xmas']
+].map(function(x){return {d:x[0],n:x[1],ta:x[2],g:x[3]}});
+/* typical change in a working-area tea shop: days before/after the festival (negative = sales fall as people leave for hometown) */
+var FEST_PAT={
+ diwali:{'-4':-6,'-3':-12,'-2':-20,'-1':-26,'0':-30,'1':-22,'2':-10},
+ pongal:{'-4':-8,'-3':-15,'-2':-24,'-1':-32,'0':-36,'1':-36,'2':-30,'3':-15},
+ ayudha:{'-2':-6,'-1':-12,'0':-20,'1':-18,'2':-10},
+ tamilny:{'-1':-8,'0':-18,'1':-8},
+ ramzan:{'-1':-6,'0':-14,'1':-6},bakrid:{'-1':-6,'0':-14,'1':-6},xmas:{'-1':-4,'0':-10}};
+function festArea(){var a=(loadFcCfg()||{}).festArea;return a==='native'||a==='neutral'?a:'work'}
+function festSetArea(v){var c=loadFcCfg();c.festArea=v;saveFcCfg(c);_festMemo={};try{renderHomeToday()}catch(e){}}
+function festDiff(a,b){return Math.round((parseISODate(a)-parseISODate(b))/864e5)}
+var _festMemo={};
+function festLearn(g){var td=todayStr(),k=g+td+festArea();if(_festMemo[k])return _festMemo[k];var P=FEST_PAT[g],res={scale:1,n:0,last:null};_festMemo[k]=res;if(!P)return res;
+  var dflt=function(o){return P[String(o)]},sc=[];
+  FEST_CAL.filter(function(e){return e.g===g&&e.d<addDays(td,-3)}).forEach(function(e){
+    var offs=Object.keys(P).map(Number).filter(function(o){return o>=-2&&o<=1}),days=computeRangeMetrics(addDays(e.d,-40),addDays(e.d,2)).days;
+    var bl=days.filter(function(x){return x.date>=addDays(e.d,-35)&&x.date<=addDays(e.d,-8)&&x.totalSales>0}),
+      win=days.filter(function(x){var o=festDiff(x.date,e.d);return offs.indexOf(o)>-1&&x.totalSales>0});
+    if(bl.length<10||win.length<2)return;
+    var b=bl.reduce(function(s,x){return s+x.totalSales},0)/bl.length,a=win.reduce(function(s,x){return s+x.totalSales},0)/win.length,act=(a/b-1)*100,
+      df=win.reduce(function(s,x){return s+dflt(festDiff(x.date,e.d))},0)/win.length;
+    if(!df)return;res.last={d:e.d,n:e.n,pct:Math.round(act)};sc.push(Math.max(0.3,Math.min(2.2,act/df)))});
+  if(sc.length){res.n=sc.length;res.scale=sc.reduce(function(s,x){return s+x},0)/sc.length}return res}
+function festFactor(date){var area=festArea(),best=null,cfg=loadFcCfg();
+  FEST_CAL.forEach(function(e){var P=FEST_PAT[e.g];if(!P)return;var off=festDiff(date,e.d),p=P[String(off)];if(p===undefined)return;
+    if(area==='neutral'){if(off!==0)return;p=p*0.35}
+    else if(area==='native')p=Math.min(25,Math.round(-p*0.6));
+    else{var L=festLearn(e.g);p=Math.round(p*L.scale);p=Math.max(-55,Math.min(0,p))}
+    if(!best||Math.abs(p)>Math.abs(best.pct))best={pct:p,e:e,off:off}});
+  if(best){var o=best.off,rel=o<0?(-o)+' day'+(o<-1?'s':'')+' before':(o===0?'festival day':'day after');
+    var why=area==='native'?'relatives and families come home':(area==='neutral'?'shops and offices stay closed':'many regular customers travel to their hometowns');
+    var L2=area==='work'?festLearn(best.e.g):null;
+    return {label:'Festival: '+best.e.n+' ('+rel+') — '+why+(L2&&L2.n?' · adjusted from your own past sales':''),pct:best.pct,foot:true,fest:best.e.n}}
+  var h=FEST_CAL.find(function(e){return e.d===date&&e.g==='minor'});
+  if(h&&parseISODate(date).getDay()!==0&&parseISODate(date).getDay()!==6){var he=fcHolidayEffect(cfg);if(he.pct)return {label:'Holiday: '+h.n+' — '+he.why,pct:he.pct,foot:true,fest:h.n}}
+  return null}
+function festUpcoming(days){var td=todayStr(),end=addDays(td,days||45);
+  return FEST_CAL.filter(function(e){return FEST_PAT[e.g]&&e.d>=addDays(td,-4)&&e.d<=end}).sort(function(a,b){return a.d<b.d?-1:1})}
+function festRows(e){var td=todayStr(),P=FEST_PAT[e.g],offs=Object.keys(P).map(Number).sort(function(a,b){return a-b}),hist=fcHistory(),rows=[];
+  offs.forEach(function(o){var d=addDays(e.d,o);if(d<td)return;var f=festFactor(d),pr=null;try{pr=fcPredict(d,hist,fcData.weather)}catch(x){}rows.push({d:d,pct:f?f.pct:0,pred:pr&&pr.src!=='none'&&pr.pred?pr.pred:null,base:pr&&pr.base?pr.base:null,main:o===0})});return rows}
+function festCard(){var h=document.getElementById('homeTodayCard');if(!h||!h.parentNode)return;var el=document.getElementById('festCard'),td=todayStr(),
+  up=festUpcoming(12).filter(function(e){var P=FEST_PAT[e.g];var offs=Object.keys(P).map(Number);var first=addDays(e.d,Math.min.apply(null,offs)),last=addDays(e.d,Math.max.apply(null,offs));return td>=addDays(first,-4)&&td<=last});
+  if(!up.length){if(el)el.remove();return}
+  if(!el){el=document.createElement('div');el.id='festCard';el.className='card';h.parentNode.insertBefore(el,h)}
+  var e=up[0],dd=festDiff(e.d,td),area=festArea(),rows=festRows(e),worst=rows.reduce(function(m,r){return Math.min(m,r.pct)},0),nm=esc(e.n)+' <span style="color:var(--muted);font-weight:500">'+esc(e.ta)+'</span>',
+   title=dd>0?'in '+dd+' day'+(dd>1?'s':''):(dd===0?'is today':'was '+(-dd)+' day'+(dd<-1?'s':'')+' ago'),
+   msg=area==='native'?'People return to town for the festival — expect a bigger crowd.':(area==='neutral'?'Shops and offices nearby will be closed on the day.':'Many people travel to their hometowns — expect <b>lower sales</b>'+(worst?' (lowest about <b>'+worst+'%</b>)':'')+'.'),
+   tips=[];
+  if(area==='work'&&worst<=-15){var bal=customerBalances().filter(function(c){return c.bal>0}).slice(0,3);tips.push('🥛 Buy about '+Math.min(40,Math.abs(worst))+'% less milk and perishables on the slowest days.');
+    if(bal.length)tips.push('📒 Collect udhar before they leave: '+bal.map(function(c){return esc(c.name)+' '+fmtMoney(c.bal)}).join(', ')+'.');tips.push('👷 Plan staff leave and shop timing for the festival days.')}
+  var L=festLearn(e.g);if(L.last)tips.push('📊 Last time ('+esc(L.last.n)+', '+parseISODate(L.last.d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})+') your sales were about '+Math.abs(L.last.pct)+'% '+(L.last.pct<0?'below':'above')+' normal.');
+  el.innerHTML='<div style="font-weight:800;font-size:1rem">🪔 '+nm+' '+title+'</div><div style="font-size:.85rem;margin:4px 0 8px">'+msg+'</div>'
+   +rows.map(function(r){var c=r.pct<0?'var(--owe)':(r.pct>0?'var(--paid)':'inherit');return '<div class="enhRow" style="font-size:.84rem"><span>'+esc(parseISODate(r.d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}))+(r.main?' 🎉':'')+'</span><span><b>'+(r.pred?'~'+fmtMoney(r.pred):'—')+'</b> <b style="color:'+c+'">'+(r.pct?(r.pct>0?'+':'')+r.pct+'%':'')+'</b></span></div>'}).join('')
+   +(tips.length?'<div class="askNote" style="font-size:.8rem;margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--brand-light)">'+tips.join('<br>')+'</div>':'')
+   +'<div style="margin-top:8px;font-size:.78rem;color:var(--muted)">My shop area: <select id="festArea" onchange="festSetArea(this.value)" style="width:auto;margin:0;padding:4px 8px;font-size:.78rem"><option value="work"'+(area==='work'?' selected':'')+'>Working-people area (sales drop)</option><option value="native"'+(area==='native'?' selected':'')+'>Native town (crowd rises)</option><option value="neutral"'+(area==='neutral'?' selected':'')+'>Only holiday closure</option></select></div>'}
+var _rhF=window.renderHomeToday;if(_rhF)window.renderHomeToday=function(){var r=_rhF.apply(this,arguments);try{festCard()}catch(e){console.error(e)}return r};
+</script>
 <style>
 #askFab{position:fixed;right:14px;bottom:20px;z-index:920;width:54px;height:54px;border-radius:50%;margin:0;padding:0;font-size:1.5rem;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border:0;box-shadow:var(--shadow-lg);display:none;align-items:center;justify-content:center}
 @media(max-width:699px){#askFab{bottom:88px}}
@@ -7899,7 +7977,7 @@ function growthReport(){var td=todayStr(),a=computeRangeMetrics(addDays(td,-27),
 function grade(s){return s>=80?['Excellent','#10b981','🟢']:s>=60?['Good','#eab308','🟡']:s>=40?['Needs care','#f97316','🟠']:['Weak','#e11d48','🔴']}
 
 /* ---------- answers ---------- */
-var CHIPS=['Today sales evlo?','Yesterday profit','This month sales','Udhar pending','Cash in hand','Tomorrow forecast','Business growth','Best day'];
+var CHIPS=['Next festival','Today sales evlo?','Yesterday profit','This month sales','Udhar pending','Cash in hand','Tomorrow forecast','Business growth','Best day'];
 function aSales(p){var m=computeRangeMetrics(p.f,p.t),L=lab(p.f,p.t);
   if(p.f===p.t){var d=m.days[0];if(!d.recorded&&d.totalSales===0)return 'No sales entered for <b>'+L+'</b> yet. Add them in Daily Sales and ask again.';
     var A=weekdayAvg()[parseISODate(p.f).getDay()],h=big(M(d.totalSales),L)+row('Cash sales',M(d.cashSales))+row('Online (UPI) sales',M(d.onlineSales));
@@ -7948,7 +8026,18 @@ function aForecast(){var cfg=loadFcCfg();if(!cfg.configured)return 'Set up <b>De
   var p=fcPredict(addDays(todayStr(),1),fcHistory(),fcData.weather);if(p.src==='none'||!p.pred)return 'I need about a week of daily sales before I can forecast. Keep entering sales daily.';
   var h=big('~'+M(p.pred),'Expected sales tomorrow · likely '+M(p.low)+' – '+M(p.high))+row('Confidence',p.conf)+row('Expected level',p.level);
   p.factors.slice(0,3).forEach(function(f){h+=row(esc(f.label),(f.pct>0?'+':'')+f.pct+'%',f.pct>0?'var(--paid)':'var(--owe)')});return h}
-function aHelp(t){return (t===false?'':'<b>Ask me anything about your shop</b> — English, Tamil or Tanglish.')+['Today sales evlo?','Yesterday profit','Last week expenses','Raja udhar evlo?','Milk expense this month','Sugar price','Who owes the most?','Cash in hand','Compare this week','Month end projection','Business growth tips'].map(chip).join('')}
+function aFest(q){var td=todayStr(),G=[[/diwali|deepavali|தீபாவளி/,'diwali'],[/pongal|பொங்கல்/,'pongal'],[/ramzan|ramadan|ரம்ஜான்/,'ramzan'],[/bakrid|பக்ரீத்/,'bakrid'],[/christmas|கிறிஸ்துமஸ்/,'xmas'],[/ayudha|vijayadasami|ஆயுத/,'ayudha'],[/tamil new year|puthandu|தமிழ் புத்தாண்டு/,'tamilny']],g=null;
+  G.forEach(function(x){if(x[0].test(q))g=x[1]});
+  var list=festUpcoming(400).filter(function(e){return !g||e.g===g}),e=list[0];if(!e)return 'No festival found in the calendar ahead.';
+  var dd=festDiff(e.d,td),f=festFactor(e.d),L=festLearn(e.g),area=festArea(),
+   h=big(esc(e.n)+' '+(dd>0?'in '+dd+' day'+(dd>1?'s':''):(dd===0?'today':(-dd)+' day(s) ago')),parseISODate(e.d).toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'}));
+  h+=row('Expected sales on the day',f?(f.pct>0?'+':'')+f.pct+'% vs normal':'about normal',f&&f.pct<0?'var(--owe)':'');
+  if(L.last)h+=row('Last '+esc(L.last.n)+' (your data)',Math.abs(L.last.pct)+'% '+(L.last.pct<0?'below':'above')+' normal');
+  if(dd<=12){festRows(e).forEach(function(r){h+=row(esc(parseISODate(r.d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}))+(r.main?' 🎉':''),(r.pred?'~'+M(r.pred)+' ':'')+(r.pct?(r.pct>0?'+':'')+r.pct+'%':''),r.pct<0?'var(--owe)':'')})}
+  if(area==='work')h+=note('Many people travel to their hometowns for '+esc(e.n)+', so sales usually fall for a few days around it. Buy less milk and perishables, and collect udhar early.');
+  var nx=FEST_CAL.filter(function(x){return x.d>td&&x.d!==e.d}).slice(0,4);if(!g&&nx.length)h+='<div class="askSub" style="margin-top:8px">Coming up</div>'+nx.map(function(x){return row(esc(x.n),parseISODate(x.d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}))}).join('');
+  return h+'<div class="askSub" style="margin-top:6px">Dates from the Tamil Nadu government holiday list. Ramzan / Bakrid may shift by a day.</div>'}
+function aHelp(t){return (t===false?'':'<b>Ask me anything about your shop</b> — English, Tamil or Tanglish.')+['Today sales evlo?','Yesterday profit','Last week expenses','Raja udhar evlo?','Milk expense this month','Sugar price','Who owes the most?','Cash in hand','Compare this week','Month end projection','Business growth tips','Diwali sales effect'].map(chip).join('')}
 
 function answer(raw){var q=raw.toLowerCase().trim(),p=period(q),td=todayStr(),has=function(r){return r.test(q)};
   if(!q)return aHelp();
@@ -7961,7 +8050,8 @@ function answer(raw){var q=raw.toLowerCase().trim(),p=period(q),td=todayStr(),ha
    best=has(/best|worst|slowest|busiest|highest|lowest|peak|weak day/),avg=has(/average|avg|per day|சராசரி/),
    sal=has(/sale|revenue|income|vyapa?r?am|viyabaram|vyabaram|business|விற்பனை|வியாபாரம்|வரவு/),
    prof=has(/profit|laabam|labam|lapam|லாபம்|\bnet\b|earn/),exp=has(/expense|spend|spent|selavu|selvu|chelavu|செலவு|kharch|salary|சம்பளம்|sambalam/);
-  if(proj)return aProj();if(fc)return aForecast();if(growth)return aGrowth();if(cmp&&!udh)return aCompare();
+  var fest=has(/festival|holiday|diwali|deepavali|pongal|ramzan|ramadan|bakrid|christmas|ayudha|tamil new year|பண்டிகை|விடுமுறை|தீபாவளி|பொங்கல்|ரம்ஜான்|பக்ரீத்/);
+  if(proj)return aProj();if(fc)return aForecast();if(fest)return aFest(q);if(growth)return aGrowth();if(cmp&&!udh)return aCompare();
   var cu=findCustomers(q);if(cu.length&&!sal&&!prof&&!exp)return aCust(cu);
   var it=findItems(q);if(it.length&&!exp&&!prof&&!udh&&!(sal&&!has(/price|rate|vilai|விலை|supplier|mrp|cost/)))return aItem(it);
   if(pay)return aPay();if(udh&&aging)return aAging();if(aging)return aAging();
