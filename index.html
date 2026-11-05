@@ -7790,5 +7790,212 @@ window.enhMark=function(k){var d=$('mk-date').value;if(!d){showBanner('Pick a da
 var _fd=window.fcRenderDays;if(_fd)window.fcRenderDays=function(){var r=_fd.apply(this,arguments);try{makeCard()}catch(e){console.error(e)}return r};
 })();
 </script>
+<style>
+#askFab{position:fixed;right:14px;bottom:20px;z-index:920;width:54px;height:54px;border-radius:50%;margin:0;padding:0;font-size:1.5rem;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border:0;box-shadow:var(--shadow-lg);display:none;align-items:center;justify-content:center}
+@media(max-width:699px){#askFab{bottom:88px}}
+#askPanel{position:fixed;inset:0;z-index:970;background:var(--bg);display:none;flex-direction:column;height:100vh;height:100dvh}
+#askHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;background:var(--card);border-bottom:1px solid var(--card-border)}
+#askHead b{font-size:1rem}#askHead span{display:block;font-size:.7rem;color:var(--muted)}
+#askHead button{width:auto;margin:0;padding:8px 14px}
+#askMsgs{flex:1;overflow-y:auto;padding:12px 12px 6px;-webkit-overflow-scrolling:touch}
+.askB{max-width:92%;margin:8px 0;padding:10px 12px;border-radius:16px;font-size:.9rem;line-height:1.4;word-wrap:break-word}
+.askB.u{margin-left:auto;background:var(--brand);color:#fff;border-bottom-right-radius:4px}
+.askB.b{margin-right:auto;background:var(--card);border:1px solid var(--card-border);border-bottom-left-radius:4px;box-shadow:var(--shadow-sm)}
+.askBig{font-size:1.6rem;font-weight:800;line-height:1.15}.askSub{font-size:.76rem;color:var(--muted);margin:2px 0 6px}
+.askB .enhRow{padding:5px 0;font-size:.84rem}.askNote{font-size:.8rem;margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--brand-light)}
+#askChips{display:flex;gap:6px;overflow-x:auto;padding:6px 12px;white-space:nowrap}
+#askChips button,.askB .askChip{width:auto;margin:0;flex:0 0 auto;padding:7px 12px;font-size:.78rem;border-radius:999px;background:var(--brand-light);color:var(--brand);border:1px solid var(--card-border);box-shadow:none;font-weight:700}
+.askB .askChip{display:inline-block;margin:6px 6px 0 0}
+#askBar{display:flex;gap:8px;padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px));background:var(--card);border-top:1px solid var(--card-border)}
+#askBar input{flex:1;margin:0;min-width:0}#askBar button{width:auto;margin:0;padding:10px 18px}
+.gcRing{width:62px;height:62px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-weight:800;font-size:1.15rem}
+.gcRing i{width:48px;height:48px;border-radius:50%;background:var(--card);display:flex;align-items:center;justify-content:center;font-style:normal}
+.askBar2{height:8px;border-radius:6px;background:var(--brand-light);overflow:hidden;flex:1}.askBar2 div{height:100%}
+</style>
+<button id="askFab" type="button" onclick="askOpen()" aria-label="Ask My Shop">🧠</button>
+<div id="askPanel">
+  <div id="askHead"><div><b>🧠 Ask My Shop</b><span>Answers from your own app data · works offline</span></div><button type="button" onclick="askClose()">✕ Close</button></div>
+  <div id="askMsgs"></div>
+  <div id="askChips"></div>
+  <div id="askBar"><input id="askIn" type="text" placeholder="Ask: today sales evlo? / Raja udhar / profit" autocomplete="off" onkeydown="if(event.key==='Enter')askSend()"><button type="button" onclick="askSend()">Send</button></div>
+</div>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+function M(n){n=Math.round(+n||0);return (n<0?'−':'')+'₹'+Math.abs(n).toLocaleString('en-IN')}
+function P(a,b){return b>0?Math.round((a-b)/b*100):null}
+function chg(a,b){var p=P(a,b);if(p===null)return '<span style="color:var(--muted)">new</span>';return '<b style="color:'+(p>=0?'var(--paid)':'var(--owe)')+'">'+(p>=0?'▲ ':'▼ ')+Math.abs(p)+'%</b>'}
+var MON=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],WD=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+function lab(f,t){var o={day:'numeric',month:'short'},x=parseISODate(f),y=parseISODate(t),td=todayStr();
+  if(f===t){var s=x.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short'});return f===td?'Today · '+s:(f===addDays(td,-1)?'Yesterday · '+s:s)}
+  return x.toLocaleDateString('en-IN',o)+' – '+y.toLocaleDateString('en-IN',o)}
+function row(a,b,c){return '<div class="enhRow"><span>'+a+'</span><b'+(c?' style="color:'+c+'"':'')+'>'+b+'</b></div>'}
+function big(v,sub,c){return '<div class="askBig"'+(c?' style="color:'+c+'"':'')+'>'+v+'</div><div class="askSub">'+sub+'</div>'}
+function note(t){return '<div class="askNote">'+t+'</div>'}
+function chip(t){return '<span class="askChip" onclick="askQuick(this.getAttribute(\'data-q\'))" data-q="'+esc(t)+'">'+esc(t)+'</span>'}
+
+/* ---------- period understanding (English + Tamil / Tanglish) ---------- */
+function period(q){var td=todayStr(),m;
+  if((m=q.match(/(\d{4})-(\d{2})-(\d{2})/)))return {f:m[0],t:m[0]};
+  var mr=new RegExp('\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:of\\s*)?('+MON.join('|')+')[a-z]*(?:\\s*(\\d{4}))?'),mr2=new RegExp('\\b('+MON.join('|')+')[a-z]*\\s*(\\d{1,2})(?:st|nd|rd|th)?\\b(?:,?\\s*(\\d{4}))?'),dd,mo,yr;
+  if((m=q.match(mr))){dd=+m[1];mo=MON.indexOf(m[2]);yr=m[3]}else if((m=q.match(mr2))){mo=MON.indexOf(m[1]);dd=+m[2];yr=m[3]}
+  if(mo!==undefined&&dd>=1&&dd<=31){var y=yr?+yr:+td.slice(0,4),iso=y+'-'+String(mo+1).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
+    if(!yr&&iso>addDays(td,31))iso=(y-1)+iso.slice(4);return {f:iso,t:iso}}
+  if((m=q.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/))&&+m[1]<=31&&+m[2]<=12){var yy=m[3]?(m[3].length===2?2000+(+m[3]):+m[3]):+td.slice(0,4),is=yy+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0');return {f:is,t:is}}
+  if(/day before yesterday|முந்தாநாள்|munthanaal|mundhanal/.test(q)){var a=addDays(td,-2);return {f:a,t:a}}
+  if(/yesterday|yday|நேற்று|netru|nettru|nethu|ninaivu/.test(q)){var b=addDays(td,-1);return {f:b,t:b}}
+  if(/last week|previous week|past week|கடந்த வாரம்|gadantha vaaram|kadantha vaaram/.test(q)&&!/last 7/.test(q)){var w=getWeekRange(addDays(getWeekRange(td)[0],-1));return {f:w[0],t:w[1]}}
+  if(/this week|இந்த வாரம்|intha vaaram|indha vaaram|ivvaram/.test(q)){return {f:getWeekRange(td)[0],t:td}}
+  if(/last month|previous month|கடந்த மாதம்|gadantha maadham|kadantha madham/.test(q)){var lm=getMonthRange(addMonths(td.slice(0,8)+'01',-1));return {f:lm[0],t:lm[1]}}
+  if(/this month|இந்த மாதம்|intha maadham|indha madham|intha madham|this mnth/.test(q))return {f:td.slice(0,8)+'01',t:td};
+  if((m=q.match(/(?:last|past)\s+(\d{1,3})\s*days?/)))return {f:addDays(td,-(+m[1]-1)),t:td};
+  if(/last 7|past 7/.test(q))return {f:addDays(td,-6),t:td};
+  if(/this year|இந்த வருடம்|intha varusham/.test(q))return {f:td.slice(0,4)+'-01-01',t:td};
+  if(/today|todays|today's|இன்று|indru|inniki|innaiku|innaikku|inraiku/.test(q))return {f:td,t:td};
+  for(var i=0;i<7;i++){if(q.indexOf(WD[i])>-1){var d=td,g=0;while(parseISODate(d).getDay()!==i||(d===td&&/last/.test(q))){d=addDays(d,-1);if(++g>8)break}return {f:d,t:d}}}
+  if(/all time|overall|\bever\b|since start|total till/.test(q)){var ds=Object.keys(loadDailySalesAll()).sort();return {f:ds[0]||td,t:td,all:1}}
+  return null}
+
+/* ---------- finders ---------- */
+function toks(q){return q.split(/[^a-z0-9\u0B80-\u0BFF]+/).filter(Boolean)}
+function findCustomers(q){var T=toks(q),out=[];loadCustomers().forEach(function(c){var n=String(c.name||'').toLowerCase().trim();if(!n)return;
+  var sc=0;if(n.length>=2&&q.indexOf(n)>-1)sc=n.length+10;else n.split(/\s+/).forEach(function(w){if(w.length>=3&&T.some(function(t){return t===w||(t.length>=4&&w.length>=4&&(w.indexOf(t)===0||t.indexOf(w)===0))}))sc=Math.max(sc,w.length)});
+  if(sc)out.push({c:c,sc:sc})});out.sort(function(a,b){return b.sc-a.sc});if(!out.length)return [];var top=out[0].sc;return out.filter(function(x){return x.sc===top}).map(function(x){return x.c})}
+var STOP={other:1,and:1,for:1,the:1,tea:1};
+function findCat(q){var T=toks(q),best=null;allCategories().forEach(function(c){var n=c.name.toLowerCase();if(q.indexOf(n)>-1){best=c;return}
+  n.split(/[^a-z]+/).forEach(function(w){if(w.length>=4&&!STOP[w]&&T.indexOf(w)>-1&&!best)best=c})});return best}
+function findItems(q){var T=toks(q),out=[];loadPurchaseList().forEach(function(it){var n=String(it.name||'').toLowerCase().trim(),ta=String(it.nameTa||'').trim(),hit=false;
+  if(n.length>=3&&q.indexOf(n)>-1)hit=true;else if(ta&&q.indexOf(ta)>-1)hit=true;else n.split(/\s+/).forEach(function(w){if(w.length>=4&&!STOP[w]&&T.indexOf(w)>-1)hit=true});if(hit)out.push(it)});return out}
+
+/* ---------- number crunching ---------- */
+function weekdayAvg(){var td=todayStr(),days=computeRangeMetrics(addDays(td,-83),td).days.filter(function(d){return d.totalSales>0}),S=[0,0,0,0,0,0,0],N=[0,0,0,0,0,0,0];
+  days.forEach(function(d){var w=parseISODate(d.date).getDay();S[w]+=d.totalSales;N[w]++});return S.map(function(s,i){return N[i]?s/N[i]:0})}
+function owedTotal(){return customerBalances().reduce(function(s,c){return s+Math.max(0,c.bal)},0)}
+function runRate(){var td=todayStr(),f=td.slice(0,8)+'01',mr=getMonthRange(td),m=computeRangeMetrics(f,td),rec=m.days.filter(function(d){return d.totalSales>0}).length,dim=+mr[1].slice(8);
+  if(!rec)return null;var avg=m.totalSales/rec,elapsed=+td.slice(8);return {mtd:m.totalSales,avg:avg,proj:m.totalSales+avg*Math.max(0,dim-elapsed)*(rec/Math.max(1,elapsed)),dim:dim,rec:rec}}
+
+function growthReport(){var td=todayStr(),a=computeRangeMetrics(addDays(td,-27),td),b=computeRangeMetrics(addDays(td,-55),addDays(td,-28)),c14=computeRangeMetrics(addDays(td,-13),td);
+  var recA=a.days.filter(function(d){return d.totalSales>0}).length,recB=b.days.filter(function(d){return d.totalSales>0}).length,parts=[],tips=[];
+  var g=recA>=7&&recB>=7&&b.totalSales>0?P(a.totalSales/recA,b.totalSales/recB):null;
+  parts.push({k:'Sales trend',s:g===null?10:Math.max(0,Math.min(20,14+g*0.6)),d:g===null?'need 2 months of data':(g>=0?'+':'')+g+'% vs previous 4 weeks'});
+  var mg=a.totalSales>0?a.totalProfit/a.totalSales*100:null;
+  parts.push({k:'Profit margin',s:mg===null?10:Math.max(0,Math.min(20,6+mg*0.47)),d:mg===null?'no sales yet':Math.round(mg)+'% of sales kept'});
+  var ow=owedTotal(),r=a.totalSales>0?ow/a.totalSales:null;
+  parts.push({k:'Udhar control',s:ow<=0?20:(r===null?10:Math.max(0,Math.min(20,20-(r-0.1)/0.9*20))),d:ow<=0?'no pending udhar':M(ow)+' pending'+(r!==null?' ('+Math.round(r*100)+'% of 4-wk sales)':'')});
+  var rec14=c14.days.filter(function(d){return d.recorded&&d.totalSales>0}).length;
+  parts.push({k:'Daily records',s:rec14/14*20,d:rec14+' of last 14 days entered'});
+  var cnt=0,ok=0;c14.days.forEach(function(d){if(d.cashDifference!==null){cnt++;if(d.cashDifference>-10)ok++}});
+  parts.push({k:'Cash accuracy',s:cnt?ok/cnt*20:10,d:cnt?ok+' of '+cnt+' counted days matched':'no cash counts yet'});
+  var score=Math.round(parts.reduce(function(s,p){return s+p.s},0));
+  if(g!==null&&g<-5){var A=weekdayAvg(),lo=-1;A.forEach(function(x,i){if(x>0&&(lo<0||x<A[lo]))lo=i});tips.push('📉 Sales are down '+Math.abs(g)+'% vs the previous 4 weeks'+(lo>-1?'. '+WD[lo][0].toUpperCase()+WD[lo].slice(1)+' is your slowest day — try a combo offer or a fresh snack that day.':'.'))}
+  if(g!==null&&g>=10)tips.push('📈 Sales are up '+g+'% vs the previous 4 weeks — keep your stock ready for the busy days.');
+  if(mg!==null&&mg<15){var ct=categoryTotals(addDays(td,-27),td).filter(function(x){return x.name!==STAFF_SALARY_CAT})[0];tips.push('💸 You keep only '+Math.round(mg)+'% of sales.'+(ct?' Biggest cost: '+esc(ct.name)+' ('+M(ct.total)+') — compare supplier prices in Procurement.':''))}
+  if(ow>0&&(r===null||r>0.25)){var top=customerBalances().filter(function(x){return x.bal>0}).slice(0,3).map(function(x){return esc(x.name)+' '+M(x.bal)}).join(', ');tips.push('📒 '+M(ow)+' is stuck in udhar. Send reminders to: '+top+'.')}
+  if(rec14<12)tips.push('📝 '+(14-rec14)+' of the last 14 days have no sales entered — the app can only guide you well with complete records.');
+  if(cnt&&ok<cnt)tips.push('💵 Cash was short on '+(cnt-ok)+' day(s) recently — count the drawer daily using “Close today”.');
+  var rr=runRate();if(rr){var pm=getMonthRange(addMonths(td.slice(0,8)+'01',-1)),lm=computeRangeMetrics(pm[0],pm[1]);tips.push('🎯 At this pace you will finish the month near <b>'+M(rr.proj)+'</b>'+(lm.totalSales>0?' (last month '+M(lm.totalSales)+' · '+chg(rr.proj,lm.totalSales)+')':'')+'.')}
+  if(!tips.length)tips.push('✅ Everything looks healthy. Keep entering sales daily and review Analytics weekly.');
+  return {score:score,parts:parts,tips:tips,g:g,mg:mg,rr:rr}}
+function grade(s){return s>=80?['Excellent','#10b981','🟢']:s>=60?['Good','#eab308','🟡']:s>=40?['Needs care','#f97316','🟠']:['Weak','#e11d48','🔴']}
+
+/* ---------- answers ---------- */
+var CHIPS=['Today sales evlo?','Yesterday profit','This month sales','Udhar pending','Cash in hand','Tomorrow forecast','Business growth','Best day'];
+function aSales(p){var m=computeRangeMetrics(p.f,p.t),L=lab(p.f,p.t);
+  if(p.f===p.t){var d=m.days[0];if(!d.recorded&&d.totalSales===0)return 'No sales entered for <b>'+L+'</b> yet. Add them in Daily Sales and ask again.';
+    var A=weekdayAvg()[parseISODate(p.f).getDay()],h=big(M(d.totalSales),L)+row('Cash sales',M(d.cashSales))+row('Online (UPI) sales',M(d.onlineSales));
+    if(A>0)h+=row('Usual '+WD[parseISODate(p.f).getDay()]+' (12-wk avg)',M(A)+' '+chg(d.totalSales,A));return h+chip('Profit '+(p.f===todayStr()?'today':p.f))}
+  var rec=m.days.filter(function(d){return d.totalSales>0}),bst=rec.slice().sort(function(a,b){return b.totalSales-a.totalSales})[0],h2=big(M(m.totalSales),L)+row('Cash sales',M(m.cashSales))+row('Online (UPI) sales',M(m.onlineSales))+row('Days with sales',rec.length+' of '+m.days.length)+(rec.length?row('Average per sales day',M(m.totalSales/rec.length)):'');
+  if(bst)h2+=row('Best day',parseISODate(bst.date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})+' · '+M(bst.totalSales));return h2}
+function aProfit(p){var m=computeRangeMetrics(p.f,p.t),L=lab(p.f,p.t);if(p.f===p.t&&!m.days[0].recorded&&m.totalSales===0)return 'No sales entered for <b>'+L+'</b>, so profit cannot be worked out yet.';
+  var h=big(M(m.totalProfit),'Profit · '+L,m.totalProfit>=0?'var(--paid)':'var(--owe)')+row('Sales',M(m.totalSales))+row('− Shop expenses',M(m.totalExpenses))+row('− Staff salary',M(m.totalStaffSalary));
+  if(m.totalSales>0)h+=row('Profit margin',Math.round(m.totalProfit/m.totalSales*100)+'%');return h}
+function aExp(p,q){var m=computeRangeMetrics(p.f,p.t),L=lab(p.f,p.t),cat=findCat(q);
+  if(cat){var l=loadExpenses().filter(function(e){return e.category===cat.name&&e.date>=p.f&&e.date<=p.t}),t=l.reduce(function(s,e){return s+(+e.amount||0)},0);
+    return big(M(t),esc(cat.name)+' expense · '+L)+row('Entries',l.length)+(m.totalSales>0?row('Share of sales',(t/m.totalSales*100).toFixed(1)+'%'):'')}
+  var h=big(M(m.totalExpenses+m.totalStaffSalary),'Total expenses · '+L)+row('Shop expenses',M(m.totalExpenses))+row('Staff salary',M(m.totalStaffSalary)),ct=categoryTotals(p.f,p.t).slice(0,3);
+  if(ct.length)h+='<div class="askSub" style="margin-top:8px">Top spending</div>'+ct.map(function(x){return row(esc(x.name),M(x.total))}).join('');return h}
+function aCombo(p){var m=computeRangeMetrics(p.f,p.t),L=lab(p.f,p.t);return big(M(m.totalProfit),'Summary · '+L,m.totalProfit>=0?'var(--paid)':'var(--owe)')+row('Sales',M(m.totalSales))+row('Expenses + salary',M(m.totalExpenses+m.totalStaffSalary))+row('Profit',M(m.totalProfit))+row('Udhar collected',M(m.totalCustCash+m.totalCustOnline))}
+function aColl(p){var m=computeRangeMetrics(p.f,p.t);return big(M(m.totalCustCash+m.totalCustOnline),'Udhar collected · '+lab(p.f,p.t))+row('In cash',M(m.totalCustCash))+row('Online (UPI)',M(m.totalCustOnline))}
+function aCash(){var td=todayStr(),m=computeDayMetrics(td);if(!m.recorded&&m.openingCash===0)return 'Today\'s record has not been started yet. Enter opening cash and sales in Daily Sales.';
+  var h=big(M(m.expectedClosingCash),'Cash expected in drawer · today')+row('Opening cash',M(m.openingCash))+row('+ Cash sales',M(m.cashSales))+row('+ Udhar cash received',M(m.custCash))+row('− Cash expenses & salary',M(m.expensesCash+m.staffSalaryCash));
+  if(m.closingCashActual!==null)h+=row('Counted',M(m.closingCashActual))+row('Difference',Math.abs(m.cashDifference)<1?'✅ matches':M(m.cashDifference),m.cashDifference<-1?'var(--owe)':'');return h}
+function aUdhar(){var bal=customerBalances().filter(function(c){return c.bal>0}),t=bal.reduce(function(s,c){return s+c.bal},0);if(!bal.length)return big('₹0','Pending udhar')+'Nobody owes you anything right now 🎉';
+  var td=todayStr(),m=computeRangeMetrics(addDays(td,-29),td),h=big(M(t),'Total pending udhar · '+bal.length+' customer'+(bal.length>1?'s':''),'var(--owe)');
+  bal.slice(0,5).forEach(function(c){h+=row(esc(c.name),M(c.bal),'var(--owe)')});if(m.totalSales>0)h+=note('Pending udhar equals <b>'+Math.round(t/m.totalSales*100)+'%</b> of your last 30 days sales.');return h+chip('Oldest udhar')}
+function aAging(){var ag=custAging(),names={};loadCustomers().forEach(function(c){names[c.id]=c.name});var l=Object.keys(ag).filter(function(k){return ag[k].bal>0&&names[k]}).sort(function(a,b){return ag[b].days-ag[a].days}).slice(0,6);
+  if(!l.length)return 'No pending udhar 🎉';return big(ag[l[0]].days+' days','Oldest unpaid: '+esc(names[l[0]]),'var(--owe)')+l.map(function(k){return row(esc(names[k]),M(ag[k].bal)+' · '+ag[k].days+'d',ag[k].days>=15?'var(--owe)':'')}).join('')}
+function aCust(list){return list.slice(0,3).map(function(c){var ag=custAging()[c.id]||{bal:0,days:0},tx=loadTxns().filter(function(t){return t.customerId===c.id}).sort(function(a,b){return b.date-a.date}),
+  h=big(M(Math.abs(ag.bal)),esc(c.name)+(ag.bal>0?' owes you':ag.bal<0?' has advance with you':' — nothing pending'),ag.bal>0?'var(--owe)':'var(--paid)');
+  if(ag.bal>0&&ag.days>0)h+=row('Oldest unpaid',ag.days+' days ago',ag.days>=15?'var(--owe)':'');
+  if(tx[0])h+=row('Last '+(tx[0].type==='credit'?'credit':'payment'),M(tx[0].amount)+' · '+new Date(tx[0].date).toLocaleDateString('en-IN',{day:'numeric',month:'short'}));
+  return h+'<span class="askChip" onclick="askOpenCust(\''+eid(c.id)+'\')">Open ledger</span>'}).join('<hr style="border:0;border-top:1px solid var(--card-border);margin:10px 0">')}
+function aItem(list){return list.slice(0,4).map(function(it){var ph=(it.priceHistory||[]).slice(-1)[0],h='<b>'+esc(it.name)+'</b>'+(it.nameTa?' <span class="hint">'+esc(it.nameTa)+'</span>':'')+row('Price',it.price!==null&&it.price!==undefined?M(it.price)+' / '+unitLabel(it.unit):'not set')+(it.mrp?row('MRP',M(it.mrp)):'')+row('Supplier',esc(it.supplier||'—'));
+  if(ph&&it.price!==null&&it.price!==undefined)h+=row('Last price change',M(ph.price)+' → '+M(it.price)+' '+chg(it.price,ph.price));return h}).join('<hr style="border:0;border-top:1px solid var(--card-border);margin:10px 0">')}
+function aPay(){var by={},t=0,n=0;loadPoHistory().filter(function(o){return !o.paid}).forEach(function(o){var v=+o.totalValue||0,k=o.supplier||'General Supplier';by[k]=(by[k]||0)+v;t+=v;n++});
+  if(!n)return 'All supplier invoices are marked paid ✅';var h=big(M(t),'Owed to suppliers · '+n+' unpaid invoice'+(n>1?'s':''),'var(--owe)');Object.keys(by).sort(function(a,b){return by[b]-by[a]}).slice(0,5).forEach(function(k){h+=row(esc(k),M(by[k]))});return h}
+function aBest(){var td=todayStr(),A=weekdayAvg(),nm=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'],bi=-1,wi=-1;A.forEach(function(x,i){if(x>0&&(bi<0||x>A[bi]))bi=i;if(x>0&&(wi<0||x<A[wi]))wi=i});
+  if(bi<0||bi===wi)return 'I need a few more weeks of daily sales to find your best and slowest days.';
+  var days=computeRangeMetrics(addDays(td,-364),td).days.filter(function(d){return d.totalSales>0}).sort(function(a,b){return b.totalSales-a.totalSales})[0];
+  return big(nm[bi],'Your best weekday · avg '+M(A[bi]),'var(--paid)')+row('🐌 Slowest weekday',nm[wi]+' · '+M(A[wi]))+(days?row('🏆 Highest single day (1 yr)',parseISODate(days.date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})+' · '+M(days.totalSales)):'')+note('Based on the last 12 weeks. Stock up before '+nm[bi]+' and plan an offer for '+nm[wi]+'.')}
+function aAvg(p){var m=computeRangeMetrics(p.f,p.t);return big(M(m.avgDailySales),'Average sales per day · '+lab(p.f,p.t))+row('Average profit per day',M(m.avgDailyProfit))+row('Days recorded',m.daysRecorded)}
+function aCompare(){var td=todayStr(),w1=computeRangeMetrics(addDays(td,-6),td),w0=computeRangeMetrics(addDays(td,-13),addDays(td,-7)),mf=td.slice(0,8)+'01',pf=addMonths(mf,-1),pl=+getMonthRange(pf)[1].slice(8),pt=pf.slice(0,8)+String(Math.min(+td.slice(8),pl)).padStart(2,'0'),m1=computeRangeMetrics(mf,td),m0=computeRangeMetrics(pf,pt);
+  return '<b>Last 7 days vs the 7 before</b>'+row('Sales '+M(w1.totalSales)+' <span class="hint">vs '+M(w0.totalSales)+'</span>',chg(w1.totalSales,w0.totalSales))+row('Profit '+M(w1.totalProfit)+' <span class="hint">vs '+M(w0.totalProfit)+'</span>',chg(w1.totalProfit,w0.totalProfit))
+   +'<div style="margin-top:10px"><b>This month vs same days last month</b></div>'+row('Sales '+M(m1.totalSales)+' <span class="hint">vs '+M(m0.totalSales)+'</span>',chg(m1.totalSales,m0.totalSales))+row('Profit '+M(m1.totalProfit)+' <span class="hint">vs '+M(m0.totalProfit)+'</span>',chg(m1.totalProfit,m0.totalProfit))}
+function aProj(){var rr=runRate();if(!rr)return 'Enter some sales this month and I will project the month-end total.';var td=todayStr(),pm=getMonthRange(addMonths(td.slice(0,8)+'01',-1)),lm=computeRangeMetrics(pm[0],pm[1]);
+  return big(M(rr.proj),'Expected month-end sales at this pace')+row('Sales so far this month',M(rr.mtd))+row('Average per sales day',M(rr.avg))+(lm.totalSales>0?row('Last month total',M(lm.totalSales)+' '+chg(rr.proj,lm.totalSales)):'')}
+function aGrowth(){var r=growthReport(),G=grade(r.score);return big(r.score+'/100',G[2]+' Business health: '+G[0],G[1])+r.parts.map(function(p){return '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:.8rem"><span>'+p.k+'</span><span class="hint">'+esc(p.d)+'</span></div><div style="display:flex;gap:8px;align-items:center"><div class="askBar2"><div style="width:'+Math.round(p.s/20*100)+'%;background:'+grade(p.s*5)[1]+'"></div></div><b style="font-size:.78rem;width:34px;text-align:right">'+Math.round(p.s)+'/20</b></div></div>'}).join('')+'<div class="askSub" style="margin-top:10px">How to grow</div>'+r.tips.map(function(t){return '<div style="margin:6px 0;font-size:.85rem">'+t+'</div>'}).join('')}
+function aForecast(){var cfg=loadFcCfg();if(!cfg.configured)return 'Set up <b>Demand Forecast</b> first (your location), then I can predict tomorrow\'s sales.';
+  var p=fcPredict(addDays(todayStr(),1),fcHistory(),fcData.weather);if(p.src==='none'||!p.pred)return 'I need about a week of daily sales before I can forecast. Keep entering sales daily.';
+  var h=big('~'+M(p.pred),'Expected sales tomorrow · likely '+M(p.low)+' – '+M(p.high))+row('Confidence',p.conf)+row('Expected level',p.level);
+  p.factors.slice(0,3).forEach(function(f){h+=row(esc(f.label),(f.pct>0?'+':'')+f.pct+'%',f.pct>0?'var(--paid)':'var(--owe)')});return h}
+function aHelp(t){return (t===false?'':'<b>Ask me anything about your shop</b> — English, Tamil or Tanglish.')+['Today sales evlo?','Yesterday profit','Last week expenses','Raja udhar evlo?','Milk expense this month','Sugar price','Who owes the most?','Cash in hand','Compare this week','Month end projection','Business growth tips'].map(chip).join('')}
+
+function answer(raw){var q=raw.toLowerCase().trim(),p=period(q),td=todayStr(),has=function(r){return r.test(q)};
+  if(!q)return aHelp();
+  if(has(/^(hi|hello|hey|help|\?|vanakkam|வணக்கம்|what can you do|examples?)\b/))return aHelp();
+  var fc=has(/tomorrow|naalai|நாளை|forecast|predict|next day|expected sale/),growth=has(/growth|grow|health|score|improve|tips|advice|suggest|valarchi|வளர்ச்சி|ஆலோசனை|how am i doing|how is my business/),
+   cmp=has(/compar|\bvs\b|versus|\bthan\b|ottu|ஒப்பிட/),proj=has(/project|month.?end|end of (the )?month|on track|forecast for the month/),
+   pay=has(/supplier|payable|unpaid|vendor|invoice|owed to/),aging=has(/oldest|overdue|longest|late payer|aging/),
+   coll=has(/collect|recovery|vasool|vasul|வசூல்|received/),udh=has(/udhar|uthar|credit|pending|baki|bakki|balance|owe|due|outstanding|defaulter|கடன்|உதார்|பாக்கி/),
+   cash=has(/cash in hand|cash balance|drawer|galla|கல்லா|closing cash|expected cash|cash left|கையில்/),
+   best=has(/best|worst|slowest|busiest|highest|lowest|peak|weak day/),avg=has(/average|avg|per day|சராசரி/),
+   sal=has(/sale|revenue|income|vyapa?r?am|viyabaram|vyabaram|business|விற்பனை|வியாபாரம்|வரவு/),
+   prof=has(/profit|laabam|labam|lapam|லாபம்|\bnet\b|earn/),exp=has(/expense|spend|spent|selavu|selvu|chelavu|செலவு|kharch|salary|சம்பளம்|sambalam/);
+  if(proj)return aProj();if(fc)return aForecast();if(growth)return aGrowth();if(cmp&&!udh)return aCompare();
+  var cu=findCustomers(q);if(cu.length&&!sal&&!prof&&!exp)return aCust(cu);
+  var it=findItems(q);if(it.length&&!exp&&!prof&&!udh&&!(sal&&!has(/price|rate|vilai|விலை|supplier|mrp|cost/)))return aItem(it);
+  if(pay)return aPay();if(udh&&aging)return aAging();if(aging)return aAging();
+  if(coll)return aColl(p||{f:td,t:td});
+  if(udh&&!sal&&!prof&&!exp)return aUdhar();
+  if(cash)return aCash();
+  if(best&&!exp)return aBest();
+  if(avg)return aAvg(p||{f:td.slice(0,8)+'01',t:td});
+  var pp=p||{f:td,t:td};
+  if(sal&&prof||sal&&exp||prof&&exp)return aCombo(pp);
+  if(prof)return aProfit(pp);if(exp)return aExp(pp,q);if(sal)return aSales(pp);
+  if(p)return aSales(p);
+  if(has(/how much|evlo|evvalavu|ethana|எவ்வளவு|எவ்வளவு/))return aSales(pp);
+  return 'I could not understand that. Try one of these:'+aHelp(false)}
+
+/* ---------- chat UI ---------- */
+function add(cls,html){var m=$('askMsgs'),d=document.createElement('div');d.className='askB '+cls;d.innerHTML=html;m.appendChild(d);m.scrollTop=m.scrollHeight}
+window.askOpen=function(q){$('askPanel').style.display='flex';if(!$('askMsgs').children.length){add('b','👋 Hi! I answer from your own sales, expenses and udhar data.<br>Ask like <b>“today sales evlo?”</b>'+aHelp(false));
+  $('askChips').innerHTML=CHIPS.map(function(c){return '<button type="button" onclick="askQuick(this.textContent)">'+esc(c)+'</button>'}).join('')}
+  if(typeof q==='string')askQuick(q);else setTimeout(function(){$('askIn').focus()},150)};
+window.askClose=function(){$('askPanel').style.display='none'};
+window.askQuick=function(t){$('askIn').value=t;askSend()};
+window.askSend=function(){var i=$('askIn'),t=i.value.trim();if(!t)return;i.value='';add('u',esc(t));var h;try{h=answer(t)}catch(e){console.error(e);h='Sorry, I could not calculate that. Please check your entries and try again.'}add('b',h)};
+window.askOpenCust=function(id){askClose();try{var d=$('dashView');if(d&&d.classList.contains('hidden'))return;openCustomer(id)}catch(e){}};
+
+/* ---------- floating button + Home business-health card ---------- */
+function fabVis(){var d=$('dashView'),show=d&&!d.classList.contains('hidden');$('askFab').style.display=show?'flex':'none';if(!show&&$('askPanel').style.display==='flex')askClose()}
+setInterval(fabVis,700);
+function hCard(){var h=$('homeTodayCard');if(!h)return;var e=$('growthCard');if(!e){e=document.createElement('div');e.id='growthCard';e.className='card';h.parentNode.insertBefore(e,h)}
+  var r=growthReport(),G=grade(r.score),top=r.tips[0];
+  e.innerHTML='<div style="display:flex;gap:12px;align-items:center"><div class="gcRing" style="background:conic-gradient('+G[1]+' '+r.score*3.6+'deg,var(--brand-light) 0)"><i>'+r.score+'</i></div><div style="flex:1;min-width:0"><div style="font-weight:800">'+G[2]+' Business health: '+G[0]+'</div><div style="font-size:.8rem;color:var(--muted);margin-top:2px">'+top+'</div></div></div>'
+   +'<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="ghost" style="margin:0" onclick="askOpen(\'Business growth\')">📊 Growth details</button><button type="button" style="margin:0" onclick="askOpen()">🧠 Ask My Shop</button></div>'}
+var _rh=window.renderHomeToday;if(_rh)window.renderHomeToday=function(){var r=_rh.apply(this,arguments);try{hCard()}catch(e){console.error(e)}return r};
+})();
+</script>
 </body>
 </html>
