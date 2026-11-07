@@ -8135,6 +8135,33 @@ function aSales(p){var m=computeRangeMetrics(p.f,p.t),L=lab(p.f,p.t);
     if(A>0)h+=row('Usual '+WD[parseISODate(p.f).getDay()]+' (12-wk avg)',M(A)+' '+chg(d.totalSales,A));return h+chip('Profit '+(p.f===todayStr()?'today':p.f))}
   var rec=m.days.filter(function(d){return d.totalSales>0}),bst=rec.slice().sort(function(a,b){return b.totalSales-a.totalSales})[0],h2=big(M(m.totalSales),L)+row('Cash sales',M(m.cashSales))+row('Online (UPI) sales',M(m.onlineSales))+row('Days with sales',rec.length+' of '+m.days.length)+(rec.length?row('Average per sales day',M(m.totalSales/rec.length)):'');
   if(bst)h2+=row('Best day',parseISODate(bst.date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})+' · '+M(bst.totalSales));return h2}
+function aWhy(p,defaulted,q){var d=p.t,dt=parseISODate(d),L=lab(d,d),R0=computeRangeMetrics(d,d),m=R0.days[0],b=computeRangeMetrics(addDays(d,-28),addDays(d,-1)),rec=b.days.filter(function(x){return x.totalSales>0}).length;
+  if(!m||rec<5)return 'I need at least 5 earlier days of sales to compare <b>'+L+'</b> with your usual days. Keep entering sales daily.';
+  if(!m.recorded&&m.totalSales===0)return 'No sales are entered for <b>'+L+'</b>, so I cannot find the reason yet. Add that day\'s sales and ask again.';
+  var uP=b.totalProfit/rec,uS=b.totalSales/rec,uE=b.totalExpenses/rec,uSal=b.totalStaffSalary/rec,wd=b.days.filter(function(x){return x.totalSales>0&&parseISODate(x.date).getDay()===dt.getDay()}),
+    wdS=wd.length>=3?wd.reduce(function(s,x){return s+x.totalSales},0)/wd.length:uS,gap=uP-R0.totalProfit,R=[],dn=WD[dt.getDay()][0].toUpperCase()+WD[dt.getDay()].slice(1);
+  var fx=null;try{fx=festFactor(d)}catch(e){}
+  if(m.totalSales<wdS*0.92&&wdS-m.totalSales>=200){var ds=wdS-m.totalSales,t='Sales were <b>'+M(m.totalSales)+'</b>, '+M(ds)+' ('+Math.round(ds/wdS*100)+'%) below a usual '+dn+' ('+M(wdS)+').';
+    if(fx&&fx.pct<0)t+=' '+esc(fx.label.replace(/ — .*$/,'').replace('Festival: ','Festival: ').replace('Holiday: ','Holiday: '))+' — '+(fx.label.indexOf('Festival:')===0?'many regular customers travel to their hometowns':'offices and schools are closed')+' (usually about '+fx.pct+'%).';
+    else if(m.totalSales<wdS*0.5)t+=' No festival or holiday found — check that all sales were entered.';else t+=' No festival found — it may be a normal slow day, rain, or fewer customers.';
+    R.push({w:ds,t:'📉 '+t})}
+  var ex=loadExpenses().filter(function(e){return e.date===d&&e.category!==STAFF_SALARY_CAT}),by={};ex.forEach(function(e){by[e.category]=(by[e.category]||0)+(+e.amount||0)});
+  var hist=loadExpenses().filter(function(e){return e.date>=addDays(d,-56)&&e.date<d&&e.category!==STAFF_SALARY_CAT});
+  Object.keys(by).forEach(function(c){var day=by[c],pd={};hist.filter(function(e){return e.category===c}).forEach(function(e){pd[e.date]=(pd[e.date]||0)+(+e.amount||0)});var vals=Object.keys(pd).map(function(k){return pd[k]}),typ=vals.length?advMed(vals):0,freq=vals.length/Math.max(1,rec*2);
+    if(typ>0?(day>=typ*1.5&&day-typ>=200):day>=500){var extra=day-typ,stock=freq<0.55;
+      R.push({w:extra,t:'🛒 '+esc(c)+': spent <b>'+M(day)+'</b>'+(typ?' vs your usual '+M(typ):'')+'. '+(stock?'This looks like a bulk/stock purchase — it lowers this day\'s profit but is <b>not a loss</b>; you will buy less in the next days.':'Check the rate and wastage.')})}});
+  var tot=Object.keys(by).reduce(function(s,c){return s+by[c]},0);
+  if(!R.some(function(r){return r.t.indexOf('🛒')===0})&&tot-uE>=300){var top=Object.keys(by).sort(function(x,y){return by[y]-by[x]}).slice(0,2).map(function(c){return esc(c)+' '+M(by[c])}).join(', ');R.push({w:tot-uE,t:'🧾 Total shop expenses were <b>'+M(tot)+'</b> against a usual '+M(uE)+' a day. Biggest: '+top+'. Several items were bought on the same day — a purchase-heavy day lowers profit for that day only.'})}
+  if(R0.totalStaffSalary>uSal*1.5+100)R.push({w:R0.totalStaffSalary-uSal,t:'👷 Staff salary of <b>'+M(R0.totalStaffSalary)+'</b> was paid (usual about '+M(uSal)+' a day).'});
+  var cd=null;try{cd=computeDayMetrics(d).cashDifference}catch(e){}
+  if(cd!==null&&cd<-50)R.push({w:-cd,t:'💵 The drawer was short by <b>'+M(-cd)+'</b> at closing — an expense or sale may be missing.'});
+  R.sort(function(x,y){return y.w-x.w});
+  var h;if(gap<=Math.max(50,uP*0.05))h=big(M(R0.totalProfit),'Profit · '+L,'var(--paid)')+'Profit was <b>not lower</b> than usual (about '+M(uP)+' a day).';
+  else h=big(M(R0.totalProfit),'Profit · '+L+' · usual '+M(uP)+' · '+M(gap)+' lower','var(--owe)')+'<div class="askSub" style="margin-top:6px">காரணங்கள் (reasons)</div>'+(R.length?R.slice(0,4).map(function(r,i){return '<div style="font-size:.86rem;margin:6px 0">'+(i+1)+'. '+r.t+'</div>'}).join(''):'<div style="font-size:.86rem">Sales and expenses were both close to usual. The difference is small — check small entries.</div>');
+  if(R0.totalStaffSalary===0&&uSal>50)h+=note('No staff salary is entered for this day, so profit may look about '+M(uSal)+' better than it really is.');
+  h+=row('Sales (usual '+dn+' '+M(wdS)+')',M(m.totalSales))+row('Expenses (usual '+M(uE)+')',M(R0.totalExpenses))+row('Salary',M(R0.totalStaffSalary));
+  if(defaulted)h+='<div class="hint" style="text-align:left;margin-top:6px">I checked yesterday. Add “today” or a date to check another day.</div>';
+  return h}
 function aProfit(p){var m=computeRangeMetrics(p.f,p.t),L=lab(p.f,p.t);if(p.f===p.t&&!m.days[0].recorded&&m.totalSales===0)return 'No sales entered for <b>'+L+'</b>, so profit cannot be worked out yet.';
   var h=big(M(m.totalProfit),'Profit · '+L,m.totalProfit>=0?'var(--paid)':'var(--owe)')+row('Sales',M(m.totalSales))+row('− Shop expenses',M(m.totalExpenses))+row('− Staff salary',M(m.totalStaffSalary));
   if(m.totalSales>0)h+=row('Profit margin',Math.round(m.totalProfit/m.totalSales*100)+'%');return h}
@@ -8189,7 +8216,7 @@ function aFest(q){var td=todayStr(),G=[[/diwali|deepavali|தீபாவளி/
   var nx=FEST_CAL.filter(function(x){return x.d>td&&x.d!==e.d}).slice(0,4);if(!g&&nx.length)h+='<div class="askSub" style="margin-top:8px">Coming up</div>'+nx.map(function(x){return row(esc(x.n),parseISODate(x.d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}))}).join('');
   return h+'<div class="askSub" style="margin-top:6px">Dates from the Tamil Nadu government holiday list. Ramzan / Bakrid may shift by a day.</div>'}
 function aBuy(m){return advHtml(buyPlan(),m)}
-function aHelp(t){return (t===false?'':'<b>Ask me anything about your shop</b> — English, Tamil or Tanglish.')+['Today sales evlo?','Yesterday profit','Last week expenses','Raja udhar evlo?','Milk expense this month','Sugar price','Who owes the most?','Cash in hand','Compare this week','Month end projection','Business growth tips','Diwali sales effect','What to buy today and tomorrow?','Recover today profit','How much can I spend today?'].map(chip).join('')}
+function aHelp(t){return (t===false?'':'<b>Ask me anything about your shop</b> — English, Tamil or Tanglish.')+['Today sales evlo?','Yesterday profit','Last week expenses','Raja udhar evlo?','Milk expense this month','Sugar price','Who owes the most?','Cash in hand','Compare this week','Month end projection','Business growth tips','Diwali sales effect','What to buy today and tomorrow?','Why profit low yesterday?','Recover today profit','How much can I spend today?'].map(chip).join('')}
 
 function answer(raw){var q=raw.toLowerCase().trim(),p=period(q),td=todayStr(),has=function(r){return r.test(q)};
   if(!q)return aHelp();
@@ -8206,7 +8233,8 @@ function answer(raw){var q=raw.toLowerCase().trim(),p=period(q),td=todayStr(),ha
   var tg=q.match(/(?:min(?:imum)?|target)\s*(?:daily\s*)?profit\D{0,12}(\d[\d,]*)/);
   if(tg){advSetTarget(+tg[1].replace(/,/g,''));return 'Minimum daily profit is now <b>'+M(+tg[1].replace(/,/g,''))+'</b>. Ask “what to buy today?” to see your spending limit.'}
   var buy=has(/budget|how much (can|should) i spend|spending limit|(what|which).*(buy|purchase|order)|to buy|buy (today|tomorrow|now)|purchase (plan|advice)|buying plan|shopping list|buy list|vaanga|வாங்க|கொள்முதல்/),warnb=has(/overspend|cost creep|cost ratio|margin leak|wastage|price (rise|rose|hike|up)|price increase|விலை ஏற்றம்/);
-  if(has(/recover|unexpected|extra purchase|over ?buy|bought too much|profit (is )?(low|less|down)|why.*profit.*low|லாபம் குறைவு/))return aBuy('recover');if(buy)return aBuy('');if(warnb)return aBuy('warn');if(proj)return aProj();if(fc)return aForecast();if(fest)return aFest(q);if(growth)return aGrowth();if(cmp&&!udh)return aCompare();
+  if(has(/\bwhy\b|reason|karanam|karanama|காரணம்|ethuku|ethukku|yen\b|enna reason|\bean\b/)&&(prof||sal||has(/kammi|kurai|குறை|\blow\b|\bless\b|drop|\bdown\b|loss|nashtam|agidichu|aagiduchu/)))return aWhy(p||{f:addDays(td,-1),t:addDays(td,-1)},!p,q);
+  if(has(/recover|unexpected|extra purchase|over ?buy|bought too much|லாபம் குறைவு/))return aBuy('recover');if(buy)return aBuy('');if(warnb)return aBuy('warn');if(proj)return aProj();if(fc)return aForecast();if(fest)return aFest(q);if(growth)return aGrowth();if(cmp&&!udh)return aCompare();
   var cu=findCustomers(q);if(cu.length&&!sal&&!prof&&!exp)return aCust(cu);
   var it=findItems(q);if(it.length&&!exp&&!prof&&!udh&&!(sal&&!has(/price|rate|vilai|விலை|supplier|mrp|cost/)))return aItem(it);
   if(pay)return aPay();if(udh&&aging)return aAging();if(aging)return aAging();
