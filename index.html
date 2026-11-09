@@ -8029,11 +8029,6 @@ function advCard(){var h=document.getElementById('homeTodayCard');if(!h||!h.pare
    +'<div style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:.78rem;color:var(--muted)">Minimum profit/day ₹<input id="advTarget" type="number" inputmode="numeric" value="'+P.bud.target+'" style="width:90px;margin:0;padding:4px 8px" onchange="advSetTarget(this.value)"></div>'+'<button type="button" class="ghost" style="margin:8px 0 0" onclick="askOpen(\'What to buy today and tomorrow?\')">🧠 Full plan: today &amp; tomorrow</button>'}
 var _rhA=window.renderHomeToday;if(_rhA)window.renderHomeToday=function(){var r=_rhA.apply(this,arguments);try{advCard()}catch(e){console.error(e)}return r};
 </script>
-  var pp=p||{f:td,t:td};
-  if(sal&&prof||sal&&exp||prof&&exp){CTX={k:'combo'};return aCombo(pp)}
-  if(prof){CTX={k:'profit'};return aProfit(pp)}if(exp){CTX={k:'exp'};return aExp(pp,q)}if(sal){CTX={k:'sales'};return aSales(pp)}
-  if(p){var k=CTX?CTX.k:'sales';CTX={k:k};return k==='profit'?aProfit(p):k==='exp'?aExp(p,q):k==='combo'?aCombo(p):k==='coll'?aColl(p):k==='why'?aWhy(p,false,q):aSales(p)}
-  if(has(/how much|evlo|evvalavu|ethana|எவ்வளவு|எவ்வளவு/)){CTX={k:'sales'};return aSales(pp)}
 <style>
 #askFab{position:fixed;right:14px;bottom:20px;z-index:920;width:54px;height:54px;border-radius:50%;margin:0;padding:0;font-size:1.5rem;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border:0;box-shadow:var(--shadow-lg);display:none;align-items:center;justify-content:center}
 @media(max-width:699px){#askFab{bottom:88px}}
@@ -8313,10 +8308,10 @@ function answer(raw){var q=raw.toLowerCase().trim(),p=period(q),td=todayStr(),ha
   if(best&&!exp)return aBest();
   if(avg)return aAvg(p||{f:td.slice(0,8)+'01',t:td});
   var pp=p||{f:td,t:td};
-  if(sal&&prof||sal&&exp||prof&&exp)return aCombo(pp);
-  if(prof)return aProfit(pp);if(exp)return aExp(pp,q);if(sal)return aSales(pp);
-  if(p)return aSales(p);
-  if(has(/how much|evlo|evvalavu|ethana|எவ்வளவு|எவ்வளவு/))return aSales(pp);
+  if(sal&&prof||sal&&exp||prof&&exp){CTX={k:'combo'};return aCombo(pp)}
+  if(prof){CTX={k:'profit'};return aProfit(pp)}if(exp){CTX={k:'exp'};return aExp(pp,q)}if(sal){CTX={k:'sales'};return aSales(pp)}
+  if(p){var k=CTX?CTX.k:'sales';CTX={k:k};return k==='profit'?aProfit(p):k==='exp'?aExp(p,q):k==='combo'?aCombo(p):k==='coll'?aColl(p):k==='why'?aWhy(p,false,q):aSales(p)}
+  if(has(/how much|evlo|evvalavu|ethana|எவ்வளவு|எவ்வளவு/)){CTX={k:'sales'};return aSales(pp)}
   return null}
 
 /* ---------- chat UI ---------- */
