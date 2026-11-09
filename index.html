@@ -7871,6 +7871,12 @@ var _rhF=window.renderHomeToday;if(_rhF)window.renderHomeToday=function(){var r=
 <script>
 /* ===== Smart Purchase Advisor — reads past buying, expenses & notes, plans today / tomorrow like a purchaser + accountant ===== */
 var ADV_PER=/milk|curd|bun|bread|snack|vada|samosa|egg|banana|bajji|fruit|juice|பால்|தயிர்/i;
+function advClosed(){try{return JSON.parse(localStorage.getItem('udhar_closed_days')||'[]')}catch(e){return []}}
+function advWeekly(){try{return JSON.parse(localStorage.getItem('udhar_weekly_off')||'[]')}catch(e){return []}}
+function advIsClosed(d){return advClosed().indexOf(d)>-1||advWeekly().indexOf(parseISODate(d).getDay())>-1}
+function advSetClosed(d,on){var l=advClosed().filter(function(x){return x!==d&&x>=addDays(todayStr(),-1)});if(on)l.push(d);localStorage.setItem('udhar_closed_days',JSON.stringify(l.sort()))}
+function advSetWeekly(w,on){var l=advWeekly().filter(function(x){return x!==w});if(on)l.push(w);localStorage.setItem('udhar_weekly_off',JSON.stringify(l))}
+var _fcP0=fcPredict;fcPredict=function(date,hist,weather){var p=_fcP0(date,hist,weather);if(!advIsClosed(date))return p;var q=Object.assign({},p);q.closed=true;q.openPred=p.pred;q.pred=0;q.low=0;q.high=0;q.mult=0;q.ratioUsual=0;q.level='Low';q.foot='Low';q.factors=[{label:'Shop closed — leave you told me',pct:-100,foot:true}].concat(p.factors);return q};
 function advMed(a){a=a.slice().sort(function(x,y){return x-y});var n=a.length;return n?(n%2?a[(n-1)/2]:(a[n/2-1]+a[n/2])/2):0}
 function advAvg(a){return a.length?a.reduce(function(s,x){return s+x},0)/a.length:0}
 function advQty(note){var m=String(note||'').toLowerCase().match(/(\d+(?:\.\d+)?)\s*(kgs?|kilos?|grams?|gms?|gm|g|ltrs?|litres?|liters?|lit|l|ml|pcs|pc|nos|packets?|pkts?|pk|dozen|box(?:es)?)\b/);
@@ -7913,8 +7919,9 @@ function buyPlan(){
   var td=todayStr(),tm=addDays(td,1),to=addDays(td,-1),f28=addDays(td,-28),f56=addDays(td,-56),
     m28=computeRangeMetrics(f28,to),m0=computeRangeMetrics(f56,addDays(td,-29)),m56=computeRangeMetrics(f56,to),s28=m28.totalSales,s0=m0.totalSales,d28=m28.days.filter(function(x){return x.totalSales>0}).length,wd56=m56.days.filter(function(x){return x.totalSales>0}).length;
   if(d28<5||s28<=0)return {ok:false};
-  var usual=s28/d28,pT=advSales(td),pM=advSales(tm),fx=function(p){return p?p.factors.filter(function(f){return f.label.indexOf('Festival:')===0||f.label.indexOf('Holiday:')===0})[0]:null},
-    S=[{d:td,p:pT?pT.pred:Math.round(usual),fx:fx(pT),dm:pT&&pT.base>0?pT.pred/pT.base:1},{d:tm,p:pM?pM.pred:Math.round(usual),fx:fx(pM),dm:pM&&pM.base>0?pM.pred/pM.base:1}];
+  var d2=addDays(td,2),cl=[advIsClosed(td),advIsClosed(tm),advIsClosed(d2)],usual=s28/d28,pT=cl[0]?null:advSales(td),pM=cl[1]?null:advSales(tm),pD=cl[2]?null:advSales(d2),fx=function(p){return p?p.factors.filter(function(f){return f.label.indexOf('Festival:')===0||f.label.indexOf('Holiday:')===0})[0]:null},
+    mk=function(d,p,c){return {d:d,p:c?0:(p?p.pred:Math.round(usual)),fx:fx(p),dm:c?0:(p&&p.base>0?p.pred/p.base:1),closed:c}},
+    S=[mk(td,pT,cl[0]),mk(tm,pM,cl[1]),mk(d2,pD,cl[2])];
   S.forEach(function(x){x.mult=usual>0?x.p/usual:1});
   var exp=loadExpenses(),lines=[],skips=[],warns=[],over=[],learned=[],groups=advGroups(exp,f56,td),Rb=0,E0=0,A=0;
   var adjOf=function(dm,per){if(Math.abs(dm-1)<0.1)return 1;return per?Math.max(0.6,Math.min(1.3,dm)):Math.max(0.75,Math.min(1.15,1+(dm-1)*0.5))};
@@ -7923,11 +7930,11 @@ function buyPlan(){
     var sp=g.e.filter(function(e){return e.date>=f28&&e.date<=to}).reduce(function(x,e){return x+(+e.amount||0)},0),sp0=g.e.filter(function(e){return e.date<f28}).reduce(function(x,e){return x+(+e.amount||0)},0);
     Rb+=sp/s28;if(!L.n||sp<=0){return}
     var r=sp/s28,r0=s0>0?sp0/s0:null,since=festDiff(td,L.last),qtxt=function(amt,usualAmt){return L.qty&&usualAmt>0?' (≈ '+advRound(L.qty*amt/usualAmt,L.qf)+' '+L.qf+')':''},
-      round=function(x){return Math.max(L.step,Math.round(x/L.step)*L.step)},item={cat:g.name,emoji:g.emoji,per:L.daily,t0:0,t1:0,why:'',q0:'',q1:'',qpr:L.qty?L.qty/Math.max(1,(L.daily?L.usual:L.lot)):0,qf:L.qf},
+      round=function(x){return Math.max(L.step,Math.round(x/L.step)*L.step)},item={cat:g.name,emoji:g.emoji,per:L.daily,t0:0,t1:0,t2:0,why:'',q0:'',q1:'',q2:'',qpr:L.qty?L.qty/Math.max(1,(L.daily?L.usual:L.lot)):0,qf:L.qf},
       info=g.emoji+' '+g.name+' — usually '+advRs(L.daily?L.usual:L.lot)+(L.qty?' ('+(Math.round(L.qty*10)/10)+' '+L.qf+')':'')+', '+advPattern(L)+' ('+L.n+' times in 8 weeks)';
     learned.push({t:info,w:sp});
     if(L.daily){
-      var u0=advUsualFor(L,td),u1=advUsualFor(L,tm),a0=adjOf(S[0].dm,true),a1=adjOf(S[1].dm,true),tg0=round(u0*a0),tg1=round(u1*a1);
+      var u0=advUsualFor(L,td),u1=advUsualFor(L,tm),a0=adjOf(S[0].dm,true),a1=adjOf(S[1].dm,true),tg0=round(u0*a0),tg1=round(u1*a1);item.d2amt=round(advUsualFor(L,d2)*adjOf(S[2].dm,true));
       var done=spToday>=tg0*0.8,rem=done?0:Math.max(0,tg0-spToday),exT=Math.max(0,spToday-tg0),t1=Math.max(0,tg1-0.5*exT);E0+=tg0;
       item.t0=rem>=Math.min(50,L.step)?rem:0;item.t1=t1>=Math.min(50,L.step)?round(t1):0;item.q0=qtxt(item.t0,u0);item.q1=qtxt(item.t1,u1);
       item.why=done&&spToday>0?'already bought '+advRs(spToday)+' today — your usual is '+advRs(u0):'your usual: '+advRs(u0)+' (bought '+L.n+' of the last '+wd56+' sales days)';
@@ -7937,14 +7944,16 @@ function buyPlan(){
     }else{
       var lastAmt=L.by[L.last]||L.lot,dailyUse=sp/28,coverLast=dailyUse>0?lastAmt/dailyUse:0,g0=L.gap||7,gEff=Math.max(g0,coverLast>g0*1.3?coverLast:0),
         nb=(L.dom!==null&&g0<=9)?(function(){var d=addDays(L.last,1),k=0;while(parseISODate(d).getDay()!==L.dom&&k++<8)d=addDays(d,1);return d})():addDays(L.last,Math.max(1,Math.floor(gEff)-1)),dueNow=td>=nb,dueTm=tm>=nb;
-      var lot0=round(L.lot*adjOf(S[0].dm,false)),lot1=round(L.lot*adjOf(S[1].dm,false));if(dueNow)E0+=lot0;
+      var lot0=round(L.lot*adjOf(S[0].dm,false)),lot1=round(L.lot*adjOf(S[1].dm,false));if(dueNow)E0+=lot0;item.nb=nb;item.dueNow=dueNow;item.lot2=round(L.lot*adjOf(S[2].dm,false));
       var exS=Math.max(0,spToday-(dueNow?lot0:0));if(exS>=Math.max(100,L.lot*0.3)&&dailyUse>0)over.push({cat:g.name,emoji:g.emoji,per:false,extra:exS,use:dailyUse,cover:Math.round(spToday/dailyUse*10)/10,next:addDays(td,Math.max(1,Math.floor(spToday/dailyUse)-1))});
       if(dueNow&&spToday<lot0*0.5){item.t0=lot0-spToday;item.q0=qtxt(item.t0,L.lot);item.why='your usual lot: '+advRs(L.lot)+', '+advPattern(L)+'; last bought '+since+' day'+(since===1?'':'s')+' ago'}
       else if(!dueNow&&dueTm){item.t1=lot1;item.q1=qtxt(lot1,L.lot);item.why='due tomorrow — your usual lot '+advRs(L.lot)+', '+advPattern(L)+'; last bought '+since+' day'+(since===1?'':'s')+' ago'}
       else if(dueNow&&spToday>=lot0*0.5){var nx=(L.dom!==null&&g0<=9)?(function(){var d=addDays(td,1),k=0;while(parseISODate(d).getDay()!==L.dom&&k++<8)d=addDays(d,1);return d})():addDays(td,Math.max(1,Math.floor(Math.max(gEff,spToday/Math.max(dailyUse,1)))-1));skips.push(g.emoji+' '+g.name+' — already bought today. Next buy around '+parseISODate(nx).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})+' (you buy it '+advPattern(L)+').')}
       else if(!dueNow){skips.push(g.emoji+' '+g.name+' — last lot lasts till about '+parseISODate(nb).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})+' (you buy it '+advPattern(L)+'). Skip and save cash; stock stays above zero.')}
     }
-    if(item.t0||item.t1)lines.push(item);
+    if(cl[0]){item.t0=0;item.q0=''}
+    if(cl[1]){var t2=0;if(L.daily)t2=cl[2]?0:(item.d2amt||0);else t2=cl[2]?0:(item.t1||((!item.dueNow&&d2>=item.nb)?item.lot2:0));item.t2=t2;item.q2=qtxt(t2,L.daily?advUsualFor(L,d2):L.lot);item.t1=0;item.q1='';item.why=item.why||''}
+    if(item.t0||item.t1||item.t2)lines.push(item);
     if(L.upN&&L.upP&&L.upP>0){var ch=(L.upN-L.upP)/L.upP*100;if(ch>=6)warns.push('📈 '+g.name+' price is up '+Math.round(ch)+'% (₹'+Math.round(L.upP)+' → ₹'+Math.round(L.upN)+' per '+L.qf+'). Ask your supplier or compare another shop.');else if(ch<=-6&&!L.daily)warns.push('📉 '+g.name+' price dropped '+Math.round(-ch)+'% (₹'+Math.round(L.upP)+' → ₹'+Math.round(L.upN)+' per '+L.qf+') — a good time to stock up.')}
     if(r0!==null&&r0>0&&(r-r0)/r0>=0.15&&(r-r0)>=0.015)warns.push('⚠️ '+g.name+' cost is creeping: '+Math.round(r*100)+'% of sales vs '+Math.round(r0*100)+'% before — about '+advRs((r-r0)*s28)+' extra in 4 weeks. Check wastage and rates.')});
   /* procurement master-sheet orders (qty-based) */
@@ -7964,11 +7973,11 @@ function buyPlan(){
   var target=advTarget(),origT0=lines.map(function(l){return l.t0}),origT1=lines.map(function(l){return l.t1});
   var allow0=S[0].p-fixedDay-target-A,allow1=S[1].p-fixedDay-target,f0=advFit(lines,'t0',allow0),f1=advFit(lines,'t1',allow1);
   buy0=A+lines.reduce(function(x,l){return x+l.t0},0);buy1=lines.reduce(function(x,l){return x+l.t1},0);
-  var bud={target:target,F:fixedDay,d:[{S:S[0].p,allowTotal:S[0].p-fixedDay-target,spent:A,fit:f0,need:target+fixedDay+A+f0.minRem},{S:S[1].p,allowTotal:S[1].p-fixedDay-target,spent:0,fit:f1,need:target+fixedDay+f1.minRem}]};
+  var bud={target:target,F:fixedDay,d:[{closed:S[0].closed,S:S[0].p,allowTotal:S[0].p-fixedDay-target,spent:A,fit:f0,need:target+fixedDay+A+f0.minRem},{closed:S[1].closed,S:S[1].p,allowTotal:S[1].p-fixedDay-target,spent:0,fit:f1,need:target+fixedDay+f1.minRem}]};
   lines.sort(function(a,b){return (b.t0+b.t1)-(a.t0+a.t1)});learned.sort(function(a,b){return b.w-a.w});
   var N=usual*(1-Rb)-fixedDay,P0=S[0].p-buy0-fixedDay,P1=S[1].p-buy1-fixedDay,alert=null;
   if(E0>0&&A>=E0*1.25&&A-E0>=200){var two=P0+P1;alert={A:A,B:E0,S0:S[0].p,N:N,P0:P0,P1:P1,two:two,twoN:2*N,short:2*N-two,over:over,extra:A-E0}}
-  return {ok:true,S:S,lines:lines,skips:skips,warns:warns,po:po.slice(0,5),usual:usual,learned:learned.slice(0,6).map(function(x){return x.t}),prof:[P0,P1],buy:[buy0,buy1],alert:alert,A:A,B:E0,bud:bud}}
+  return {ok:true,S:S,lines:lines,skips:skips,warns:warns,po:po.slice(0,5),usual:usual,learned:learned.slice(0,6).map(function(x){return x.t}),prof:[P0,P1],buy:[buy0,buy1],alert:alert,A:A,B:E0,bud:bud,closed:cl,d2:d2}}
 function advAlertHtml(P){var a=P.alert;if(!a)return '';var dn=function(d){return parseISODate(d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})},
   st=a.over.filter(function(x){return !x.per}),pe=a.over.filter(function(x){return x.per}),rec=a.short<=Math.max(50,a.twoN*0.03);
   var h='<div style="border:1px solid var(--owe);border-radius:12px;padding:10px;margin:0 0 10px;background:var(--brand-light)"><div style="font-weight:800;color:var(--owe)">⚠️ Unexpected buying today</div>'
@@ -7982,7 +7991,7 @@ function advAlertHtml(P){var a=P.alert;if(!a)return '';var dn=function(d){return
    +(rec?'✅ Profit is back on track by tomorrow.':(pb>0?'The rest comes back gradually: you will not need to buy '+st.map(function(x){return esc(x.cat)}).join(', ')+' for the next days, saving about '+advRs(use)+' of daily buying — your profit catches up in about '+pb+' day'+(pb>1?'s':'')+'. Until then avoid more extra buying.':'It stays about '+advRs(a.short)+' short — avoid any more extra buying.'))+'</div></div>';
   return h}
 function advBudHtml(P){var b=P.bud;if(!b)return '';var row=function(a,c,col){return '<div class="enhRow"><span>'+a+'</span><b'+(col?' style="color:'+col+'"':'')+'>'+c+'</b></div>'};
-  var one=function(d,i,nm){var f=d.fit,prof=d.S-b.F-(d.spent+(i===0?P.lines.reduce(function(x,l){return x+l.t0},0):P.lines.reduce(function(x,l){return x+l.t1},0))),ok=f.feasible&&prof>=b.target-5,h='';
+  var one=function(d,i,nm){if(d.closed)return row('Buying '+nm,'🔒 shop closed — none planned');var f=d.fit,prof=d.S-b.F-(d.spent+(i===0?P.lines.reduce(function(x,l){return x+l.t0},0):P.lines.reduce(function(x,l){return x+l.t1},0))),ok=f.feasible&&prof>=b.target-5,h='';
     h+=row('Most you can spend on buying '+nm,advRs(Math.max(0,d.allowTotal))+(i===0&&d.spent>0?' (already spent '+advRs(d.spent)+')':''),ok?'var(--paid)':'var(--owe)');
     if(ok)h+='<div style="font-size:.82rem;margin:2px 0 6px">'+(f.trim>0?'✂️ Plan trimmed by '+advRs(f.trim)+' (deferred stock items first, then a little from daily items) to protect your '+advRs(b.target)+' profit. Expected profit ~'+advRs(prof)+'.':'✅ The full plan fits. Expected profit ~'+advRs(prof)+(f.room>=100?' — about '+advRs(f.room)+' of room to spare.':'.'))+'</div>';
     else h+='<div style="font-size:.82rem;margin:2px 0 6px;color:var(--owe)">❌ '+advRs(b.target)+' profit is not reachable '+nm+' at expected sales '+advRs(d.S)+'. Even buying the minimum, profit is about '+advRs(prof)+'. You would need sales of about <b>'+advRs(d.need)+'</b>. Buy only essentials and push sales (offers, snacks).</div>';return h};
@@ -7996,15 +8005,17 @@ function advHtml(P,mode){if(!P.ok)return 'I need at least 5 days of sales and so
   h+=advAlertHtml(P);
   if(mode==='recover'&&!P.alert)return '✅ No unexpected buying today — you bought '+advRs(P.A)+' against about '+advRs(P.B)+' normal for expected sales. Profit is on track.';
   if(mode!=='warn'){
-    h+='<div class="askBig">'+advRs(P.S[0].p)+'</div><div class="askSub">Expected sales today · '+dn(P.S[0].d)+pc(P.S[0])+'</div>'+row('Tomorrow · '+dn(P.S[1].d),advRs(P.S[1].p)+pc(P.S[1]));
+    h+='<div class="askBig">'+advRs(P.S[0].p)+'</div><div class="askSub">Expected sales today · '+dn(P.S[0].d)+pc(P.S[0])+'</div>'+row('Tomorrow · '+dn(P.S[1].d),P.S[1].closed?'🔒 Shop closed (leave)':advRs(P.S[1].p)+pc(P.S[1]));
     h+=advBudHtml(P);
     var t0=P.lines.filter(function(x){return x.t0}),t1=P.lines.filter(function(x){return x.t1});
     h+='<div class="askSub" style="margin-top:10px">🛒 Buy today</div>'+(t0.length?t0.map(function(x){return row(x.emoji+' '+esc(x.cat),advRs(x.t0)+(x.q0||''))+'<div class="hint" style="text-align:left;margin:-2px 0 4px">'+esc(x.why)+'</div>'}).join(''):'<div class="hint" style="text-align:left">Nothing more needed today.</div>');
-    h+='<div class="askSub" style="margin-top:10px">🛒 Buy tomorrow</div>'+(t1.length?t1.map(function(x){return row(x.emoji+' '+esc(x.cat),advRs(x.t1)+(x.q1||''))}).join(''):'<div class="hint" style="text-align:left">Nothing planned yet.</div>');
+    h+=P.closed[1]?'<div class="askSub" style="margin-top:10px">🔒 Tomorrow closed — no buying. Buy fresh milk on the reopening morning.</div>':'';
+    var t2=P.lines.filter(function(x){return x.t2});if(P.closed[1]&&!P.closed[2]&&t2.length)h+='<div class="askSub" style="margin-top:10px">🛒 Buy for '+dn(P.d2)+' (reopening day · expected sales '+advRs(P.S[2].p)+')</div>'+t2.map(function(x){return row(x.emoji+' '+esc(x.cat),advRs(x.t2)+(x.q2||''))}).join('');
+    if(!P.closed[1])h+='<div class="askSub" style="margin-top:10px">🛒 Buy tomorrow</div>'+(t1.length?t1.map(function(x){return row(x.emoji+' '+esc(x.cat),advRs(x.t1)+(x.q1||''))}).join(''):'<div class="hint" style="text-align:left">Nothing planned yet.</div>');
     if(P.learned.length)h+='<div class="askSub" style="margin-top:10px">📊 What I learned from your buying</div>'+P.learned.map(function(t){return '<div style="font-size:.82rem;margin:3px 0">'+esc(t)+'</div>'}).join('');
     if(P.po.length)h+='<div class="askSub" style="margin-top:10px">📦 Procurement items due</div>'+P.po.map(function(x){return row(esc(x.n),'~'+advRound(x.q,x.u==='pcs'?'pcs':'kg')+' '+esc(x.u||'')+' · '+x.since+'d ago')}).join('');
     if(P.skips.length)h+='<div class="askSub" style="margin-top:10px">⏸ Skip for now</div>'+P.skips.slice(0,4).map(function(s){return '<div style="font-size:.82rem;margin:3px 0">'+esc(s)+'</div>'}).join('');
-    h+='<div class="askSub" style="margin-top:10px">📈 Profit guard</div>'+row('Planned buying today',advRs(P.buy[0])+' · '+Math.round(P.buy[0]/Math.max(1,P.S[0].p)*100)+'% of sales')+row('Expected profit today (after salary & other costs)','~'+advRs(P.prof[0]),P.prof[0]<0?'var(--owe)':'var(--paid)')+row('Expected profit tomorrow','~'+advRs(P.prof[1]),P.prof[1]<0?'var(--owe)':'var(--paid)')}
+    h+='<div class="askSub" style="margin-top:10px">📈 Profit guard</div>'+row('Planned buying today',advRs(P.buy[0])+' · '+Math.round(P.buy[0]/Math.max(1,P.S[0].p)*100)+'% of sales')+row('Expected profit today (after salary & other costs)','~'+advRs(P.prof[0]),P.prof[0]<0?'var(--owe)':'var(--paid)')+(P.closed[1]?row('Tomorrow (shop closed)','fixed costs continue · '+advRs(P.prof[1]),'var(--owe)'):row('Expected profit tomorrow','~'+advRs(P.prof[1]),P.prof[1]<0?'var(--owe)':'var(--paid)'))}
   h+='<div class="askSub" style="margin-top:10px">🧮 Accountant notes</div>'+(P.warns.length?P.warns.slice(0,6).map(function(w){return '<div style="font-size:.84rem;margin:5px 0">'+w+'</div>'}).join(''):'<div style="font-size:.84rem">✅ No cost or price problems found in the last 4 weeks.</div>');
   return h+'<div class="hint" style="text-align:left;margin-top:8px">Based on your last 4–8 weeks of expenses and notes (add “10 l”, “5 kg” in expense notes for exact quantities) plus the sales forecast.</div>'}
 function advCard(){var h=document.getElementById('homeTodayCard');if(!h||!h.parentNode)return;var el=document.getElementById('buyCard'),P=buyPlan();
@@ -8014,10 +8025,15 @@ function advCard(){var h=document.getElementById('homeTodayCard');if(!h||!h.pare
   var bd=P.bud.d[0],bok=bd.fit.feasible&&P.prof[0]>=P.bud.target-5;
   el.innerHTML=advAlertHtml(P)+'<div style="font-weight:800">🛒 Buying plan · today</div><div style="font-size:.82rem;margin:4px 0;color:'+(bok?'var(--paid)':'var(--owe)')+'">🎯 '+(bok?'Spend up to <b>'+advRs(Math.max(0,bd.allowTotal))+'</b> today and keep ≥ '+advRs(P.bud.target)+' profit':'Target '+advRs(P.bud.target)+' not reachable today — best profit ~'+advRs(P.prof[0])+'; buy only essentials')+'</div><div style="font-size:.8rem;color:var(--muted);margin:2px 0 6px">Expected sales '+advRs(P.S[0].p)+' · expected profit ~'+advRs(P.prof[0])+'</div>'
    +(l.length?l.map(function(x){return '<div class="enhRow" style="font-size:.84rem"><span>'+x.emoji+' '+esc(x.cat)+'</span><b>'+advRs(x.t0)+(x.q0||'')+'</b></div>'}).join(''):'<div style="font-size:.84rem">Nothing more to buy today.</div>')
-   +(P.warns[0]?'<div style="font-size:.8rem;margin-top:6px">'+P.warns[0]+'</div>':'')
+   +(P.closed[1]?'<div style="font-size:.8rem;margin-top:6px">🔒 Tomorrow your shop is closed — no buying planned.</div>':'')+(P.warns[0]?'<div style="font-size:.8rem;margin-top:6px">'+P.warns[0]+'</div>':'')
    +'<div style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:.78rem;color:var(--muted)">Minimum profit/day ₹<input id="advTarget" type="number" inputmode="numeric" value="'+P.bud.target+'" style="width:90px;margin:0;padding:4px 8px" onchange="advSetTarget(this.value)"></div>'+'<button type="button" class="ghost" style="margin:8px 0 0" onclick="askOpen(\'What to buy today and tomorrow?\')">🧠 Full plan: today &amp; tomorrow</button>'}
 var _rhA=window.renderHomeToday;if(_rhA)window.renderHomeToday=function(){var r=_rhA.apply(this,arguments);try{advCard()}catch(e){console.error(e)}return r};
 </script>
+  var pp=p||{f:td,t:td};
+  if(sal&&prof||sal&&exp||prof&&exp){CTX={k:'combo'};return aCombo(pp)}
+  if(prof){CTX={k:'profit'};return aProfit(pp)}if(exp){CTX={k:'exp'};return aExp(pp,q)}if(sal){CTX={k:'sales'};return aSales(pp)}
+  if(p){var k=CTX?CTX.k:'sales';CTX={k:k};return k==='profit'?aProfit(p):k==='exp'?aExp(p,q):k==='combo'?aCombo(p):k==='coll'?aColl(p):k==='why'?aWhy(p,false,q):aSales(p)}
+  if(has(/how much|evlo|evvalavu|ethana|எவ்வளவு|எவ்வளவு/)){CTX={k:'sales'};return aSales(pp)}
 <style>
 #askFab{position:fixed;right:14px;bottom:20px;z-index:920;width:54px;height:54px;border-radius:50%;margin:0;padding:0;font-size:1.5rem;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border:0;box-shadow:var(--shadow-lg);display:none;align-items:center;justify-content:center}
 @media(max-width:699px){#askFab{bottom:88px}}
@@ -8071,6 +8087,8 @@ function period(q){var td=todayStr(),m;
   if(mo!==undefined&&dd>=1&&dd<=31){var y=yr?+yr:+td.slice(0,4),iso=y+'-'+String(mo+1).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
     if(!yr&&iso>addDays(td,31))iso=(y-1)+iso.slice(4);return {f:iso,t:iso}}
   if((m=q.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/))&&+m[1]<=31&&+m[2]<=12){var yy=m[3]?(m[3].length===2?2000+(+m[3]):+m[3]):+td.slice(0,4),is=yy+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0');return {f:is,t:is}}
+  if(/day after tomorrow|naalai maranaal|nalai maranal|நாளை மறுநாள்/.test(q)){var t2=addDays(td,2);return {f:t2,t:t2}}
+  if(/tomorrow|tommorow|tomorow|tmrw|naalai|nalai|naalaiku|naalaikku|nalaiku|நாளை/.test(q)){var t1=addDays(td,1);return {f:t1,t:t1}}
   if(/day before yesterday|முந்தாநாள்|munthanaal|mundhanal/.test(q)){var a=addDays(td,-2);return {f:a,t:a}}
   if(/yesterday|yday|நேற்று|netru|nettru|nethu|ninaivu/.test(q)){var b=addDays(td,-1);return {f:b,t:b}}
   if(/last week|previous week|past week|கடந்த வாரம்|gadantha vaaram|kadantha vaaram/.test(q)&&!/last 7/.test(q)){var w=getWeekRange(addDays(getWeekRange(td)[0],-1));return {f:w[0],t:w[1]}}
@@ -8171,7 +8189,7 @@ function aAction(){var td=todayStr(),P=null;try{P=buyPlan()}catch(e){}var acts=[
   if(P&&P.ok){var b=P.bud.d[0],ok=b.fit.feasible&&P.prof[0]>=P.bud.target-5;
     acts.push('🎯 <b>Today</b>: expected sales '+M(P.S[0].p)+'. '+(ok?'Spend up to <b>'+M(Math.max(0,b.allowTotal))+'</b> on buying to keep '+M(P.bud.target)+' profit.':'Your '+M(P.bud.target)+' profit target is not reachable at this sales level — buy only essentials; best profit about '+M(P.prof[0])+'.'));
     if(P.skips.length)acts.push('⏸ <b>Skip buying</b>: '+esc(P.skips.slice(0,3).map(function(s){return s.split(' — ')[0]}).join(', '))+' — you already have stock. Saves cash.');
-    acts.push('📅 <b>Tomorrow</b>: expected sales '+M(P.S[1].p)+(P.S[1].fx?' ('+esc(P.S[1].fx.label.replace(/ — .*$/,''))+')':'')+'. Open “What to buy today and tomorrow?” for the exact list.');
+    acts.push(P.S[1].closed?'🔒 <b>Tomorrow</b>: shop closed (leave) — no buying planned. Buy fresh on the reopening morning.':'📅 <b>Tomorrow</b>: expected sales '+M(P.S[1].p)+(P.S[1].fx?' ('+esc(P.S[1].fx.label.replace(/ — .*$/,''))+')':'')+'. Open “What to buy today and tomorrow?” for the exact list.');
     P.warns.filter(function(w){return w.indexOf('🪔')!==0}).slice(0,2).forEach(function(w){acts.push(w)})}
   var up=festUpcoming(7).filter(function(e){return e.d>=td});if(up.length&&!(LW&&LW.fest)&&!(P&&P.ok&&P.S[1].fx))acts.push('🪔 '+esc(up[0].n)+' is on '+parseISODate(up[0].d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'})+' — expect lower sales around it; buy daily items only for expected sales.');
   var owed=customerBalances().filter(function(c){return c.bal>0}).slice(0,3);if(owed.length)acts.push('📒 <b>Collect udhar</b> before people leave: '+owed.map(function(c){return esc(c.name)+' '+M(c.bal)}).join(', ')+'.');
@@ -8231,11 +8249,46 @@ function aFest(q){var td=todayStr(),G=[[/diwali|deepavali|தீபாவளி/
   var nx=FEST_CAL.filter(function(x){return x.d>td&&x.d!==e.d}).slice(0,4);if(!g&&nx.length)h+='<div class="askSub" style="margin-top:8px">Coming up</div>'+nx.map(function(x){return row(esc(x.n),parseISODate(x.d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}))}).join('');
   return h+'<div class="askSub" style="margin-top:6px">Dates from the Tamil Nadu government holiday list. Ramzan / Bakrid may shift by a day.</div>'}
 function aBuy(m){return advHtml(buyPlan(),m)}
-function aHelp(t){return (t===false?'':'<b>Ask me anything about your shop</b> — English, Tamil or Tanglish.')+['Today sales evlo?','Yesterday profit','Last week expenses','Raja udhar evlo?','Milk expense this month','Sugar price','Who owes the most?','Cash in hand','Compare this week','Month end projection','Business growth tips','Diwali sales effect','What to buy today and tomorrow?','Why profit low yesterday?','So what should I do?','Recover today profit','How much can I spend today?'].map(chip).join('')}
+var CTX=null,TLR=/\b(illa|illai|ila|namma|naan|nan|enna|ena|evlo|evvalavu|solu|sollu|solunga|pannum|pananum|pannanum|panren|kadai|nethu|netru|naalai|nalai|naalaiku|inniku|innaiku|indru|irukku|iruku|vaanga|vangu|sari|seri|kammi|jasthi|paaru|venum|vendam|puriyala|nandri|vanakkam|epdi|eppadi|yaaru|yaar)\b|[\u0B80-\u0BFF]/;
+function isTL(q){return TLR.test(q)}
+function tl(q,en,ta){return isTL(q)?ta:en}
+function smallTalk(q){var t=q.trim();
+  if(/^(thanks|thank you|thx|ty|nandri|நன்றி|super|superb|great|nice|good|romba nandri)\b/.test(t))return tl(t,'You are welcome! 😊 Ask me anything about your shop.','Romba nandri! 😊 Shop pathi vera edhavadhu kekkanuma?');
+  if(/^(ok|okay|k|fine|sari|seri|ம்ம்|சரி)\.?!?$/.test(t))return tl(t,'👍 Tell me if you need anything else.','👍 Sari. Vera edhavadhu venumna sollunga.');
+  if(/^(hi|hello|hey|vanakkam|வணக்கம்|good (morning|evening|afternoon))\b/.test(t))return tl(t,'Hello! 👋 I am your shop assistant. Ask me about sales, profit, udhar, what to buy, or tell me things like “tomorrow shop leave”.','Vanakkam! 👋 Naan unga shop assistant. Sales, profit, udhar, enna vaanganum-nu kelunga — illa “naalaiku kadai leave”-nu sollunga, naan plan pannuren.');
+  if(/who are you|your name|nee yaaru|neenga yaaru|உன் பெயர்|நீ யார்/.test(t))return tl(t,'I am the assistant inside your Udhar Book app. I read your own sales, expenses and udhar, so my shop answers use your real numbers.','Naan unga Udhar Book app-oda assistant. Unga sales, selavu, udhar data-va paathu pesuren — adhanala shop answers unga real numbers-la irukkum.');
+  if(/how are you|eppadi irukka|epdi iruka|சுகமா/.test(t))return tl(t,'I am fine, thank you! 😊 How is the shop today?','Naan nalla irukken! 😊 Innikku kadai epdi poguthu?');
+  return null}
+function aLeave(q,p){var td=todayStr(),dts=[],undo=/(leave|விடுமுறை|லீவு|close|closed)\s+(illa|illai|ila|இல்ல)|not (on )?leave|\bundo\b|cancel (the |my )?(leave|closure)|shop (will )?open|reopen|open (pannuvom|panren|pannuren)|thirandhu|திறந்து|leave (cancel|ilai)/.test(q),
+   wk=/every|each|ovvoru|ஒவ்வொரு|weekly/.test(q),wi=-1;WD.forEach(function(w,i){if(wi<0&&q.indexOf(w)>-1)wi=i});
+  if(wk&&wi>-1){advSetWeekly(wi,!undo);var nm=WD[wi][0].toUpperCase()+WD[wi].slice(1);return undo?tl(q,'Done — '+nm+' is no longer a weekly off day.','Sari — '+nm+' ini weekly leave illa.'):tl(q,'Noted ✅ Every <b>'+nm+'</b> is a weekly off day. I will plan buying and forecasts accordingly.','Sari, note panniten ✅ Ovvoru <b>'+nm+'</b>-um kadai leave. Adhukku etha maadhiri buying, forecast plan pannuren.')}
+  if(undo&&!p){localStorage.removeItem('udhar_closed_days');return tl(q,'Done ✅ All leave days removed. I will plan every day as a normal day.','Sari ✅ Ella leave-um cancel panniten. Ini normal naal-aa plan pannuren.')}
+  if(!p)return tl(q,'Which day is the shop closed? Tap one:','Entha naal kadai leave? Thoondunga:')+chip('Tomorrow shop leave')+chip('Today shop leave')+chip('Every Sunday shop leave');
+  var n=(q.match(/(\d+)\s*(days?|naal|நாள்)/)||[0,1])[1];n=Math.max(1,Math.min(7,+n));for(var i=0;i<n;i++)dts.push(addDays(p.f,i));
+  dts.forEach(function(d){advSetClosed(d,!undo)});var dn=function(d){return parseISODate(d).toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short'})},lbl=dts.map(dn).join(', ');
+  if(undo)return tl(q,'Done ✅ Shop leave removed for '+lbl+'. I will plan it as a normal day.','Sari ✅ '+lbl+' leave cancel panniten. Normal naal-aa plan pannuren.');
+  var h='<b>'+tl(q,'Noted ✅ Shop closed on ','Sari, note panniten ✅ Kadai leave: ')+lbl+'</b><div class="hint" style="text-align:left;margin:2px 0 8px">'+tl(q,'Forecast and buying plan now treat that day as closed.','Forecast, buying plan inga leave-a eduthukkum.')+'</div>',P=null;
+  try{P=buyPlan()}catch(e){}
+  var lost=0;try{lost=fcPredict(dts[0],fcHistory(),fcData.weather).openPred||0}catch(e){}
+  if(lost>0)h+=row(tl(q,'Sales you will miss (about)','Poguradhu sales (approx)'),M(lost)+(dts.length>1?' / day':''),'var(--owe)');
+  if(P&&P.ok)h+=row(tl(q,'Fixed costs still running (salary etc.)','Salary maadhiri selavu thodarum'),'~'+M(P.bud.F)+tl(q,' a day',' oru naalaikku'));
+  var acts=[];
+  if(P&&P.ok){var t0=P.lines.filter(function(x){return x.t0}).slice(0,3);
+    acts.push(tl(q,'<b>Today:</b> buy only for today\'s sales'+(P.S[0].closed?'':' (about '+M(P.S[0].p)+')')+'. Do not buy extra milk or snacks for the closed day — they will spoil.'+(t0.length?' Needed: '+t0.map(function(x){return esc(x.cat)+' '+M(x.t0)}).join(', ')+'.':''),'<b>Innikku:</b> innaiku sales-ku mattum vaanga'+(P.S[0].closed?'':' (approx '+M(P.S[0].p)+')')+'. Leave naalukku extra paal, snacks vaanga vendam — kedugidum.'+(t0.length?' Venum: '+t0.map(function(x){return esc(x.cat)+' '+M(x.t0)}).join(', ')+'.':'')));
+    var t2=P.lines.filter(function(x){return x.t2}).slice(0,3);if(P.closed[1]&&!P.closed[2]&&t2.length)acts.push(tl(q,'<b>Reopening day ('+dn(P.d2)+'):</b> expected sales '+M(P.S[2].p)+'. Buy fresh: '+t2.map(function(x){return esc(x.cat)+' '+M(x.t2)}).join(', ')+'.','<b>Thirakkura naal ('+dn(P.d2)+'):</b> expected sales '+M(P.S[2].p)+'. Fresh-a vaanga: '+t2.map(function(x){return esc(x.cat)+' '+M(x.t2)}).join(', ')+'.'))}
+  var owed=customerBalances().filter(function(c){return c.bal>0}).slice(0,3);if(owed.length)acts.push(tl(q,'<b>Udhar:</b> collect before you close — '+owed.map(function(c){return esc(c.name)+' '+M(c.bal)}).join(', ')+'.','<b>Udhar:</b> leave-ku munnadi vasool pannunga — '+owed.map(function(c){return esc(c.name)+' '+M(c.bal)}).join(', ')+'.'));
+  acts.push(tl(q,'Tell your regular customers and staff about the leave.','Regular customers, staff-kitta leave pathi munnadiye sollidunga.'));
+  h+=acts.map(function(t,i){return '<div style="font-size:.86rem;margin:7px 0">'+(i+1)+'. '+t+'</div>'}).join('');
+  return h+chip('What to buy today and tomorrow?')+chip('Undo leave')}
+function aClarify(q){var S=[['Today sales evlo?',/sale|vyap|varavu|evlo|today|inniku|income/],['Yesterday profit',/profit|laab|labam|kammi|lose|loss/],['Udhar pending',/udhar|kadan|baaki|pending|owe|balance/],['What to buy today and tomorrow?',/buy|vaang|purchase|stock|order|milk|sugar/],['Tomorrow shop leave',/leav|close|off|vidumurai|லீவு|moodi/],['Business growth tips',/grow|improve|tips|valarchi/],['Cash in hand',/cash|galla|kaasu|money|panam/],['Next festival',/festival|pandigai|holiday|diwali|pongal/],['Why profit low yesterday?',/why|reason|ethuku|karanam/]],sc=S.map(function(x){return {t:x[0],m:x[1].test(q)?1:0}}).sort(function(a,b){return b.m-a.m}),pick=sc.slice(0,4);
+  return tl(q,'I did not fully get that 🙏 Did you mean one of these? You can also tell me things like <b>“tomorrow shop leave”</b>.','Sorry, sariya puriyala 🙏 Idhula edhavadhu-na thoondunga. <b>“naalaiku kadai leave”</b>-nu kooda sollalam.')+pick.map(function(x){return chip(x.t)}).join('')}
+function aHelp(t){return (t===false?'':'<b>Ask me anything about your shop</b> — English, Tamil or Tanglish.')+['Today sales evlo?','Yesterday profit','Tomorrow shop leave','Last week expenses','Raja udhar evlo?','Milk expense this month','Sugar price','Who owes the most?','Cash in hand','Compare this week','Month end projection','Business growth tips','Diwali sales effect','What to buy today and tomorrow?','Why profit low yesterday?','So what should I do?','Tomorrow shop leave','Recover today profit','How much can I spend today?'].map(chip).join('')}
 
 function answer(raw){var q=raw.toLowerCase().trim(),p=period(q),td=todayStr(),has=function(r){return r.test(q)};
   if(!q)return aHelp();
-  if(has(/^(hi|hello|hey|help|\?|vanakkam|வணக்கம்|what can you do|examples?)\b/))return aHelp();
+  var stk=smallTalk(q);if(stk)return stk;
+  if(has(/^(help|\?|what can you do|examples?)\b/))return aHelp();
+  if(has(/\b(leave|leaves|closed|close|closing|off)\b|லீவு|விடுமுறை|kadai (illa|moodi)|moodiruk|not (open|opening)/)&&(has(/shop|kadai|store|கடை|namma|nam |we |our |closed|undo leave|cancel/)||p)&&!has(/festival list|holiday list|next festival|\bwhy\b|salary|leave (balance|policy)/))return aLeave(q,p);
   var fc=has(/tomorrow|naalai|நாளை|forecast|predict|next day|expected sale/),growth=has(/growth|grow|health|score|improve|tips|advice|suggest|valarchi|வளர்ச்சி|ஆலோசனை|how am i doing|how is my business/),
    cmp=has(/compar|\bvs\b|versus|\bthan\b|ottu|ஒப்பிட/),proj=has(/project|month.?end|end of (the )?month|on track|forecast for the month/),
    pay=has(/supplier|payable|unpaid|vendor|invoice|owed to/),aging=has(/oldest|overdue|longest|late payer|aging/),
@@ -8249,12 +8302,12 @@ function answer(raw){var q=raw.toLowerCase().trim(),p=period(q),td=todayStr(),ha
   if(tg){advSetTarget(+tg[1].replace(/,/g,''));return 'Minimum daily profit is now <b>'+M(+tg[1].replace(/,/g,''))+'</b>. Ask “what to buy today?” to see your spending limit.'}
   var buy=has(/budget|how much (can|should) i spend|spending limit|(what|which).*(buy|purchase|order)|to buy|buy (today|tomorrow|now)|purchase (plan|advice)|buying plan|shopping list|buy list|vaanga|வாங்க|கொள்முதல்/),warnb=has(/overspend|cost creep|cost ratio|margin leak|wastage|price (rise|rose|hike|up)|price increase|விலை ஏற்றம்/);
   if(has(/ena pa(n|nn)anum|enna pa(n|nn)anum|enna pa(n|nn)alam|ena pa(n|nn)alam|what (should|can|do) i do|what now|next step|so what|solution|how (to|can i) (fix|improve|increase|recover)|இப்போ என்ன|என்ன செய்ய|என்ன பண்ண/))return aAction();
-  if(has(/\bwhy\b|reason|karanam|karanama|காரணம்|ethuku|ethukku|yen\b|enna reason|\bean\b/)&&(prof||sal||has(/kammi|kurai|குறை|\blow\b|\bless\b|drop|\bdown\b|loss|nashtam|agidichu|aagiduchu/)))return aWhy(p||{f:addDays(td,-1),t:addDays(td,-1)},!p,q);
+  if(has(/\bwhy\b|reason|karanam|karanama|காரணம்|ethuku|ethukku|yen\b|enna reason|\bean\b/)&&(prof||sal||has(/kammi|kurai|குறை|\blow\b|\bless\b|drop|\bdown\b|loss|nashtam|agidichu|aagiduchu/))){CTX={k:'why'};return aWhy(p||{f:addDays(td,-1),t:addDays(td,-1)},!p,q)}
   if(has(/recover|unexpected|extra purchase|over ?buy|bought too much|லாபம் குறைவு/))return aBuy('recover');if(buy)return aBuy('');if(warnb)return aBuy('warn');if(proj)return aProj();if(fc)return aForecast();if(fest)return aFest(q);if(growth)return aGrowth();if(cmp&&!udh)return aCompare();
   var cu=findCustomers(q);if(cu.length&&!sal&&!prof&&!exp)return aCust(cu);
   var it=findItems(q);if(it.length&&!exp&&!prof&&!udh&&!(sal&&!has(/price|rate|vilai|விலை|supplier|mrp|cost/)))return aItem(it);
   if(pay)return aPay();if(udh&&aging)return aAging();if(aging)return aAging();
-  if(coll)return aColl(p||{f:td,t:td});
+  if(coll){CTX={k:'coll'};return aColl(p||{f:td,t:td})}
   if(udh&&!sal&&!prof&&!exp)return aUdhar();
   if(cash)return aCash();
   if(best&&!exp)return aBest();
@@ -8327,7 +8380,7 @@ window.askCfgClear=function(){localStorage.removeItem('udhar_ai_key');AIH=[];$('
 window.askSend=function(){var i=$('askIn'),t=i.value.trim();if(!t)return;i.value='';add('u',esc(t));var h=null;
   if(!isWorld(t.toLowerCase())){try{h=answer(t)}catch(e){console.error(e);h='Sorry, I could not calculate that. Please check your entries and try again.'}}
   if(h!==null&&h!==undefined){add('b',h);return}
-  if(/\b(my|our)\b|shop|sales|profit|udhar|expense|customer|salary|stock|purchase|budget|spend|sale\b|vyaparam|laabam|selavu/.test(t.toLowerCase())){add('b','I could not match that to your shop data. Try one of these:'+aHelp(false));return}
+  if(/\b(my|our)\b|shop|sales|profit|udhar|expense|customer|salary|stock|purchase|budget|spend|sale\b|vyaparam|laabam|selavu/.test(t.toLowerCase())||(!aiKey()&&!isWorld(t.toLowerCase()))){add('b',aClarify(t.toLowerCase()));return}
   live(t)};
 window.askOpenCust=function(id){askClose();try{var d=$('dashView');if(d&&d.classList.contains('hidden'))return;openCustomer(id)}catch(e){}};
 
