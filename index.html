@@ -8072,6 +8072,7 @@ function lab(f,t){var o={day:'numeric',month:'short'},x=parseISODate(f),y=parseI
 function row(a,b,c){return '<div class="enhRow"><span>'+a+'</span><b'+(c?' style="color:'+c+'"':'')+'>'+b+'</b></div>'}
 function big(v,sub,c){return '<div class="askBig"'+(c?' style="color:'+c+'"':'')+'>'+v+'</div><div class="askSub">'+sub+'</div>'}
 function note(t){return '<div class="askNote">'+t+'</div>'}
+function chipP(t){return '<span class="askChip" onclick="askPick(this.getAttribute(\'data-q\'))" data-q="'+esc(t)+'">'+esc(t)+'</span>'}
 function chip(t){return '<span class="askChip" onclick="askQuick(this.getAttribute(\'data-q\'))" data-q="'+esc(t)+'">'+esc(t)+'</span>'}
 
 /* ---------- period understanding (English + Tamil / Tanglish) ---------- */
@@ -8245,7 +8246,7 @@ function aFest(q){var td=todayStr(),G=[[/diwali|deepavali|தீபாவளி/
   return h+'<div class="askSub" style="margin-top:6px">Dates from the Tamil Nadu government holiday list. Ramzan / Bakrid may shift by a day.</div>'}
 function aBuy(m){return advHtml(buyPlan(),m)}
 var CTX=null,TLR=/\b(illa|illai|ila|namma|naan|nan|enna|ena|evlo|evvalavu|solu|sollu|solunga|pannum|pananum|pannanum|panren|kadai|nethu|netru|naalai|nalai|naalaiku|inniku|innaiku|indru|irukku|iruku|vaanga|vangu|sari|seri|kammi|jasthi|paaru|venum|vendam|puriyala|nandri|vanakkam|epdi|eppadi|yaaru|yaar)\b|[\u0B80-\u0BFF]/;
-function isTL(q){return TLR.test(q)}
+function isTL(q){return TLR.test(CUR_ORIG||q)}
 function tl(q,en,ta){return isTL(q)?ta:en}
 function smallTalk(q){var t=q.trim();
   if(/^(thanks|thank you|thx|ty|nandri|நன்றி|super|superb|great|nice|good|romba nandri)\b/.test(t))return tl(t,'You are welcome! 😊 Ask me anything about your shop.','Romba nandri! 😊 Shop pathi vera edhavadhu kekkanuma?');
@@ -8275,13 +8276,69 @@ function aLeave(q,p){var td=todayStr(),dts=[],undo=/(leave|விடுமுற
   acts.push(tl(q,'Tell your regular customers and staff about the leave.','Regular customers, staff-kitta leave pathi munnadiye sollidunga.'));
   h+=acts.map(function(t,i){return '<div style="font-size:.86rem;margin:7px 0">'+(i+1)+'. '+t+'</div>'}).join('');
   return h+chip('What to buy today and tomorrow?')+chip('Undo leave')}
-function aClarify(q){var S=[['Today sales evlo?',/sale|vyap|varavu|evlo|today|inniku|income/],['Yesterday profit',/profit|laab|labam|kammi|lose|loss/],['Udhar pending',/udhar|kadan|baaki|pending|owe|balance/],['What to buy today and tomorrow?',/buy|vaang|purchase|stock|order|milk|sugar/],['Tomorrow shop leave',/leav|close|off|vidumurai|லீவு|moodi/],['Business growth tips',/grow|improve|tips|valarchi/],['Cash in hand',/cash|galla|kaasu|money|panam/],['Next festival',/festival|pandigai|holiday|diwali|pongal/],['Why profit low yesterday?',/why|reason|ethuku|karanam/]],sc=S.map(function(x){return {t:x[0],m:x[1].test(q)?1:0}}).sort(function(a,b){return b.m-a.m}),pick=sc.slice(0,4);
-  return tl(q,'I did not fully get that 🙏 Did you mean one of these? You can also tell me things like <b>“tomorrow shop leave”</b>.','Sorry, sariya puriyala 🙏 Idhula edhavadhu-na thoondunga. <b>“naalaiku kadai leave”</b>-nu kooda sollalam.')+pick.map(function(x){return chip(x.t)}).join('')}
+function aClarify(q){LASTUNK=CUR_ORIG||q;var S=[['Today sales evlo?',/sale|vyap|varavu|evlo|today|inniku|income/],['Yesterday profit',/profit|laab|labam|kammi|lose|loss/],['Udhar pending',/udhar|kadan|baaki|pending|owe|balance/],['What to buy today and tomorrow?',/buy|vaang|purchase|stock|order|milk|sugar/],['Tomorrow shop leave',/leav|close|off|vidumurai|லீவு|moodi/],['Business growth tips',/grow|improve|tips|valarchi/],['Cash in hand',/cash|galla|kaasu|money|panam/],['Next festival',/festival|pandigai|holiday|diwali|pongal/],['Why profit low yesterday?',/why|reason|ethuku|karanam/]],sc=S.map(function(x){return {t:x[0],m:x[1].test(q)?1:0}}).sort(function(a,b){return b.m-a.m}),pick=sc.slice(0,4);
+  return tl(q,'I did not fully get that 🙏 Did you mean one of these? You can also tell me things like <b>“tomorrow shop leave”</b>.','Sorry, sariya puriyala 🙏 Idhula edhavadhu-na thoondunga. <b>“naalaiku kadai leave”</b>-nu kooda sollalam.')+pick.map(function(x){return chipP(x.t)}).join('')}
+/* ---------- smarter understanding: spelling/Tanglish normaliser, learning, extra questions ---------- */
+var CUR_ORIG='',LASTUNK=null,_ntC=null;
+var VOC={today:['todays','indru','inniku','innaiku','innikku','ennaiku','indhiku','innaiki','inikku','inaiku','இன்று','இன்னைக்கு','இன்னிக்கு'],
+ yesterday:['yesterdy','yestarday','yday','nethu','netru','nettru','nethikku','nenaiku','நேற்று','நேத்து'],
+ tomorrow:['tommorow','tomorow','tommorrow','tmrw','tmr','naalai','nalai','naalaiku','nalaiku','naalaikku','naaliku','naalaiki','நாளை','நாளைக்கு'],
+ sales:['sale','saless','salse','vyabaram','vyaparam','viyabaram','vyabaaram','varavu','varumanam','vilpanai','விற்பனை','வியாபாரம்','வரவு'],
+ profit:['proffit','prophit','profet','laabam','labam','lapam','laabham','லாபம்'],
+ expense:['expenses','expence','expences','selavu','selvu','chelavu','selavuu','selavugal','செலவு','kharch','spent','spend','spending'],
+ udhar:['uthar','udhaar','udhaaru','kadan','kadhan','kadanu','baaki','baki','bakki','pending','கடன்','உதார்','பாக்கி','outstanding'],
+ galla:['gallapetti','kaasu','kasu','panam','paisa','கல்லா','பணம்','கேஷ்'],
+ buy:['purchase','vaanga','vaangu','vanga','vaanganum','vaangalaam','vangalam','kollmudhal','வாங்க','கொள்முதல்'],
+ leave:['leev','leve','liv','vidumurai','விடுமுறை','லீவு','moodu','moodi','moodiruken'],
+ why:['wy','reason','karanam','karanama','ethuku','ethukku','yen','yaen','காரணம்','ean'],
+ low:['less','kammi','kuraivu','kuraiva','kurachu','குறைவு','குறைந்த','kurachal'],
+ this:['indha','intha','inda','இந்த'],last:['kadantha','gadantha','kadanda','கடந்த'],
+ week:['vaaram','வாரம்','weeks'],month:['maadham','madham','mathu','மாதம்','mnth','months']},VMAP={},VKEYS=[];
+Object.keys(VOC).forEach(function(c){VMAP[c]=c;VOC[c].forEach(function(v){VMAP[v.toLowerCase()]=c;if(v.length>=5&&/^[a-z]+$/.test(v))VKEYS.push(v)})});
+['today','yesterday','tomorrow','sales','profit','expense','udhar','buy','leave','week','month'].forEach(function(c){if(c.length>=5)VKEYS.push(c)});
+function lev(a,b,mx){if(Math.abs(a.length-b.length)>mx)return mx+1;var p=[],i,j;for(j=0;j<=b.length;j++)p[j]=j;for(i=1;i<=a.length;i++){var c=[i];for(j=1;j<=b.length;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[b.length]}
+function nameToks(){var n=Date.now();if(_ntC&&n-_ntC.t<20000)return _ntC.s;var s={};function add(x){String(x||'').toLowerCase().split(/[^a-z0-9\u0B80-\u0BFF]+/).forEach(function(w){if(w.length>=2)s[w]=1})}
+  try{loadCustomers().forEach(function(c){add(c.name)});loadPurchaseList().forEach(function(i){add(i.name);add(i.nameTa)});allCategories().forEach(function(c){add(c.name)})}catch(e){}_ntC={t:n,s:s};return s}
+function canonStr(q){var NT=nameToks(),out=[];q.split(/\s+/).forEach(function(w){var t=w.replace(/^[^a-z0-9\u0B80-\u0BFF]+|[^a-z0-9\u0B80-\u0BFF]+$/g,'');if(!t){return}
+  if(/\d/.test(t)&&/[\/\-]/.test(w)){out.push(w.replace(/[?.,!]+$/,''));return}
+  if(NT[t]){out.push(t);return}
+  if(VMAP[t]){out.push(VMAP[t]);return}
+  if(t.length>=5&&/^[a-z]+$/.test(t)){var best=null,bd=9,mx=t.length>=8?2:1;VKEYS.forEach(function(k){if(k[0]!==t[0])return;var d=lev(t,k,mx);if(d<bd){bd=d;best=k}});
+    if(best&&bd<=mx){out.push(VMAP[best]||best);return}
+    var nb=null,nd=9;Object.keys(NT).forEach(function(k){if(k.length>=4&&k[0]===t[0]){var d=lev(t,k,1);if(d<nd){nd=d;nb=k}}});if(nb&&nd<=1){out.push(nb);return}}
+  out.push(t)});return out.join(' ')}
+function tkey(q){var s={};q.toLowerCase().split(/[^a-z0-9\u0B80-\u0BFF]+/).forEach(function(w){if(w.length>=2)s[w]=1});return Object.keys(s).sort()}
+function learnedFor(q){var L=[];try{L=JSON.parse(localStorage.getItem('udhar_learned')||'[]')}catch(e){}var a=tkey(q);if(!a.length)return null;
+  for(var i=L.length-1;i>=0;i--){var b=L[i].k,inter=a.filter(function(x){return b.indexOf(x)>-1}).length,uni=a.length+b.length-inter;if(uni&&inter/uni>=0.8)return L[i].a}return null}
+function learnPhrase(q,a){var L=[];try{L=JSON.parse(localStorage.getItem('udhar_learned')||'[]')}catch(e){}var kk=tkey(canonStr(q)).join(' ');L=L.filter(function(x){return x.k.join(' ')!==kk});L.push({k:tkey(canonStr(q)),a:a});localStorage.setItem('udhar_learned',JSON.stringify(L.slice(-200)))}
+function logUnm(t){var L=[];try{L=JSON.parse(localStorage.getItem('udhar_unmatched')||'[]')}catch(e){}if(L.indexOf(t)<0)L.push(t);localStorage.setItem('udhar_unmatched',JSON.stringify(L.slice(-40)))}
+function aCount(){var cs=loadCustomers(),b=customerBalances(),pos=b.filter(function(c){return c.bal>0}),adv=b.filter(function(c){return c.bal<0});return big(String(cs.length),'Customers in your ledger')+row('Owe you udhar',pos.length+' customer'+(pos.length===1?'':'s'),'var(--owe)')+row('Have advance with you',adv.length)+row('Total pending udhar',M(pos.reduce(function(s,c){return s+c.bal},0)))+chip('Udhar pending')}
+function aPaid(p){var from=new Date(p.f+'T00:00:00').getTime(),to=new Date(p.t+'T23:59:59').getTime(),names={};loadCustomers().forEach(function(c){names[c.id]=c.name});var by={},t=0;
+  loadTxns().forEach(function(x){if(x.type==='payment'&&x.date>=from&&x.date<=to){by[x.customerId]=(by[x.customerId]||0)+(+x.amount||0);t+=(+x.amount||0)}});var ks=Object.keys(by).sort(function(a,b){return by[b]-by[a]});
+  if(!ks.length)return 'Nobody paid udhar for <b>'+lab(p.f,p.t)+'</b>.';return big(M(t),'Udhar received · '+lab(p.f,p.t)+' · '+ks.length+' customer'+(ks.length>1?'s':''),'var(--paid)')+ks.slice(0,8).map(function(k){return row(esc(names[k]||'Customer'),M(by[k]))}).join('')}
+function aChan(p,which){var m=computeRangeMetrics(p.f,p.t),on=which==='online';return big(M(on?m.onlineSales:m.cashSales),(on?'Online (UPI) sales':'Cash sales')+' · '+lab(p.f,p.t))+row('Total sales',M(m.totalSales))+row(on?'Cash sales':'Online (UPI) sales',M(on?m.cashSales:m.onlineSales))}
+function aMonth(p){var m=computeRangeMetrics(p.f,p.t),ct=categoryTotals(p.f,p.t).slice(0,4),h=aCombo(p);if(ct.length)h+='<div class="askSub" style="margin-top:8px">Top spending</div>'+ct.map(function(x){return row(esc(x.name),M(x.total))}).join('');return h+row('Average sales per day',M(m.avgDailySales))}
+function aiFacts(){return localStorage.getItem('udhar_ai_facts')==='1'}
+function shopFacts(){var td=todayStr(),R=function(f,t){return computeRangeMetrics(f,t)},mm=function(n,m){return n+': sales '+M(m.totalSales)+', shop expenses '+M(m.totalExpenses)+', salary '+M(m.totalStaffSalary)+', profit '+M(m.totalProfit)},L=['Today is '+td];
+  L.push(mm('Today so far',R(td,td)));L.push(mm('Yesterday',R(addDays(td,-1),addDays(td,-1))));L.push(mm('Last 7 days',R(addDays(td,-6),td)));var ms=td.slice(0,8)+'01';L.push(mm('This month so far',R(ms,td)));var pm=getMonthRange(addMonths(ms,-1));L.push(mm('Last month',R(pm[0],pm[1])));
+  L.push('Top expenses this month: '+categoryTotals(ms,td).slice(0,6).map(function(x){return x.name+' '+M(x.total)}).join(', '));var bal=customerBalances().filter(function(c){return c.bal>0});L.push('Udhar pending: '+M(bal.reduce(function(s,c){return s+c.bal},0))+' from '+bal.length+' customers; largest balances: '+bal.slice(0,5).map(function(c){return M(c.bal)}).join(', '));
+  try{L.push('Expected cash in drawer now: '+M(computeDayMetrics(td).expectedClosingCash))}catch(e){}try{var f=advSales(addDays(td,1));if(f)L.push('Forecast sales tomorrow: '+M(f.pred))}catch(e){}
+  L.push('Minimum daily profit target: '+M(advTarget()));var cd=advClosed();if(cd.length)L.push('Shop leave days: '+cd.join(', '));var fe=festUpcoming(30)[0];if(fe)L.push('Next festival: '+fe.n+' on '+fe.d);return L.join('\n')}
+function liveFacts(q){var key=aiKey();if(!key)return Promise.resolve(null);var sys='You are the assistant inside a Tamil Nadu tea shop owner\'s app. Answer ONLY from the FACTS below. If the answer is not in the facts, say you do not have that information and suggest a shop question he can ask in the app. Never invent numbers. Reply in the language the user wrote (Tamil, Tanglish or English), short and clear.\nFACTS:\n'+shopFacts(),m1=aiModel(),m2='gemini-3.1-flash-lite';
+  var run=function(m,last){return aiCall(m,false,q,key,sys).catch(function(e){if(!last&&(e.status===429||e.status===503||e.status===404))return run(m2,true);throw e})};
+  return run(m1,m1===m2).then(function(r){var c=r.candidates&&r.candidates[0],tx=c&&c.content&&c.content.parts?c.content.parts.map(function(p){return p.text||''}).join(''):'';return tx?'<div>'+fmtAI(tx)+'</div><div class="askSub" style="margin-top:6px">🤖 AI answer from your shop summary — check important numbers in the app</div>':null})}
 function aHelp(t){return (t===false?'':'<b>Ask me anything about your shop</b> — English, Tamil or Tanglish.')+['Today sales evlo?','Yesterday profit','Tomorrow shop leave','Last week expenses','Raja udhar evlo?','Milk expense this month','Sugar price','Who owes the most?','Cash in hand','Compare this week','Month end projection','Business growth tips','Diwali sales effect','What to buy today and tomorrow?','Why profit low yesterday?','So what should I do?','Tomorrow shop leave','Recover today profit','How much can I spend today?'].map(chip).join('')}
 
-function answer(raw){var q=raw.toLowerCase().trim(),p=period(q),td=todayStr(),has=function(r){return r.test(q)};
+function answer(raw,_noLearn){CUR_ORIG=raw.toLowerCase().trim();var q=canonStr(CUR_ORIG),p=period(q),td=todayStr(),has=function(r){return r.test(q)};
+  if(!_noLearn){var lr=learnedFor(q);if(lr)return answer(lr,true)}
   if(!q)return aHelp();
   var stk=smallTalk(q);if(stk)return stk;
+  if(has(/how many customers|customers? count|total customers|evlo customers|ethana customers|how many udhar customers/))return aCount();
+  if(has(/who (all )?(paid|gave|pay)|yaar (kuduthaanga|kuduthanga|paid)|payments? (today|received)|paid today/)&&!has(/supplier|invoice/))return aPaid(p||{f:td,t:td});
+  if(has(/\b(upi|gpay|phonepe|paytm|online)\b/)&&has(/sales|sale|evlo|how much/))return aChan(p||{f:td,t:td},'online');
+  if(has(/cash sales?|cash sale/))return aChan(p||{f:td,t:td},'cash');
+  if(has(/month(ly)? (summary|report|total)|monthly|this month report/)&&!p)return aMonth({f:td.slice(0,8)+'01',t:td});
+
   if(has(/^(help|\?|what can you do|examples?)\b/))return aHelp();
   if(has(/\b(leave|leaves|closed|close|closing|off)\b|லீவு|விடுமுறை|kadai (illa|moodi)|moodiruk|not (open|opening)/)&&(has(/shop|kadai|store|கடை|namma|nam |we |our |closed|undo leave|cancel/)||p)&&!has(/festival list|holiday list|next festival|\bwhy\b|salary|leave (balance|policy)/))return aLeave(q,p);
   var fc=has(/tomorrow|naalai|நாளை|forecast|predict|next day|expected sale/),growth=has(/growth|grow|health|score|improve|tips|advice|suggest|valarchi|வளர்ச்சி|ஆலோசனை|how am i doing|how is my business/),
@@ -8321,6 +8378,7 @@ window.askOpen=function(q){$('askPanel').style.display='flex';if(!$('askMsgs').c
   if(typeof q==='string')askQuick(q);else setTimeout(function(){$('askIn').focus()},150)};
 window.askClose=function(){$('askPanel').style.display='none'};
 window.askQuick=function(t){$('askIn').value=t;askSend()};
+window.askPick=function(t){if(LASTUNK){learnPhrase(LASTUNK,t);LASTUNK=null;add('b',tl(t,'Okay, I will remember that for next time ✅','Sari, adutha thadava purinjukkuren ✅'))}askQuick(t)};
 var AIH=[];
 function aiKey(){return localStorage.getItem('udhar_ai_key')||''}
 function aiModel(){return localStorage.getItem('udhar_ai_model')||'gemini-3.5-flash'}
@@ -8342,8 +8400,8 @@ function liveCurrency(q){var M2={dollar:'USD',usd:'USD',euro:'EUR',eur:'EUR',pou
 function liveWiki(q){var t=q.replace(/^(who|what|where|when|which)\s+(is|are|was|were)\s+/,'').replace(/^(tell me about|meaning of|define|explain)\s+/,'').replace(/[?.!]+$/,'').trim();if(t.length<2)return Promise.resolve(null);
   return fetchJ('https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch='+encodeURIComponent(t)+'&srlimit=1&format=json&origin=*').then(function(s){var r=s.query&&s.query.search&&s.query.search[0];if(!r)return null;
     return fetchJ('https://en.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(r.title.replace(/ /g,'_'))).then(function(x){return '<b>'+esc(x.title)+'</b><br>'+esc((x.extract||'').slice(0,600))+'<div class="askSub" style="margin-top:6px">Source: Wikipedia (general facts, not live news)</div>'})})}
-function aiCall(model,useSearch,q,key){
-  var sys='You answer general-knowledge and current-affairs questions for a Tamil Nadu tea shop owner. You CANNOT see his shop, sales, profit, stock, udhar or any app data — never state, guess or invent such figures; if asked about his shop, say he should ask it as a shop question in the app. Today is '+new Date().toLocaleString('en-IN',{dateStyle:'full',timeStyle:'short'})+'. '+(useSearch?'Use current information from Google Search. ':'')+'Reply in the language the user wrote (Tamil, Tanglish or English), short and clear (under 120 words), with exact numbers and the date, and say "not sure" instead of guessing. Prices are in Indian rupees unless asked otherwise.';
+function aiCall(model,useSearch,q,key,sysO){
+  var sys=sysO||'You answer general-knowledge and current-affairs questions for a Tamil Nadu tea shop owner. You CANNOT see his shop, sales, profit, stock, udhar or any app data — never state, guess or invent such figures; if asked about his shop, say he should ask it as a shop question in the app. Today is '+new Date().toLocaleString('en-IN',{dateStyle:'full',timeStyle:'short'})+'. '+(useSearch?'Use current information from Google Search. ':'')+'Reply in the language the user wrote (Tamil, Tanglish or English), short and clear (under 120 words), with exact numbers and the date, and say "not sure" instead of guessing. Prices are in Indian rupees unless asked otherwise.';
   var contents=AIH.slice(-6).map(function(m){return {role:m.r,parts:[{text:m.t}]}}).concat([{role:'user',parts:[{text:q}]}]),body={systemInstruction:{parts:[{text:sys}]},contents:contents,generationConfig:{maxOutputTokens:800}};if(useSearch)body.tools=[{google_search:{}}];
   return fetchJ('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(body)},30000)}
 function liveAI(q){var key=aiKey();if(!key)return Promise.resolve(null);
@@ -8369,13 +8427,17 @@ function live(t){var q=t.toLowerCase(),box=document.createElement('div');box.cla
 window.askCfg=function(){var c=$('askCfg');if(c.style.display==='block'){c.style.display='none';return}
   c.innerHTML='<b>🌐 Online AI (optional) — '+(aiKey()?'ON':'OFF')+'</b><div style="margin:4px 0;color:var(--muted)">Lets me answer any question with live Google Search results — prices, news, gold, petrol, anything. Get a free key at <b>aistudio.google.com/apikey</b> and paste it here. The key stays on this phone. Only your question is sent to Google — never your sales, udhar or customer data. Google may limit free use.</div>'
    +'<input id="askKey" type="password" placeholder="Paste Gemini API key" value="'+esc(aiKey())+'" autocomplete="off"><input id="askMod" type="text" placeholder="Model" value="'+esc(aiModel())+'" autocomplete="off"><div style="color:var(--muted)">Model name can change over time — if answers stop, update it here.</div>'
-   +'<button type="button" onclick="askCfgSave()">Save</button><button type="button" class="ghost" onclick="askCfgClear()">Remove key</button>';c.style.display='block'};
-window.askCfgSave=function(){var k=$('askKey').value.trim(),m=$('askMod').value.trim()||'gemini-3.5-flash';if(k)localStorage.setItem('udhar_ai_key',k);else localStorage.removeItem('udhar_ai_key');localStorage.setItem('udhar_ai_model',m);$('askCfg').style.display='none';add('b',k?'✅ Online AI is ON. Ask me anything — for example <b>gold price today</b> or <b>weather in Madurai</b>.':'Online AI is OFF.')};
+   +'<label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0"><input id="askFacts" type="checkbox" style="width:auto;margin:3px 0 0"'+(aiFacts()?' checked':'')+'><span>Let the AI see a <b>summary of my shop numbers</b> (totals only — no customer names or phone numbers) so it can answer shop questions I have not taught. Off by default.</span></label>'+'<button type="button" onclick="askCfgSave()">Save</button><button type="button" class="ghost" onclick="askCfgClear()">Remove key</button>'+'<hr style="border:0;border-top:1px solid var(--card-border);margin:10px 0"><b>🧠 Questions I could not understand</b> ('+(function(){try{return JSON.parse(localStorage.getItem('udhar_unmatched')||'[]').length}catch(e){return 0}})()+')<div style="color:var(--muted);margin:4px 0">Copy this list and send it to your app builder so the app can learn those sentences.</div><button type="button" onclick="askCopyUnm()">📋 Copy list</button><button type="button" class="ghost" onclick="localStorage.removeItem(\'udhar_unmatched\');askCfg();askCfg()">Clear</button>';c.style.display='block'};
+window.askCopyUnm=function(){var t='';try{t=JSON.parse(localStorage.getItem('udhar_unmatched')||'[]').join('\n')}catch(e){}var ta=document.createElement('textarea');ta.value=t||'(nothing yet)';document.body.appendChild(ta);ta.select();var ok=false;try{ok=document.execCommand('copy')}catch(e){}document.body.removeChild(ta);showBanner(ok?'📋 Copied '+(t?t.split('\n').length:0)+' questions':'Could not copy')};
+window.askCfgSave=function(){localStorage.setItem('udhar_ai_facts',$('askFacts')&&$('askFacts').checked?'1':'0');var k=$('askKey').value.trim(),m=$('askMod').value.trim()||'gemini-3.5-flash';if(k)localStorage.setItem('udhar_ai_key',k);else localStorage.removeItem('udhar_ai_key');localStorage.setItem('udhar_ai_model',m);$('askCfg').style.display='none';add('b',k?'✅ Online AI is ON. Ask me anything — for example <b>gold price today</b> or <b>weather in Madurai</b>.':'Online AI is OFF.')};
 window.askCfgClear=function(){localStorage.removeItem('udhar_ai_key');AIH=[];$('askCfg').style.display='none';add('b','Online AI key removed from this phone.')};
 window.askSend=function(){var i=$('askIn'),t=i.value.trim();if(!t)return;i.value='';add('u',esc(t));var h=null;
   if(!isWorld(t.toLowerCase())){try{h=answer(t)}catch(e){console.error(e);h='Sorry, I could not calculate that. Please check your entries and try again.'}}
   if(h!==null&&h!==undefined){add('b',h);return}
-  if(/\b(my|our)\b|shop|sales|profit|udhar|expense|customer|salary|stock|purchase|budget|spend|sale\b|vyaparam|laabam|selavu/.test(t.toLowerCase())||(!aiKey()&&!isWorld(t.toLowerCase()))){add('b',aClarify(t.toLowerCase()));return}
+  if(/\b(my|our)\b|shop|sales|profit|udhar|expense|customer|salary|stock|purchase|budget|spend|sale\b|vyaparam|laabam|selavu/.test(t.toLowerCase())||(!aiKey()&&!isWorld(t.toLowerCase()))||(aiKey()&&aiFacts()&&!isWorld(t.toLowerCase()))){
+    if(aiKey()&&aiFacts()&&!isWorld(t.toLowerCase())){var bx=document.createElement('div');bx.className='askB b';bx.innerHTML='🤖 Thinking…';$('askMsgs').appendChild(bx);$('askMsgs').scrollTop=$('askMsgs').scrollHeight;
+      liveFacts(t).then(function(r){if(r){bx.innerHTML=r}else{bx.innerHTML=aClarify(t.toLowerCase());logUnm(t)}},function(e){bx.innerHTML=aClarify(t.toLowerCase());logUnm(t)});return}
+    add('b',aClarify(t.toLowerCase()));logUnm(t);return}
   live(t)};
 window.askOpenCust=function(id){askClose();try{var d=$('dashView');if(d&&d.classList.contains('hidden'))return;openCustomer(id)}catch(e){}};
 
