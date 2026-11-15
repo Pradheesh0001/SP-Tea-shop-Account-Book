@@ -488,6 +488,7 @@ window.addEventListener('error', function(e){
       <button id="tab-customers-btn" onclick="showCustomersTab()" class="ghost" style="margin-top:0;">📒 Udhar Ledger</button>
       <button id="tab-personal-btn" onclick="showPersonalTab()" class="ghost" style="margin-top:0;">🧍 Personal Finance</button>
       <button id="tab-purchase-btn" onclick="showPurchaseTab()" class="ghost" style="margin-top:0;">🛒 Procurement</button>
+      <button id="tab-staff-btn" onclick="showStaffTab()" class="ghost" style="margin-top:0;">👷 Staff Attendance</button>
       <button class="ghost sideNavSettings" onclick="showSettings()">⚙️ Settings</button>
     </nav>
     <div class="mainContent">
@@ -608,6 +609,8 @@ window.addEventListener('error', function(e){
         <input id="ds-online" type="number" min="0">
         <label>Own Money Added — auto-fetched from Shop Expenses tagged "🤲 Own Money" on this date</label>
         <input id="ds-ownmoney" type="number" disabled style="opacity:0.7;">
+        <label id="ds-staffsal-lab">Staff Salary — auto-filled from Staff Attendance</label>
+        <input id="ds-staffsal" type="number" disabled style="opacity:0.7;">
         <label>Actual Closing Cash counted (₹) — optional</label>
         <input id="ds-closing" type="number" min="0">
         <button style="background:var(--brand);" onclick="saveDailySales()">💾 Save Day</button>
@@ -682,6 +685,7 @@ window.addEventListener('error', function(e){
     </div>
 
     <!-- PERSONAL EXPENSES TAB -->
+    <div id="staffTab" class="hidden"></div>
     <div id="personalTab" class="hidden">
       <div class="card" style="background:rgba(31,111,235,0.08);">
         <div style="font-size:0.8rem; color:var(--muted);">🤲 In Hand Online Profit <span id="pe-sinceLabel">(reference, from Dashboard)</span></div>
@@ -1427,6 +1431,7 @@ async function pullFromDrive(quick){
 }
 
 function mergeRemoteData(remote){
+  try{ if(typeof mergeStaffRemote==='function') mergeStaffRemote(remote); }catch(e){}
   { const lu = loadUsers(), mu = Object.assign({}, lu);
     Object.keys(remote.users||{}).forEach(k=>{ const r = remote.users[k], l = lu[k]; if(!l || (r.updatedAt||0) > (l.updatedAt||0)) mu[k] = r; });
     saveUsers(mu); }
@@ -1555,7 +1560,7 @@ function mergeRemoteData(remote){
 }
 
 function buildPayload(){
-  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory(), deletedPoIds: loadPoDeleted(), deletedTxnIds: loadTxnDeleted(), deletedCustomerIds: loadCustDeleted(), deletedCycleIds: loadCycleDeleted(), peBudgets: loadPeBudgets(), upi: loadUpi(), forecastCfg: loadFcCfg(), events: loadFcEvents(), deletedEventIds: loadFcEvtDeleted() };
+  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory(), deletedPoIds: loadPoDeleted(), deletedTxnIds: loadTxnDeleted(), deletedCustomerIds: loadCustDeleted(), deletedCycleIds: loadCycleDeleted(), peBudgets: loadPeBudgets(), upi: loadUpi(), forecastCfg: loadFcCfg(), events: loadFcEvents(), deletedEventIds: loadFcEvtDeleted(), staff: (typeof loadStaff==='function'?loadStaff():[]), attendance: (typeof loadAtt==='function'?loadAtt():{}) };
 }
 let syncDirty = false, syncBusy = false;
 async function syncToDrive(){
@@ -1618,6 +1623,7 @@ function refreshCurrentView(){
   else if(!document.getElementById('personalTab').classList.contains('hidden')){ renderPersonalTab(); }
   else if(!document.getElementById('purchaseTab').classList.contains('hidden')){ renderPurchaseList(); renderPlTrash(); renderPoHistory(); }
   else if(!document.getElementById('machineTab').classList.contains('hidden')){ mmUpdate(); }
+  else if(!document.getElementById('staffTab').classList.contains('hidden')){ if(typeof renderStaffTab==='function') renderStaffTab(); }
   else if(!document.getElementById('forecastTab').classList.contains('hidden')){ fcRenderAll(); }
 }
 
@@ -1732,7 +1738,7 @@ function showDashboard(){
   showMachineTab();
 }
 
-const TABS = ['machine','dashboard','forecast','sales','expenses','customers','personal','purchase'];
+const TABS = ['machine','dashboard','forecast','sales','expenses','customers','personal','purchase','staff'];
 function activateTab(name){
   TABS.forEach(t=>{
     const panel = document.getElementById(t+'Tab');
@@ -7674,7 +7680,7 @@ document.querySelectorAll('label').forEach(function(l){
 (function(){
 var $=function(i){return document.getElementById(i)},LS=localStorage;
 var NAV=[['machine','🏠','Home','showMachineTab'],['dashboard','📊','Analytics','showDashboardTab'],['customers','📒','Ledger','showCustomersTab'],['sales','💵','Sales','showSalesTab']];
-var MORE=[['🔮 Demand Forecast','showForecastTab'],['💸 Shop Expenses','showExpensesTab'],['🧍 Personal Finance','showPersonalTab'],['🛒 Procurement','showPurchaseTab']];
+var MORE=[['🔮 Demand Forecast','showForecastTab'],['💸 Shop Expenses','showExpensesTab'],['🧍 Personal Finance','showPersonalTab'],['🛒 Procurement','showPurchaseTab'],['👷 Staff Attendance','showStaffTab']];
 function nav(){var h='';NAV.forEach(function(n){h+='<button id="bn-'+n[0]+'" onclick="enhTab(\''+n[3]+'\')"><b>'+n[1]+'</b>'+n[2]+'</button>'});
 h+='<button id="bn-more" onclick="enhMore()"><b>☰</b>More</button>';$('bnav').innerHTML=h}
 function mark(){var d=$('dashView'),ov=!d||d.classList.contains('hidden'),any=false;NAV.forEach(function(n){var p=$(n[0]+'Tab'),b=$('bn-'+n[0]),on=!ov&&p&&!p.classList.contains('hidden');if(b)b.classList.toggle('on',!!on);if(on)any=true});var m=$('bn-more');if(m)m.classList.toggle('on',!ov&&!any)}
@@ -8058,6 +8064,84 @@ function qtCard(){var h=document.getElementById('homeTodayCard');if(!h||!h.paren
 var _rhQ=window.renderHomeToday;if(_rhQ)window.renderHomeToday=function(){var r=_rhQ.apply(this,arguments);try{qtCard()}catch(e){console.error(e)}return r};
 </script>
 <script>
+/* ===== Staff attendance: tap Half day / Full day / Leave → salary auto-added to Daily Sales as Staff Salary, saved to Drive ===== */
+var STF_KEY='udhar_staff_v1',ATT_KEY='udhar_attendance_v1',stfDate=null;
+function loadStaff(){try{return jload(STF_KEY,'[]')}catch(e){return []}}
+function saveStaff(a){localStorage.setItem(STF_KEY,JSON.stringify(a))}
+function loadAtt(){try{return jload(ATT_KEY,'{}')}catch(e){return {}}}
+function saveAtt(o){localStorage.setItem(ATT_KEY,JSON.stringify(o))}
+function stfActive(){return loadStaff().filter(function(s){return s.active!==false})}
+function stfAmt(s,st){var v=Number(s.salary)||0;return st==='full'?Math.round(v):(st==='half'?Math.round(v/2):0)}
+function stfLabel(st){return st==='full'?'Full day':(st==='half'?'Half day':(st==='leave'?'Leave':'Not marked'))}
+function stfRec(date,id){var a=loadAtt();return a[date]&&a[date][id]&&a[date][id].s&&a[date][id].s!=='none'?a[date][id]:null}
+function stfExpId(id,date){return 'att_'+id+'_'+date}
+function stfSyncExpense(s,date,st,amt){
+  var id=stfExpId(s.id,date),ex=loadExpenses(),i=ex.findIndex(function(e){return e.id===id}),now=Date.now();
+  if(st==='full'||st==='half'){
+    var rec={id:id,date:date,category:STAFF_SALARY_CAT,amount:amt,note:'👷 '+s.name+' — '+stfLabel(st)+' (from Staff Attendance)',method:s.method||'cash',createdAt:i>-1?(ex[i].createdAt||now):now,updatedAt:now,att:1};
+    if(i>-1)ex[i]=rec;else ex.push(rec);saveExpenses(ex);
+  }else{
+    if(i>-1){ex.splice(i,1);saveExpenses(ex)}
+    var d=loadDeletedExpenseIds();d[id]=now;saveDeletedExpenseIds(d);
+  }}
+function stfMark(id,st){
+  var s=loadStaff().find(function(x){return x.id===id});if(!s)return;var date=stfDate||todayStr(),a=loadAtt(),cur=a[date]&&a[date][id]&&a[date][id].s;
+  if(cur===st)st='none';
+  var amt=stfAmt(s,st);a[date]=a[date]||{};a[date][id]={s:st,amt:amt,at:Date.now()};saveAtt(a);stfSyncExpense(s,date,st,amt);
+  try{showBanner(st==='none'?'↩️ '+s.name+' unmarked':'✅ '+s.name+' — '+stfLabel(st)+(amt?' · ₹'+amt+' salary added':''))}catch(e){}
+  renderStaffTab();stfSalesRefresh();afterDataChange()}
+function stfSalary(id,v){
+  var arr=loadStaff(),s=arr.find(function(x){return x.id===id});if(!s)return;v=Math.max(0,Math.round(Number(v)||0));s.salary=v;s.updatedAt=Date.now();saveStaff(arr);
+  var date=stfDate||todayStr(),r=stfRec(date,id);
+  if(r&&(r.s==='full'||r.s==='half')){var a=loadAtt(),amt=stfAmt(s,r.s);a[date][id]={s:r.s,amt:amt,at:Date.now()};saveAtt(a);stfSyncExpense(s,date,r.s,amt)}
+  try{showBanner('💾 '+s.name+' salary saved: ₹'+v+' per day')}catch(e){}renderStaffTab();stfSalesRefresh();afterDataChange()}
+function stfMethod(id,m){var arr=loadStaff(),s=arr.find(function(x){return x.id===id});if(!s)return;s.method=m;s.updatedAt=Date.now();saveStaff(arr);afterDataChange();renderStaffTab()}
+function stfAdd(){
+  var n=(document.getElementById('stf-name').value||'').trim(),v=Math.round(Number(document.getElementById('stf-sal').value)||0),m=document.getElementById('stf-method').value||'cash';
+  if(!n){showBanner('Enter the staff name');return}if(v<=0){showBanner('Enter the fixed daily salary');return}
+  var arr=loadStaff();arr.push({id:uid(),name:n,salary:v,method:m,active:true,createdAt:Date.now(),updatedAt:Date.now()});saveStaff(arr);showBanner('✅ '+n+' added');renderStaffTab();afterDataChange()}
+function stfRename(id){var arr=loadStaff(),s=arr.find(function(x){return x.id===id});if(!s)return;var n=prompt('Staff name',s.name);if(n===null)return;n=n.trim();if(!n)return;s.name=n;s.updatedAt=Date.now();saveStaff(arr);renderStaffTab();afterDataChange()}
+function stfRemove(id){var arr=loadStaff(),s=arr.find(function(x){return x.id===id});if(!s)return;if(!confirm('Remove '+s.name+' from the staff list? Past attendance and salary entries stay.'))return;s.active=false;s.updatedAt=Date.now();saveStaff(arr);renderStaffTab();afterDataChange()}
+function stfShift(n){stfDate=addDays(stfDate||todayStr(),n);renderStaffTab()}
+function stfSetDate(v){if(v){stfDate=v;renderStaffTab()}}
+function stfMonthSummary(date){var ym=date.slice(0,7),a=loadAtt(),out={};Object.keys(a).forEach(function(d){if(d.slice(0,7)!==ym)return;Object.keys(a[d]).forEach(function(id){var r=a[d][id];if(!r||!r.s||r.s==='none')return;var o=out[id]=out[id]||{full:0,half:0,leave:0,amt:0};o[r.s]++;o.amt+=(+r.amt||0)})});return out}
+function stfDaySum(date){var a=loadAtt(),t=0,n=0;if(a[date])Object.keys(a[date]).forEach(function(id){var r=a[date][id];if(r&&(r.s==='full'||r.s==='half')){t+=(+r.amt||0);n++}});return {total:t,n:n}}
+function renderStaffTab(){
+  var el=document.getElementById('staffTab');if(!el)return;var date=stfDate||(stfDate=todayStr()),staff=stfActive(),ds=stfDaySum(date),ms=stfMonthSummary(date),mt=0,h='';
+  var dtl=parseISODate(date).toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  h+='<div class="card"><h3 style="margin-top:0">👷 Staff Attendance</h3><div style="display:flex;gap:8px;align-items:center"><button type="button" class="ghost" style="width:auto;margin:0;padding:8px 14px" onclick="stfShift(-1)">◀</button><input type="date" value="'+esc(date)+'" onchange="stfSetDate(this.value)" style="margin:0;flex:1"><button type="button" class="ghost" style="width:auto;margin:0;padding:8px 14px" onclick="stfShift(1)">▶</button></div>'
+   +'<div class="hint" style="text-align:left;margin:6px 0 0">'+esc(dtl)+(date===todayStr()?' · today':'')+'</div>'
+   +'<div style="margin-top:10px;padding:10px;border-radius:12px;background:var(--brand-light)"><div style="font-size:.8rem;color:var(--muted)">Staff salary for this day (auto-added to Daily Sales)</div><div style="font-size:1.5rem;font-weight:800">'+fmtMoney(ds.total)+'</div><div class="hint" style="text-align:left">'+ds.n+' staff worked · it is deducted from sales in profit</div></div></div>';
+  if(!staff.length)h+='<div class="card"><div style="font-size:.9rem">No staff yet. Add your first staff below, with the fixed salary for one full day.</div></div>';
+  staff.forEach(function(s){var r=stfRec(date,s.id),st=r?r.s:null,sid=eid(s.id),m=ms[s.id]||{full:0,half:0,leave:0,amt:0};mt+=m.amt;
+    var btn=function(k,lbl,col){var on=st===k;return '<button type="button" onclick="stfMark(\''+sid+'\',\''+k+'\')" style="flex:1;margin:0;padding:11px 4px;font-size:.88rem;font-weight:800;'+(on?'background:'+col+';color:#fff;border:2px solid '+col:'background:transparent;color:var(--fg,inherit);border:2px solid var(--card-border)')+'">'+lbl+'</button>'};
+    h+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:1.05rem">'+esc(s.name)+'</b><span><button type="button" class="ghost" style="width:auto;margin:0;padding:4px 10px;font-size:.8rem" onclick="stfRename(\''+sid+'\')">✏️</button> <button type="button" class="ghost" style="width:auto;margin:0;padding:4px 10px;font-size:.8rem" onclick="stfRemove(\''+sid+'\')">🗑</button></span></div>'
+     +'<label style="margin-top:8px">Fixed salary for one full day (₹)</label><input type="number" inputmode="numeric" min="0" value="'+(Number(s.salary)||0)+'" onchange="stfSalary(\''+sid+'\',this.value)">'
+     +'<label>Salary paid by</label><select onchange="stfMethod(\''+sid+'\',this.value)"><option value="cash"'+((s.method||'cash')==='cash'?' selected':'')+'>Cash</option><option value="online"'+(s.method==='online'?' selected':'')+'>Online</option><option value="ownmoney"'+(s.method==='ownmoney'?' selected':'')+'>Own money</option></select>'
+     +'<div style="display:flex;gap:8px;margin-top:10px">'+btn('half','🌓 Half day','#f59e0b')+btn('full','✅ Full day','#10b981')+btn('leave','🚫 Leave','#e11d48')+'</div>'
+     +'<div style="margin-top:8px;font-size:.9rem">'+(st?'<b>'+stfLabel(st)+'</b>'+(r.amt?' → <b>'+fmtMoney(r.amt)+'</b> added as Staff Salary':' → no salary'):'<span style="color:var(--muted)">Not marked — tap one above</span>')+'</div>'
+     +'<div class="hint" style="text-align:left;margin-top:4px">This month: '+m.full+' full · '+m.half+' half · '+m.leave+' leave = <b>'+fmtMoney(m.amt)+'</b></div></div>'});
+  if(staff.length)h+='<div class="card" style="background:var(--brand-light)"><b>This month — total staff salary: '+fmtMoney(mt)+'</b></div>';
+  h+='<div class="card"><h3 style="margin-top:0">➕ Add staff</h3><label>Name</label><input id="stf-name" placeholder="e.g. Raju"><label>Fixed salary for one full day (₹)</label><input id="stf-sal" type="number" inputmode="numeric" min="0" placeholder="e.g. 600"><label>Salary paid by</label><select id="stf-method"><option value="cash">Cash</option><option value="online">Online</option><option value="ownmoney">Own money</option></select><button type="button" style="background:var(--brand)" onclick="stfAdd()">➕ Add staff</button>'
+   +'<div class="hint" style="text-align:left;margin-top:8px">Full day = full salary · Half day = half · Leave = nothing. Everything saves on this phone and syncs to your Google Drive when connected.</div></div>';
+  el.innerHTML=h}
+function showStaffTab(){activateTab('staff');renderStaffTab()}
+/* Daily Sales: auto-filled staff salary line */
+function stfSalesRefresh(){var inp=document.getElementById('ds-staffsal'),dt=document.getElementById('ds-date');if(!inp)return;var d=(dt&&dt.value)||todayStr(),t=0;try{loadExpenses().forEach(function(e){if(e.date===d&&e.category===STAFF_SALARY_CAT)t+=(+e.amount||0)})}catch(e){}inp.value=t||'';
+  var ds=stfDaySum(d),lab=document.getElementById('ds-staffsal-lab');if(lab)lab.textContent='Staff Salary — auto-filled from Staff Attendance'+(ds.n?' ('+ds.n+' staff)':'')+' · deducted from total sales'}
+var _ldsf=window.loadDailySalesForm;if(_ldsf)window.loadDailySalesForm=function(){var r=_ldsf.apply(this,arguments);try{stfSalesRefresh()}catch(e){}return r};
+/* Drive sync merge */
+function mergeStaffRemote(remote){
+  if(Array.isArray(remote.staff)){var m={};loadStaff().forEach(function(s){m[s.id]=s});remote.staff.forEach(function(s){var ex=m[s.id];if(!ex||(s.updatedAt||0)>(ex.updatedAt||0))m[s.id]=s});saveStaff(Object.keys(m).map(function(k){return m[k]}))}
+  if(remote.attendance&&typeof remote.attendance==='object'){var a=loadAtt();Object.keys(remote.attendance).forEach(function(d){Object.keys(remote.attendance[d]).forEach(function(id){var r=remote.attendance[d][id];a[d]=a[d]||{};var ex=a[d][id];if(!ex||(r.at||0)>(ex.at||0))a[d][id]=r})});saveAtt(a)}}
+/* Ask My Shop helper (read-only) */
+function stfSummaryHtml(p){
+  var staff=loadStaff(),a=loadAtt(),rows=[],one=p.f===p.t;if(!staff.length)return null;
+  if(one){var t=0;staff.filter(function(s){return s.active!==false||stfRec(p.f,s.id)}).forEach(function(s){var r=stfRec(p.f,s.id);if(r){t+=(+r.amt||0)}rows.push([s.name,r?stfLabel(r.s)+(r.amt?' · '+fmtMoney(r.amt):''):'Not marked'])});return {total:t,rows:rows,one:true}}
+  var tot={};Object.keys(a).forEach(function(d){if(d<p.f||d>p.t)return;Object.keys(a[d]).forEach(function(id){var r=a[d][id];if(!r||!r.s||r.s==='none')return;var o=tot[id]=tot[id]||{full:0,half:0,leave:0,amt:0};o[r.s]++;o.amt+=(+r.amt||0)})});
+  var t2=0;staff.forEach(function(s){var o=tot[s.id];if(o){t2+=o.amt;rows.push([s.name,o.full+' full · '+o.half+' half · '+o.leave+' leave · '+fmtMoney(o.amt)])}});return {total:t2,rows:rows,one:false}}
+</script>
+<script>
 /* ===== Budget planner: weekly / monthly spending plan, bulk-item reserve, saving advice ===== */
 function budParseAmt(q){var t=q.replace(/\b\d{4}-\d{2}-\d{2}\b/g,' ').replace(/\b\d{1,2}[\/\-]\d{1,2}([\/\-]\d{2,4})?\b/g,' ').replace(/\b\d{1,2}(st|nd|rd|th)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/g,' '),best=null,re=/(\d[\d,]*(?:\.\d+)?)\s*(k|thousand|aayiram|ஆயிரம்|lakh|lac|லட்சம்)?/g,m;
   while((m=re.exec(t))){var v=parseFloat(m[1].replace(/,/g,''));if(!(v>0))continue;var u=(m[2]||'').toLowerCase();if(u==='k'||u==='thousand'||u==='aayiram'||u==='ஆயிரம்')v*=1000;else if(u)v*=100000;if(v>=100&&(best===null||(m[2]?true:v>best)))best=v;}
@@ -8424,6 +8508,9 @@ function aBudget(q,p){var per=/next week|adutha vaaram|அடுத்த வா
   else if(need>0)h+='<div style="font-size:.84rem;margin-top:4px">'+(cum>=need?'Together these can save about '+M(cum)+' — enough to reach your budget.':'Together these save about '+M(cum)+', still '+M(need-cum)+' short — you may need to raise sales or lower the budget target.')+'</div>';
   h+='<div class="askSub" style="margin-top:10px">📈 Profit check</div>'+row('Expected sales (open days left)',M(P.sumS))+row('Expected profit if you follow this plan',M(P.profit),P.profit>=P.target*P.nOpen?'var(--paid)':'var(--owe)')+row('Your minimum target',M(P.target*P.nOpen));
   return h+chip(isM?'Budget this month 30000':'Budget this week 8000')+chip('How to save money this month')+chip('What to buy today and tomorrow?')}
+function aStaff(p){var S=stfSummaryHtml(p);if(!S)return tl(CUR_ORIG,'No staff added yet. Open More → 👷 Staff Attendance and add your staff with their daily salary.','Staff innum add pannala. More → 👷 Staff Attendance-la staff, daily salary add pannunga.');
+  var h=big(M(S.total),'Staff salary · '+lab(p.f,p.t));if(!S.rows.length)return h+'No attendance marked for this period yet.';
+  return h+S.rows.map(function(r){return row(esc(r[0]),esc(r[1]))}).join('')+'<div class="hint" style="text-align:left;margin-top:6px">This salary is already added to Daily Sales as Staff Salary. Mark attendance in More → 👷 Staff Attendance.</div>'}
 function aHelp(t){return (t===false?'':'<b>Ask me anything about your shop</b> — English, Tamil or Tanglish.')+['Today sales evlo?','Yesterday profit','Tomorrow shop leave','Last week expenses','Raja udhar evlo?','Milk expense this month','Sugar price','Who owes the most?','Cash in hand','Compare this week','Month end projection','Business growth tips','Diwali sales effect','What to buy today and tomorrow?','Why profit low yesterday?','So what should I do?','Tomorrow shop leave','Recover today profit','Budget this week 8000'].map(chip).join('')}
 
 function answer(raw,_noLearn){CUR_ORIG=raw.toLowerCase().trim();var q=canonStr(CUR_ORIG),p=period(q),td=todayStr(),has=function(r){return r.test(q)};
@@ -8438,6 +8525,7 @@ function answer(raw,_noLearn){CUR_ORIG=raw.toLowerCase().trim();var q=canonStr(C
   if(has(/month(ly)? (summary|report|total)|monthly|this month report/)&&!p)return aMonth({f:td.slice(0,8)+'01',t:td});
 
   if(has(/^(help|\?|what can you do|examples?)\b/))return aHelp();
+  if(has(/\b(staff|employee|worker|workers|attendance)\b|ஊழியர்|பணியாளர்/)&&!has(/shop leave|shop closed|kadai leave|undo leave/))return aStaff(p||{f:td,t:td});
   if(has(/\b(leave|leaves|closed|close|closing|off)\b|லீவு|விடுமுறை|kadai (illa|moodi)|moodiruk|not (open|opening)/)&&(has(/shop|kadai|store|கடை|namma|nam |we |our |closed|undo leave|cancel/)||p)&&!has(/festival list|holiday list|next festival|\bwhy\b|salary|leave (balance|policy)/))return aLeave(q,p);
   var fc=has(/tomorrow|naalai|நாளை|forecast|predict|next day|expected sale/),growth=has(/growth|grow|health|score|improve|tips|advice|suggest|valarchi|வளர்ச்சி|ஆலோசனை|how am i doing|how is my business/),
    cmp=has(/compar|\bvs\b|versus|\bthan\b|ottu|ஒப்பிட/),proj=has(/project|month.?end|end of (the )?month|on track|forecast for the month/),
