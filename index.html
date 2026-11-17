@@ -489,6 +489,7 @@ window.addEventListener('error', function(e){
       <button id="tab-personal-btn" onclick="showPersonalTab()" class="ghost" style="margin-top:0;">🧍 Personal Finance</button>
       <button id="tab-purchase-btn" onclick="showPurchaseTab()" class="ghost" style="margin-top:0;">🛒 Procurement</button>
       <button id="tab-staff-btn" onclick="showStaffTab()" class="ghost" style="margin-top:0;">👷 Staff Attendance</button>
+      <button id="tab-admin-btn" onclick="showAdminTab()" class="ghost" style="margin-top:0;">🔐 Admin</button>
       <button class="ghost sideNavSettings" onclick="showSettings()">⚙️ Settings</button>
     </nav>
     <div class="mainContent">
@@ -686,6 +687,7 @@ window.addEventListener('error', function(e){
 
     <!-- PERSONAL EXPENSES TAB -->
     <div id="staffTab" class="hidden"></div>
+    <div id="adminTab" class="hidden"></div>
     <div id="personalTab" class="hidden">
       <div class="card" style="background:rgba(31,111,235,0.08);">
         <div style="font-size:0.8rem; color:var(--muted);">🤲 In Hand Online Profit <span id="pe-sinceLabel">(reference, from Dashboard)</span></div>
@@ -1560,7 +1562,7 @@ function mergeRemoteData(remote){
 }
 
 function buildPayload(){
-  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory(), deletedPoIds: loadPoDeleted(), deletedTxnIds: loadTxnDeleted(), deletedCustomerIds: loadCustDeleted(), deletedCycleIds: loadCycleDeleted(), peBudgets: loadPeBudgets(), upi: loadUpi(), forecastCfg: loadFcCfg(), events: loadFcEvents(), deletedEventIds: loadFcEvtDeleted(), staff: (typeof loadStaff==='function'?loadStaff():[]), attendance: (typeof loadAtt==='function'?loadAtt():{}) };
+  return { exportedAt: new Date().toISOString(), users: loadUsers(), customers: loadCustomers(), transactions: loadTxns(), expenses: loadExpenses(), deletedExpenseIds: loadDeletedExpenseIds(), customCategories: loadCustomCats(), dailySales: loadDailySalesAll(), personalExpenses: loadPersonalExpenses(), deletedPersonalExpenseIds: loadPeDeletedIds(), personalCategories: loadPeCustomCats(), purchaseList: loadPurchaseList(), deletedPurchaseIds: loadPlDeletedIds(), purchaseTrash: loadPlTrash(), deletedTrashIds: loadPlTrashDeleted(), peReset: loadPeReset(), peCycles: loadPeCycles(), poHistory: loadPoHistory(), deletedPoIds: loadPoDeleted(), deletedTxnIds: loadTxnDeleted(), deletedCustomerIds: loadCustDeleted(), deletedCycleIds: loadCycleDeleted(), peBudgets: loadPeBudgets(), upi: loadUpi(), forecastCfg: loadFcCfg(), events: loadFcEvents(), deletedEventIds: loadFcEvtDeleted(), staff: (typeof loadStaff==='function'?loadStaff():[]), attendance: (typeof loadAtt==='function'?loadAtt():{}), staffLogins: (typeof admLoad==='function'?admLoad():{}) };
 }
 let syncDirty = false, syncBusy = false;
 async function syncToDrive(){
@@ -1669,6 +1671,7 @@ function setErr(id,msg){ const el=document.getElementById(id); el.textContent=ms
 
 function doRegister(){
   setErr('regError','');
+  if(Object.keys(loadUsers()).length>0){ setErr('regError','Registration is closed. Ask the admin to create your login.'); return; }
   const raw = document.getElementById('regUser').value.trim();
   const pass = document.getElementById('regPass').value;
   const user = normUser(raw);
@@ -1738,7 +1741,7 @@ function showDashboard(){
   showMachineTab();
 }
 
-const TABS = ['machine','dashboard','forecast','sales','expenses','customers','personal','purchase','staff'];
+const TABS = ['machine','dashboard','forecast','sales','expenses','customers','personal','purchase','staff','admin'];
 function activateTab(name){
   TABS.forEach(t=>{
     const panel = document.getElementById(t+'Tab');
@@ -7680,7 +7683,7 @@ document.querySelectorAll('label').forEach(function(l){
 (function(){
 var $=function(i){return document.getElementById(i)},LS=localStorage;
 var NAV=[['machine','🏠','Home','showMachineTab'],['dashboard','📊','Analytics','showDashboardTab'],['customers','📒','Ledger','showCustomersTab'],['sales','💵','Sales','showSalesTab']];
-var MORE=[['🔮 Demand Forecast','showForecastTab'],['💸 Shop Expenses','showExpensesTab'],['🧍 Personal Finance','showPersonalTab'],['🛒 Procurement','showPurchaseTab'],['👷 Staff Attendance','showStaffTab']];
+var MORE=[['🔮 Demand Forecast','showForecastTab'],['💸 Shop Expenses','showExpensesTab'],['🧍 Personal Finance','showPersonalTab'],['🛒 Procurement','showPurchaseTab'],['👷 Staff Attendance','showStaffTab'],['🔐 Admin','showAdminTab']];
 function nav(){var h='';NAV.forEach(function(n){h+='<button id="bn-'+n[0]+'" onclick="enhTab(\''+n[3]+'\')"><b>'+n[1]+'</b>'+n[2]+'</button>'});
 h+='<button id="bn-more" onclick="enhMore()"><b>☰</b>More</button>';$('bnav').innerHTML=h}
 function mark(){var d=$('dashView'),ov=!d||d.classList.contains('hidden'),any=false;NAV.forEach(function(n){var p=$(n[0]+'Tab'),b=$('bn-'+n[0]),on=!ov&&p&&!p.classList.contains('hidden');if(b)b.classList.toggle('on',!!on);if(on)any=true});var m=$('bn-more');if(m)m.classList.toggle('on',!ov&&!any)}
@@ -8222,6 +8225,7 @@ function stfSalesRefresh(){var inp=document.getElementById('ds-staffsal'),dt=doc
 var _ldsf=window.loadDailySalesForm;if(_ldsf)window.loadDailySalesForm=function(){var r=_ldsf.apply(this,arguments);try{stfSalesRefresh()}catch(e){}return r};
 /* Drive sync merge */
 function mergeStaffRemote(remote){
+  try{if(remote.staffLogins&&typeof remote.staffLogins==='object'&&typeof admLoad==='function'){var l=admLoad();Object.keys(remote.staffLogins).forEach(function(k){var r=remote.staffLogins[k],e=l[k];if(!e||(r.updatedAt||0)>(e.updatedAt||0))l[k]=r});admSave(l)}}catch(e){}
   if(Array.isArray(remote.staff)){var m={};loadStaff().forEach(function(s){m[s.id]=s});remote.staff.forEach(function(s){var ex=m[s.id];if(!ex||(s.updatedAt||0)>(ex.updatedAt||0))m[s.id]=s});saveStaff(Object.keys(m).map(function(k){return m[k]}))}
   if(remote.attendance&&typeof remote.attendance==='object'){var a=loadAtt();Object.keys(remote.attendance).forEach(function(d){Object.keys(remote.attendance[d]).forEach(function(id){var r=remote.attendance[d][id];a[d]=a[d]||{};var ex=a[d][id];if(!ex||(r.at||0)>(ex.at||0))a[d][id]=r})});saveAtt(a)}}
 /* Ask My Shop helper (read-only) */
@@ -8754,6 +8758,159 @@ function hCard(){var h=$('homeTodayCard');if(!h)return;var e=$('growthCard');if(
   e.innerHTML='<div style="display:flex;gap:12px;align-items:center"><div class="gcRing" style="background:conic-gradient('+G[1]+' '+r.score*3.6+'deg,var(--brand-light) 0)"><i>'+r.score+'</i></div><div style="flex:1;min-width:0"><div style="font-weight:800">'+G[2]+' Business health: '+G[0]+'</div><div style="font-size:.8rem;color:var(--muted);margin-top:2px">'+top+'</div></div></div>'
    +'<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="ghost" style="margin:0" onclick="askOpen(\'Business growth\')">📊 Growth details</button><button type="button" style="margin:0" onclick="askOpen()">🧠 Ask My Shop</button></div>'}
 var _rh=window.renderHomeToday;if(_rh)window.renderHomeToday=function(){var r=_rh.apply(this,arguments);try{hCard()}catch(e){console.error(e)}return r};
+})();
+</script>
+<script>
+/* ===== Admin section: admin password + staff logins. Staff see only the Udhar Ledger. ===== */
+(function(){
+var $=function(i){return document.getElementById(i)},LS=localStorage,SL_KEY='udhar_staff_logins_v1';
+var STAFF_TABS_BLOCKED=['showMachineTab','showDashboardTab','showForecastTab','showSalesTab','showExpensesTab','showPersonalTab','showPurchaseTab','showStaffTab','showAdminTab','showSettings'];
+function isStaff(){return LS.getItem('udhar_role')==='staff'}
+window.admLoad=function(){try{return JSON.parse(LS.getItem(SL_KEY)||'{}')||{}}catch(e){return {}}};
+window.admSave=function(o){LS.setItem(SL_KEY,JSON.stringify(o))};
+function admList(){var a=admLoad();return Object.keys(a).map(function(k){return a[k]}).filter(function(r){return r&&!r.deleted}).sort(function(x,y){return String(x.name||'').localeCompare(String(y.name||''))})}
+function val(id){var e=$(id);return e?e.value:''}
+function newSalt(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
+
+/* ---- styles ---- */
+var css=document.createElement('style');css.textContent=
+'.adm-hero{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border-radius:22px;padding:18px;margin-bottom:14px;box-shadow:0 12px 28px -8px rgba(79,70,229,.45)}'
++'.adm-hero h3{margin:0;font-size:1.1rem;font-weight:800}.adm-hero .sub{font-size:.78rem;opacity:.88;margin-top:3px;line-height:1.45}'
++'.adm-box{background:var(--card);border:1px solid var(--card-border);border-radius:20px;padding:18px;margin-bottom:14px;box-shadow:var(--shadow-md)}'
++'.adm-box h4{margin:0 0 4px;font-size:1rem;font-weight:800}.adm-sub{font-size:.76rem;color:var(--muted);margin-bottom:12px;line-height:1.45}'
++'.adm-id{display:flex;align-items:center;gap:12px;padding:12px;border-radius:14px;background:var(--brand-light);margin-bottom:14px}'
++'.adm-av{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;background:var(--brand);flex:none}'
++'.adm-row{border:1px solid var(--card-border);border-radius:16px;padding:12px;margin-bottom:10px}.adm-row .top{display:flex;align-items:center;gap:10px}'
++'.adm-row .nm{font-weight:800;font-size:.98rem;line-height:1.2}.adm-row .meta{font-size:.74rem;color:var(--muted);margin-top:2px;word-break:break-all}'
++'.adm-badge{margin-left:auto;font-size:.68rem;font-weight:800;padding:4px 10px;border-radius:99px;white-space:nowrap}.adm-on{background:#d1fae5;color:#047857}.adm-off{background:#ffe4e6;color:#be123c}'
++'.adm-acts{display:flex;gap:6px;margin-top:10px}.adm-acts button{margin:0;padding:9px 6px;font-size:.76rem;flex:1;width:auto}'
++'.adm-note{font-size:.74rem;color:var(--muted);line-height:1.5;margin-top:10px}'
++'.staffMode #tab-machine-btn,.staffMode #tab-dashboard-btn,.staffMode #tab-forecast-btn,.staffMode #tab-sales-btn,.staffMode #tab-expenses-btn,.staffMode #tab-personal-btn,.staffMode #tab-purchase-btn,.staffMode #tab-staff-btn,.staffMode #tab-admin-btn,.staffMode .sideNavSettings,.staffMode #bn-machine,.staffMode #bn-dashboard,.staffMode #bn-sales,.staffMode #bn-more,.staffMode #askFab,.staffMode #askPanel,.staffMode .stf-adm-only{display:none!important}';
+document.head.appendChild(css);
+
+/* ---- role: staff can only see the Udhar Ledger ---- */
+function applyRole(){
+  var st=isStaff();document.body.classList.toggle('staffMode',st);
+  var d=$('dashDriveStatus');if(d&&d.parentNode)d.parentNode.classList.toggle('stf-adm-only',st);
+  document.querySelectorAll('#customersTab button[onclick*="showSettings"]').forEach(function(b){b.classList.toggle('stf-adm-only',st)});
+  var w=$('whoami');if(w&&st&&!/Staff/.test(w.textContent))w.textContent=w.textContent+' · Staff';
+}
+STAFF_TABS_BLOCKED.forEach(function(f){var o=window[f];if(typeof o!=='function')return;
+  window[f]=function(){if(isStaff()){try{return window.showCustomersTab()}catch(e){return}}return o.apply(this,arguments)}});
+
+/* ---- login: admin first, then staff ---- */
+var _login=window.doLogin;
+window.doLogin=function(){
+  var raw=val('loginUser').trim(),pass=val('loginPass'),id=normUser(raw),users=loadUsers();
+  if(!id||!pass)return _login.apply(this,arguments);
+  if(users[id]){
+    var u=users[id];if(u.hash&&u.hash===hashPass(pass,u.salt||'')){LS.removeItem('udhar_role');document.body.classList.remove('staffMode')}
+    return _login.apply(this,arguments);
+  }
+  var rec=admLoad()[id];
+  if(!rec||rec.deleted){setErr('loginError','No account found. Ask the admin to create your login.');return}
+  if(rec.active===false){setErr('loginError','This login is disabled. Ask the admin.');return}
+  if(!rec.hash||rec.hash!==hashPass(pass,rec.salt||'')){setErr('loginError','Wrong password.');return}
+  setErr('loginError','');
+  currentUser=id;currentDisplayName=rec.name||raw;
+  LS.setItem('udhar_current',id);LS.setItem('udhar_current_display',currentDisplayName);LS.setItem('udhar_role','staff');
+  document.body.classList.add('staffMode');enterApp();applyRole();
+};
+var _logout=window.logout;
+window.logout=function(){LS.removeItem('udhar_role');document.body.classList.remove('staffMode');var r=_logout.apply(this,arguments);authLinks();return r};
+var _showLogin=window.showLogin;
+window.showLogin=function(){var r=_showLogin.apply(this,arguments);authLinks();return r};
+function authLinks(){
+  var p=document.querySelector('#loginForm p.hint');if(!p)return;
+  var has=Object.keys(loadUsers()).length>0;
+  p.innerHTML=has?'<button class="link" style="display:inline;width:auto;" onclick="showForgot()">Forgot password?</button><br><span style="font-size:.74rem">Staff: your login is created by the admin.</span>'
+   :'New here? <button class="link" style="display:inline;width:auto;" onclick="showRegister()">Register</button> &nbsp;·&nbsp; <button class="link" style="display:inline;width:auto;" onclick="showForgot()">Forgot password?</button>';
+}
+
+/* ---- Admin tab ---- */
+window.showAdminTab=function(){
+  if(isStaff()){window.showCustomersTab();return}
+  activateTab('admin');renderAdminTab();
+};
+function dt(ts){try{return new Date(ts).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}catch(e){return ''}}
+window.renderAdminTab=function(){
+  var el=$('adminTab');if(!el||isStaff())return;
+  var aid=currentUser||'',nm=currentDisplayName||aid,list=admList(),h='';
+  h+='<div class="adm-hero"><h3>🔐 Admin</h3><div class="sub">Manage the admin password and give each staff member their own login. Staff only see the Udhar Ledger. Profit, expenses, personal finance, attendance and settings stay hidden from them.</div></div>';
+  h+='<div class="adm-box"><h4>👤 Admin account</h4><div class="adm-sub">Your ID and password. You can see everything in the app.</div>'
+   +'<div class="adm-id"><div class="adm-av">'+esc((nm||'A').trim().charAt(0).toUpperCase())+'</div><div><div style="font-weight:800">'+esc(nm)+'</div><div style="font-size:.74rem;color:var(--muted)">Admin ID: '+esc(aid)+'</div></div></div>'
+   +'<label>Current password</label><input id="adm-cur" type="password" autocomplete="current-password">'
+   +'<label>New password</label><input id="adm-new" type="password" autocomplete="new-password" placeholder="min 4 characters">'
+   +'<label>Confirm new password</label><input id="adm-new2" type="password" autocomplete="new-password">'
+   +'<button type="button" style="background:var(--brand)" onclick="admChangePass()">🔑 Change admin password</button></div>';
+  h+='<div class="adm-box"><h4>👷 Register staff login</h4><div class="adm-sub">Create an ID and password for a staff member. They can log in with it on any phone.</div>'
+   +'<label>Staff name</label><input id="adm-sname" placeholder="e.g. Raju" autocomplete="off">'
+   +'<label>Staff login ID</label><input id="adm-sid" placeholder="e.g. raju01" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">'
+   +'<label>Staff password</label><input id="adm-spass" type="text" placeholder="min 4 characters" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">'
+   +'<button type="button" style="background:var(--paid)" onclick="admStaffAdd()">➕ Register staff</button></div>';
+  h+='<div class="adm-box"><h4>📋 Registered staff ('+list.length+')</h4><div class="adm-sub">Each staff name with their login ID.</div>';
+  if(!list.length)h+='<div class="hint" style="text-align:left">No staff logins yet. Register one above.</div>';
+  list.forEach(function(r){var on=r.active!==false,id=eid(r.id);
+    h+='<div class="adm-row"><div class="top"><div class="adm-av" style="background:'+(on?'var(--paid)':'var(--muted)')+'">'+esc((r.name||'?').trim().charAt(0).toUpperCase())+'</div>'
+     +'<div><div class="nm">'+esc(r.name||r.id)+'</div><div class="meta">ID: '+esc(r.id)+' · added '+esc(dt(r.createdAt))+'</div></div>'
+     +'<span class="adm-badge '+(on?'adm-on':'adm-off')+'">'+(on?'Active':'Disabled')+'</span></div>'
+     +'<div class="adm-acts"><button type="button" class="ghost" onclick="admStaffReset(\''+id+'\')">🔑 New password</button><button type="button" class="ghost" onclick="admStaffToggle(\''+id+'\')">'+(on?'⏸ Disable':'▶ Enable')+'</button><button type="button" class="ghost" style="color:var(--owe)" onclick="admStaffDel(\''+id+'\')">🗑 Remove</button></div></div>'});
+  h+='<div class="adm-note">Passwords are stored scrambled for safety, so they cannot be shown later. If a staff member forgets, tap “New password”. The list syncs to your Google Drive with the rest of the data.</div></div>';
+  el.innerHTML=h;
+};
+window.admChangePass=function(){
+  if(isStaff())return;
+  var cur=val('adm-cur'),nw=val('adm-new'),n2=val('adm-new2'),users=loadUsers(),rec=users[currentUser];
+  if(!rec||rec.hash!==hashPass(cur,rec.salt||'')){showBanner('⚠️ Current password is wrong');return}
+  if(nw.length<4){showBanner('New password needs at least 4 characters');return}
+  if(nw!==n2){showBanner('⚠️ New passwords do not match');return}
+  rec.salt=newSalt();rec.hash=hashPass(nw,rec.salt);rec.updatedAt=Date.now();users[currentUser]=rec;saveUsers(users);
+  showBanner('✅ Admin password changed');renderAdminTab();afterDataChange();
+};
+window.admStaffAdd=function(){
+  if(isStaff())return;
+  var name=val('adm-sname').trim(),raw=val('adm-sid').trim(),id=normUser(raw),pass=val('adm-spass');
+  if(!name){showBanner('Enter the staff name');return}
+  if(id.length<3){showBanner('Login ID needs at least 3 characters');return}
+  if(pass.length<4){showBanner('Password needs at least 4 characters');return}
+  if(loadUsers()[id]){showBanner('⚠️ That ID is the admin ID. Choose another');return}
+  var all=admLoad(),ex=all[id];
+  if(ex&&!ex.deleted){showBanner('⚠️ That staff ID already exists');return}
+  var salt=newSalt(),now=Date.now();
+  all[id]={id:id,name:name,salt:salt,hash:hashPass(pass,salt),active:true,createdAt:now,updatedAt:now};
+  admSave(all);showBanner('✅ '+name+' registered. ID: '+id);renderAdminTab();afterDataChange();
+};
+window.admStaffReset=function(id){
+  if(isStaff())return;var all=admLoad(),r=all[id];if(!r||r.deleted)return;
+  var p=prompt('New password for '+(r.name||id)+' (min 4 characters)');if(p===null)return;
+  if(p.length<4){showBanner('Password needs at least 4 characters');return}
+  r.salt=newSalt();r.hash=hashPass(p,r.salt);r.updatedAt=Date.now();all[id]=r;admSave(all);
+  showBanner('✅ New password set for '+(r.name||id));afterDataChange();
+};
+window.admStaffToggle=function(id){
+  if(isStaff())return;var all=admLoad(),r=all[id];if(!r||r.deleted)return;
+  r.active=(r.active===false);r.updatedAt=Date.now();all[id]=r;admSave(all);
+  showBanner(r.active?'▶ '+(r.name||id)+' enabled':'⏸ '+(r.name||id)+' disabled');renderAdminTab();afterDataChange();
+};
+window.admStaffDel=function(id){
+  if(isStaff())return;var all=admLoad(),r=all[id];if(!r||r.deleted)return;
+  if(!confirm('Remove login for '+(r.name||id)+'? They will not be able to log in.'))return;
+  all[id]={id:id,deleted:true,updatedAt:Date.now()};admSave(all);
+  showBanner('🗑 '+(r.name||id)+' removed');renderAdminTab();afterDataChange();
+};
+
+/* ---- restore a staff session after reload ---- */
+authLinks();
+(function(){
+  var p=new URLSearchParams(location.search);if(p.get('pa')&&p.get('am'))return;
+  if(LS.getItem('udhar_role')==='staff'){
+    var r=currentUser&&admLoad()[currentUser];
+    if(r&&!r.deleted&&r.active!==false){currentDisplayName=r.name||currentDisplayName;document.body.classList.add('staffMode');enterApp();applyRole()}
+    else{LS.removeItem('udhar_role');LS.removeItem('udhar_current');LS.removeItem('udhar_current_display');currentUser=null;document.body.classList.remove('staffMode')}
+  }else applyRole();
+})();
+/* a staff login removed/disabled by admin on another phone ends the session after sync */
+setInterval(function(){if(isStaff()){var r=admLoad()[currentUser];if(!r||r.deleted||r.active===false){alert('Your login was disabled by the admin.');logout()}}},30000);
 })();
 </script>
 </body>
