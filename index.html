@@ -8106,24 +8106,114 @@ function stfShift(n){stfDate=addDays(stfDate||todayStr(),n);renderStaffTab()}
 function stfSetDate(v){if(v){stfDate=v;renderStaffTab()}}
 function stfMonthSummary(date){var ym=date.slice(0,7),a=loadAtt(),out={};Object.keys(a).forEach(function(d){if(d.slice(0,7)!==ym)return;Object.keys(a[d]).forEach(function(id){var r=a[d][id];if(!r||!r.s||r.s==='none')return;var o=out[id]=out[id]||{full:0,half:0,leave:0,amt:0};o[r.s]++;o.amt+=(+r.amt||0)})});return out}
 function stfDaySum(date){var a=loadAtt(),t=0,n=0;if(a[date])Object.keys(a[date]).forEach(function(id){var r=a[date][id];if(r&&(r.s==='full'||r.s==='half')){t+=(+r.amt||0);n++}});return {total:t,n:n}}
+/* ---- Professional attendance UI ---- */
+var STF_CSS='.at-hero{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border-radius:22px;padding:18px;margin-bottom:14px;box-shadow:0 12px 28px -8px rgba(79,70,229,.45)}'
++'.at-hero h3{margin:0;font-size:1.1rem;font-weight:800;letter-spacing:-.01em}.at-hero .sub{font-size:.78rem;opacity:.85;margin-top:2px}'
++'.at-nav{display:flex;gap:8px;align-items:center;margin-top:12px}.at-nav button{width:auto;margin:0;padding:9px 14px;background:rgba(255,255,255,.18);color:#fff;border:0;box-shadow:none;font-size:.95rem}'
++'.at-nav input{margin:0;flex:1;background:rgba(255,255,255,.95);color:#0f172a;border:0;text-align:center;font-weight:700}'
++'.at-today{margin-top:10px;display:flex;gap:8px}.at-today button{margin:0;padding:8px 12px;font-size:.78rem;background:rgba(255,255,255,.18);color:#fff;border:0;box-shadow:none;width:auto;flex:1}'
++'.at-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}@media(min-width:700px){.at-kpis{grid-template-columns:repeat(4,1fr)}}'
++'.at-kpi{background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:12px 14px;box-shadow:var(--shadow-sm);border-left:4px solid var(--brand)}'
++'.at-kpi .l{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}.at-kpi .v{font-size:1.25rem;font-weight:800;margin-top:2px}.at-kpi .s{font-size:.72rem;color:var(--muted)}'
++'.at-k-full{border-left-color:#10b981}.at-k-half{border-left-color:#f59e0b}.at-k-leave{border-left-color:#e11d48}.at-k-pay{border-left-color:var(--brand)}'
++'.at-bar{height:8px;border-radius:99px;background:var(--card-border);overflow:hidden;display:flex;margin:10px 0 4px}.at-bar i{display:block;height:100%}'
++'.at-card{background:var(--card);border:1px solid var(--card-border);border-radius:20px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow-md)}'
++'.at-head{display:flex;align-items:center;gap:12px}.at-av{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:1.05rem;flex:none}'
++'.at-name{font-weight:800;font-size:1.02rem;line-height:1.2}.at-meta{font-size:.74rem;color:var(--muted);margin-top:2px}'
++'.at-badge{margin-left:auto;font-size:.7rem;font-weight:800;padding:5px 10px;border-radius:99px;white-space:nowrap}'
++'.at-b-full{background:#d1fae5;color:#047857}.at-b-half{background:#fef3c7;color:#b45309}.at-b-leave{background:#ffe4e6;color:#be123c}.at-b-none{background:var(--brand-light);color:var(--muted)}'
++'.at-seg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.at-seg button{margin:0;padding:11px 4px;font-size:.84rem;font-weight:800;border-radius:12px;background:transparent;color:var(--text);border:2px solid var(--card-border);box-shadow:none}'
++'.at-pay{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:.85rem;color:var(--muted)}.at-pay b{color:var(--text);font-size:.95rem}'
++'.at-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:12px}.at-cal .dh{font-size:.6rem;text-align:center;color:var(--muted);font-weight:700}'
++'.at-d{aspect-ratio:1;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.68rem;font-weight:700;background:var(--brand-light);color:var(--muted);cursor:pointer;border:2px solid transparent}'
++'.at-d.full{background:#10b981;color:#fff}.at-d.half{background:#f59e0b;color:#fff}.at-d.leave{background:#e11d48;color:#fff}.at-d.sel{border-color:var(--text)}.at-d.fut{opacity:.45}.at-d.emp{background:transparent;cursor:default}'
++'.at-leg{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:.66rem;color:var(--muted)}.at-leg span:before{content:"";display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:4px;vertical-align:middle;background:var(--c)}'
++'.at-mini{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px;text-align:center}.at-mini div{background:var(--brand-light);border-radius:10px;padding:7px 2px}.at-mini b{display:block;font-size:.95rem}.at-mini span{font-size:.62rem;color:var(--muted);text-transform:uppercase;font-weight:700}'
++'.at-tools{display:flex;gap:6px;margin-top:12px}.at-tools button{margin:0;padding:8px 10px;font-size:.76rem;width:auto;flex:1}'
++'.at-set{display:none;margin-top:12px;padding-top:12px;border-top:1px dashed var(--card-border)}.at-set.open{display:block}'
++'.at-tbl{width:100%;border-collapse:collapse;font-size:.78rem}.at-tbl th{font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:right;padding:8px 6px;border-bottom:2px solid var(--card-border)}.at-tbl th:first-child,.at-tbl td:first-child{text-align:left}'
++'.at-tbl td{padding:9px 6px;text-align:right;border-bottom:1px solid var(--card-border);font-weight:600}.at-tbl tfoot td{font-weight:800;border-top:2px solid var(--card-border);border-bottom:0;background:var(--brand-light)}'
++'.at-sec{font-size:.8rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 4px 8px}';
+var stfOpen={},stfAvCols=['#4f46e5','#0ea5e9','#10b981','#f59e0b','#e11d48','#8b5cf6','#14b8a6','#ea580c'];
+function stfEnsureCss(){if(document.getElementById('stf-css'))return;var s=document.createElement('style');s.id='stf-css';s.textContent=STF_CSS;document.head.appendChild(s)}
+function stfDim(date){var y=+date.slice(0,4),m=+date.slice(5,7);return new Date(y,m,0).getDate()}
+function stfMonthTotals(date,staff){
+  var ms=stfMonthSummary(date),t={full:0,half:0,leave:0,amt:0};
+  staff.forEach(function(s){var m=ms[s.id];if(!m)return;t.full+=m.full;t.half+=m.half;t.leave+=m.leave;t.amt+=m.amt});return {ms:ms,t:t}}
+function stfShiftMonth(n){var d=parseISODate(stfDate||todayStr());d.setDate(1);d.setMonth(d.getMonth()+n);var nd=toISODate(d),td=todayStr();if(nd.slice(0,7)===td.slice(0,7))nd=td;stfDate=nd;renderStaffTab()}
+function stfToday(){stfDate=todayStr();renderStaffTab()}
+function stfToggle(id){stfOpen[id]=!stfOpen[id];renderStaffTab()}
+function stfPickDay(d){stfDate=d;renderStaffTab()}
+function stfMarkAll(st){
+  var staff=stfActive();if(!staff.length)return;var date=stfDate||todayStr(),a=loadAtt();a[date]=a[date]||{};var n=0;
+  staff.forEach(function(s){var amt=stfAmt(s,st);a[date][s.id]={s:st,amt:amt,at:Date.now()};stfSyncExpense(s,date,st,amt);n++});
+  saveAtt(a);try{showBanner('✅ '+n+' staff marked '+stfLabel(st))}catch(e){}renderStaffTab();stfSalesRefresh();afterDataChange()}
+function stfClearDay(){
+  var staff=stfActive(),date=stfDate||todayStr();if(!confirm('Clear all attendance marks for '+date+'?'))return;
+  var a=loadAtt();a[date]=a[date]||{};staff.forEach(function(s){if(a[date][s.id]&&a[date][s.id].s!=='none'){a[date][s.id]={s:'none',amt:0,at:Date.now()};stfSyncExpense(s,date,'none',0)}});
+  saveAtt(a);renderStaffTab();stfSalesRefresh();afterDataChange()}
+function stfExport(){
+  var date=stfDate||todayStr(),ym=date.slice(0,7),staff=stfActive(),ms=stfMonthSummary(date),days=stfDim(date),a=loadAtt();
+  var q=function(v){return '"'+String(v).replace(/"/g,'""')+'"'};
+  var head=['Staff','Daily salary'];for(var i=1;i<=days;i++)head.push(i);head=head.concat(['Full','Half','Leave','Worked days','Salary payable']);
+  var rows=[['Staff Attendance Report — '+ym],[],head];
+  staff.forEach(function(s){var m=ms[s.id]||{full:0,half:0,leave:0,amt:0},r=[s.name,s.salary];
+    for(var d=1;d<=days;d++){var ds=ym+'-'+(d<10?'0':'')+d,x=a[ds]&&a[ds][s.id]&&a[ds][s.id].s;r.push(x==='full'?'P':x==='half'?'H':x==='leave'?'L':'')}
+    r=r.concat([m.full,m.half,m.leave,m.full+m.half/2,m.amt]);rows.push(r)});
+  var tot=stfMonthTotals(date,staff).t;rows.push([]);rows.push(['TOTAL','']);rows[rows.length-1]=['TOTAL salary payable',tot.amt];rows.push(['P = Full day, H = Half day, L = Leave']);
+  var csv='\ufeff'+rows.map(function(r){return r.map(q).join(',')}).join('\r\n');
+  var blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),l=document.createElement('a');
+  l.href=url;l.download='staff-attendance-'+ym+'.csv';document.body.appendChild(l);l.click();setTimeout(function(){URL.revokeObjectURL(url);l.remove()},500);
+  try{showBanner('📥 Attendance report downloaded (opens in Excel)')}catch(e){}}
 function renderStaffTab(){
-  var el=document.getElementById('staffTab');if(!el)return;var date=stfDate||(stfDate=todayStr()),staff=stfActive(),ds=stfDaySum(date),ms=stfMonthSummary(date),mt=0,h='';
+  var el=document.getElementById('staffTab');if(!el)return;stfEnsureCss();
+  var date=stfDate||(stfDate=todayStr()),td=todayStr(),staff=stfActive(),ds=stfDaySum(date),h='';
+  var mt=stfMonthTotals(date,staff),ms=mt.ms,T=mt.t,a=loadAtt();
   var dtl=parseISODate(date).toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  h+='<div class="card"><h3 style="margin-top:0">👷 Staff Attendance</h3><div style="display:flex;gap:8px;align-items:center"><button type="button" class="ghost" style="width:auto;margin:0;padding:8px 14px" onclick="stfShift(-1)">◀</button><input type="date" value="'+esc(date)+'" onchange="stfSetDate(this.value)" style="margin:0;flex:1"><button type="button" class="ghost" style="width:auto;margin:0;padding:8px 14px" onclick="stfShift(1)">▶</button></div>'
-   +'<div class="hint" style="text-align:left;margin:6px 0 0">'+esc(dtl)+(date===todayStr()?' · today':'')+'</div>'
-   +'<div style="margin-top:10px;padding:10px;border-radius:12px;background:var(--brand-light)"><div style="font-size:.8rem;color:var(--muted)">Staff salary for this day (auto-added to Daily Sales)</div><div style="font-size:1.5rem;font-weight:800">'+fmtMoney(ds.total)+'</div><div class="hint" style="text-align:left">'+ds.n+' staff worked · it is deducted from sales in profit</div></div></div>';
-  if(!staff.length)h+='<div class="card"><div style="font-size:.9rem">No staff yet. Add your first staff below, with the fixed salary for one full day.</div></div>';
-  staff.forEach(function(s){var r=stfRec(date,s.id),st=r?r.s:null,sid=eid(s.id),m=ms[s.id]||{full:0,half:0,leave:0,amt:0};mt+=m.amt;
-    var btn=function(k,lbl,col){var on=st===k;return '<button type="button" onclick="stfMark(\''+sid+'\',\''+k+'\')" style="flex:1;margin:0;padding:11px 4px;font-size:.88rem;font-weight:800;'+(on?'background:'+col+';color:#fff;border:2px solid '+col:'background:transparent;color:var(--fg,inherit);border:2px solid var(--card-border)')+'">'+lbl+'</button>'};
-    h+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:1.05rem">'+esc(s.name)+'</b><span><button type="button" class="ghost" style="width:auto;margin:0;padding:4px 10px;font-size:.8rem" onclick="stfRename(\''+sid+'\')">✏️</button> <button type="button" class="ghost" style="width:auto;margin:0;padding:4px 10px;font-size:.8rem" onclick="stfRemove(\''+sid+'\')">🗑</button></span></div>'
-     +'<label style="margin-top:8px">Fixed salary for one full day (₹)</label><input type="number" inputmode="numeric" min="0" value="'+(Number(s.salary)||0)+'" onchange="stfSalary(\''+sid+'\',this.value)">'
+  var mname=parseISODate(date).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  var cnt={full:0,half:0,leave:0,none:0};staff.forEach(function(s){var r=stfRec(date,s.id);cnt[r?r.s:'none']++});
+  var tot=staff.length||1;
+  h+='<div class="at-hero"><h3>👷 Staff Attendance</h3><div class="sub">'+esc(dtl)+(date===td?' · Today':'')+'</div>'
+   +'<div class="at-nav"><button type="button" onclick="stfShift(-1)">◀</button><input type="date" value="'+esc(date)+'" onchange="stfSetDate(this.value)"><button type="button" onclick="stfShift(1)">▶</button></div>'
+   +'<div class="at-today"><button type="button" onclick="stfShiftMonth(-1)">« Prev month</button><button type="button" onclick="stfToday()">Today</button><button type="button" onclick="stfShiftMonth(1)">Next month »</button></div></div>';
+  h+='<div class="at-kpis">'
+   +'<div class="at-kpi at-k-full"><div class="l">Full day</div><div class="v">'+cnt.full+'</div><div class="s">of '+staff.length+' staff</div></div>'
+   +'<div class="at-kpi at-k-half"><div class="l">Half day</div><div class="v">'+cnt.half+'</div><div class="s">of '+staff.length+' staff</div></div>'
+   +'<div class="at-kpi at-k-leave"><div class="l">On leave</div><div class="v">'+cnt.leave+'</div><div class="s">'+cnt.none+' not marked</div></div>'
+   +'<div class="at-kpi at-k-pay"><div class="l">Salary today</div><div class="v">'+fmtMoney(ds.total)+'</div><div class="s">auto-added to Daily Sales</div></div></div>';
+  if(staff.length){
+    h+='<div class="at-card" style="padding:14px"><div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:700"><span>Attendance for the day</span><span style="color:var(--muted)">'+(staff.length-cnt.none)+' / '+staff.length+' marked</span></div>'
+     +'<div class="at-bar"><i style="width:'+(cnt.full/tot*100)+'%;background:#10b981"></i><i style="width:'+(cnt.half/tot*100)+'%;background:#f59e0b"></i><i style="width:'+(cnt.leave/tot*100)+'%;background:#e11d48"></i></div>'
+     +'<div class="at-tools"><button type="button" class="ghost" onclick="stfMarkAll(\'full\')">✅ All full day</button><button type="button" class="ghost" onclick="stfMarkAll(\'leave\')">🚫 All leave</button><button type="button" class="ghost" onclick="stfClearDay()">↩️ Clear</button></div></div>'}
+  if(!staff.length)h+='<div class="at-card" style="text-align:center;padding:26px"><div style="font-size:2rem">👷</div><div style="font-weight:800;margin-top:6px">No staff added yet</div><div class="hint" style="margin-top:4px">Add your first staff below with the fixed salary for one full day.</div></div>';
+  if(staff.length)h+='<div class="at-sec">Daily roll call</div>';
+  var first=parseISODate(date.slice(0,7)+'-01').getDay(),dim=stfDim(date);
+  staff.forEach(function(s,idx){
+    var r=stfRec(date,s.id),st=r?r.s:null,sid=eid(s.id),m=ms[s.id]||{full:0,half:0,leave:0,amt:0},col=stfAvCols[idx%stfAvCols.length];
+    var btn=function(k,lbl,c){var on=st===k;return '<button type="button" onclick="stfMark(\''+sid+'\',\''+k+'\')" style="'+(on?'background:'+c+';border-color:'+c+';color:#fff':'')+'">'+lbl+'</button>'};
+    var badge=st?'<span class="at-badge at-b-'+st+'">'+stfLabel(st)+'</span>':'<span class="at-badge at-b-none">Not marked</span>';
+    var worked=m.full+m.half/2,pm=m.full+m.half+m.leave;
+    h+='<div class="at-card"><div class="at-head"><div class="at-av" style="background:'+col+'">'+esc((s.name||'?').trim().charAt(0).toUpperCase())+'</div><div><div class="at-name">'+esc(s.name)+'</div><div class="at-meta">'+fmtMoney(s.salary||0)+' / day · paid by '+esc(({cash:'Cash',online:'Online',ownmoney:'Own money'})[s.method||'cash']||'Cash')+'</div></div>'+badge+'</div>'
+     +'<div class="at-seg">'+btn('full','✅ Full',"#10b981")+btn('half','🌓 Half',"#f59e0b")+btn('leave','🚫 Leave',"#e11d48")+'</div>'
+     +'<div class="at-pay"><span>'+(st?(r.amt?'Salary added to Daily Sales':'No salary for this day'):'Tap a status to mark')+'</span><b>'+(st?fmtMoney(r.amt||0):'—')+'</b></div>'
+     +'<div class="at-mini"><div><b>'+m.full+'</b><span>Full</span></div><div><b>'+m.half+'</b><span>Half</span></div><div><b>'+m.leave+'</b><span>Leave</span></div><div><b>'+fmtMoney(m.amt)+'</b><span>Payable</span></div></div>';
+    var cal='<div class="at-cal">'+['S','M','T','W','T','F','S'].map(function(x){return '<div class="dh">'+x+'</div>'}).join('');
+    for(var i=0;i<first;i++)cal+='<div class="at-d emp"></div>';
+    for(var d=1;d<=dim;d++){var ds2=date.slice(0,7)+'-'+(d<10?'0':'')+d,x=a[ds2]&&a[ds2][s.id]&&a[ds2][s.id].s;x=(x==='full'||x==='half'||x==='leave')?x:'';
+      cal+='<div class="at-d '+x+(ds2===date?' sel':'')+(ds2>td&&!x?' fut':'')+'" onclick="stfPickDay(\''+ds2+'\')">'+d+'</div>'}
+    cal+='</div><div class="at-leg"><span style="--c:#10b981">Full</span><span style="--c:#f59e0b">Half</span><span style="--c:#e11d48">Leave</span><span style="--c:var(--brand-light)">Not marked</span></div>';
+    h+='<div class="at-tools"><button type="button" class="ghost" onclick="stfToggle(\''+sid+'\')">'+(stfOpen[s.id]?'▲ Hide settings':'⚙️ Settings')+'</button></div>'
+     +'<div class="at-set'+(stfOpen[s.id]?' open':'')+'"><label>Fixed salary for one full day (₹)</label><input type="number" inputmode="numeric" min="0" value="'+(Number(s.salary)||0)+'" onchange="stfSalary(\''+sid+'\',this.value)">'
      +'<label>Salary paid by</label><select onchange="stfMethod(\''+sid+'\',this.value)"><option value="cash"'+((s.method||'cash')==='cash'?' selected':'')+'>Cash</option><option value="online"'+(s.method==='online'?' selected':'')+'>Online</option><option value="ownmoney"'+(s.method==='ownmoney'?' selected':'')+'>Own money</option></select>'
-     +'<div style="display:flex;gap:8px;margin-top:10px">'+btn('half','🌓 Half day','#f59e0b')+btn('full','✅ Full day','#10b981')+btn('leave','🚫 Leave','#e11d48')+'</div>'
-     +'<div style="margin-top:8px;font-size:.9rem">'+(st?'<b>'+stfLabel(st)+'</b>'+(r.amt?' → <b>'+fmtMoney(r.amt)+'</b> added as Staff Salary':' → no salary'):'<span style="color:var(--muted)">Not marked — tap one above</span>')+'</div>'
-     +'<div class="hint" style="text-align:left;margin-top:4px">This month: '+m.full+' full · '+m.half+' half · '+m.leave+' leave = <b>'+fmtMoney(m.amt)+'</b></div></div>'});
-  if(staff.length)h+='<div class="card" style="background:var(--brand-light)"><b>This month — total staff salary: '+fmtMoney(mt)+'</b></div>';
-  h+='<div class="card"><h3 style="margin-top:0">➕ Add staff</h3><label>Name</label><input id="stf-name" placeholder="e.g. Raju"><label>Fixed salary for one full day (₹)</label><input id="stf-sal" type="number" inputmode="numeric" min="0" placeholder="e.g. 600"><label>Salary paid by</label><select id="stf-method"><option value="cash">Cash</option><option value="online">Online</option><option value="ownmoney">Own money</option></select><button type="button" style="background:var(--brand)" onclick="stfAdd()">➕ Add staff</button>'
-   +'<div class="hint" style="text-align:left;margin-top:8px">Full day = full salary · Half day = half · Leave = nothing. Everything saves on this phone and syncs to your Google Drive when connected.</div></div>';
+     +'<div style="display:flex;gap:8px"><button type="button" class="ghost" style="margin:0" onclick="stfRename(\''+sid+'\')">✏️ Rename</button><button type="button" class="ghost" style="margin:0;color:var(--owe)" onclick="stfRemove(\''+sid+'\')">🗑 Remove</button></div></div>'
+     +'<div class="hint" style="text-align:left;margin:12px 0 0;font-weight:700">'+esc(mname)+' · worked '+worked+' day'+(worked===1?'':'s')+' · '+pm+' marked</div>'+cal+'</div>'});
+  if(staff.length){
+    h+='<div class="at-sec">Monthly payroll · '+esc(mname)+'</div><div class="at-card" style="padding:12px"><div style="overflow-x:auto"><table class="at-tbl"><thead><tr><th>Staff</th><th>Full</th><th>Half</th><th>Leave</th><th>Days</th><th>Payable</th></tr></thead><tbody>';
+    staff.forEach(function(s){var m=ms[s.id]||{full:0,half:0,leave:0,amt:0};h+='<tr><td>'+esc(s.name)+'</td><td>'+m.full+'</td><td>'+m.half+'</td><td>'+m.leave+'</td><td>'+(m.full+m.half/2)+'</td><td>'+fmtMoney(m.amt)+'</td></tr>'});
+    h+='</tbody><tfoot><tr><td>Total</td><td>'+T.full+'</td><td>'+T.half+'</td><td>'+T.leave+'</td><td>'+(T.full+T.half/2)+'</td><td>'+fmtMoney(T.amt)+'</td></tr></tfoot></table></div>'
+     +'<button type="button" style="background:var(--brand);margin-top:12px" onclick="stfExport()">📥 Download month report (Excel)</button></div>'}
+  h+='<div class="at-sec">Add staff</div><div class="at-card"><label>Name</label><input id="stf-name" placeholder="e.g. Raju"><label>Fixed salary for one full day (₹)</label><input id="stf-sal" type="number" inputmode="numeric" min="0" placeholder="e.g. 600"><label>Salary paid by</label><select id="stf-method"><option value="cash">Cash</option><option value="online">Online</option><option value="ownmoney">Own money</option></select><button type="button" style="background:var(--brand)" onclick="stfAdd()">➕ Add staff</button>'
+   +'<div class="hint" style="text-align:left;margin-top:8px">Full day = full salary · Half day = half · Leave = nothing. Salary is auto-added to Daily Sales as Staff Salary and syncs to Google Drive when connected.</div></div>';
   el.innerHTML=h}
 function showStaffTab(){activateTab('staff');renderStaffTab()}
 /* Daily Sales: auto-filled staff salary line */
