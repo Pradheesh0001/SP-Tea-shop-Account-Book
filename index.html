@@ -8764,7 +8764,7 @@ var _rh=window.renderHomeToday;if(_rh)window.renderHomeToday=function(){var r=_r
 /* ===== Admin section: admin password + staff logins. Staff see only the Udhar Ledger. ===== */
 (function(){
 var $=function(i){return document.getElementById(i)},LS=localStorage,SL_KEY='udhar_staff_logins_v1';
-var STAFF_TABS_BLOCKED=['showMachineTab','showDashboardTab','showForecastTab','showSalesTab','showExpensesTab','showPersonalTab','showPurchaseTab','showStaffTab','showAdminTab','showSettings'];
+var STAFF_TABS_BLOCKED=['showMachineTab','showDashboardTab','showForecastTab','showSalesTab','showPersonalTab','showPurchaseTab','showStaffTab','showAdminTab','showSettings'];
 function isStaff(){return LS.getItem('udhar_role')==='staff'}
 window.admLoad=function(){try{return JSON.parse(LS.getItem(SL_KEY)||'{}')||{}}catch(e){return {}}};
 window.admSave=function(o){LS.setItem(SL_KEY,JSON.stringify(o))};
@@ -8785,7 +8785,7 @@ var css=document.createElement('style');css.textContent=
 +'.adm-badge{margin-left:auto;font-size:.68rem;font-weight:800;padding:4px 10px;border-radius:99px;white-space:nowrap}.adm-on{background:#d1fae5;color:#047857}.adm-off{background:#ffe4e6;color:#be123c}'
 +'.adm-acts{display:flex;gap:6px;margin-top:10px}.adm-acts button{margin:0;padding:9px 6px;font-size:.76rem;flex:1;width:auto}'
 +'.adm-note{font-size:.74rem;color:var(--muted);line-height:1.5;margin-top:10px}'
-+'.staffMode #tab-machine-btn,.staffMode #tab-dashboard-btn,.staffMode #tab-forecast-btn,.staffMode #tab-sales-btn,.staffMode #tab-expenses-btn,.staffMode #tab-personal-btn,.staffMode #tab-purchase-btn,.staffMode #tab-staff-btn,.staffMode #tab-admin-btn,.staffMode .sideNavSettings,.staffMode #bn-machine,.staffMode #bn-dashboard,.staffMode #bn-sales,.staffMode #bn-more,.staffMode #askFab,.staffMode #askPanel,.staffMode .stf-adm-only{display:none!important}';
++'.staffMode #tab-machine-btn,.staffMode #tab-dashboard-btn,.staffMode #tab-forecast-btn,.staffMode #tab-sales-btn,.staffMode #tab-personal-btn,.staffMode #tab-purchase-btn,.staffMode #tab-staff-btn,.staffMode #tab-admin-btn,.staffMode .sideNavSettings,.staffMode #bn-machine,.staffMode #bn-dashboard,.staffMode #bn-sales,.staffMode #askFab,.staffMode #askPanel,.staffMode .stf-adm-only{display:none!important}';
 document.head.appendChild(css);
 
 /* ---- role: staff can only see the Udhar Ledger ---- */
@@ -8798,6 +8798,10 @@ function applyRole(){
 STAFF_TABS_BLOCKED.forEach(function(f){var o=window[f];if(typeof o!=='function')return;
   window[f]=function(){if(isStaff()){try{return window.showCustomersTab()}catch(e){return}}return o.apply(this,arguments)}});
 
+/* staff phone menu: only Shop Expenses under More */
+var _em=window.enhMore;
+window.enhMore=function(){if(!isStaff())return _em.apply(this,arguments);
+  $('enhSheetBody').innerHTML='<h3 style="margin:0 0 6px">More</h3><button class="ghost" onclick="enhGo(\'showExpensesTab\')">💸 Shop Expenses</button><button onclick="enhClose()">Close</button>';$('enhSheet').style.display='flex'};
 /* ---- login: admin first, then staff ---- */
 var _login=window.doLogin;
 window.doLogin=function(){
@@ -8836,7 +8840,7 @@ function dt(ts){try{return new Date(ts).toLocaleDateString('en-IN',{day:'numeric
 window.renderAdminTab=function(){
   var el=$('adminTab');if(!el||isStaff())return;
   var aid=currentUser||'',nm=currentDisplayName||aid,list=admList(),h='';
-  h+='<div class="adm-hero"><h3>🔐 Admin</h3><div class="sub">Manage the admin password and give each staff member their own login. Staff only see the Udhar Ledger. Profit, expenses, personal finance, attendance and settings stay hidden from them.</div></div>';
+  h+='<div class="adm-hero"><h3>🔐 Admin</h3><div class="sub">Manage the admin password and give each staff member their own login. Staff only see the Udhar Ledger and Shop Expenses. Profit, personal finance, attendance and settings stay hidden from them.</div></div>';
   h+='<div class="adm-box"><h4>👤 Admin account</h4><div class="adm-sub">Your ID and password. You can see everything in the app.</div>'
    +'<div class="adm-id"><div class="adm-av">'+esc((nm||'A').trim().charAt(0).toUpperCase())+'</div><div><div style="font-weight:800">'+esc(nm)+'</div><div style="font-size:.74rem;color:var(--muted)">Admin ID: '+esc(aid)+'</div></div></div>'
    +'<label>Current password</label><input id="adm-cur" type="password" autocomplete="current-password">'
