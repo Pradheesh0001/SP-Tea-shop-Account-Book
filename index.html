@@ -8168,6 +8168,70 @@ function stfExport(){
   var blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),l=document.createElement('a');
   l.href=url;l.download='staff-attendance-'+ym+'.csv';document.body.appendChild(l);l.click();setTimeout(function(){URL.revokeObjectURL(url);l.remove()},500);
   try{showBanner('📥 Attendance report downloaded (opens in Excel)')}catch(e){}}
+function stfWords(n){
+  n=Math.round(n||0);if(n===0)return 'Zero';
+  var o=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'],t=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function two(x){return x<20?o[x]:t[Math.floor(x/10)]+(x%10?' '+o[x%10]:'')}
+  function three(x){var h=Math.floor(x/100),r=x%100;return (h?o[h]+' Hundred'+(r?' ':''):'')+(r?two(r):'')}
+  var out=[],cr=Math.floor(n/10000000);n%=10000000;var lk=Math.floor(n/100000);n%=100000;var th=Math.floor(n/1000);n%=1000;
+  if(cr)out.push(three(cr)+' Crore');if(lk)out.push(two(lk)+' Lakh');if(th)out.push(two(th)+' Thousand');if(n)out.push(three(n));
+  return out.join(' ')}
+async function stfPaySlip(id){
+  var s=loadStaff().find(function(x){return x.id===id});if(!s)return;
+  try{await loadLib('jspdf')}catch(e){showBanner('⚠️ PDF library could not load. Check internet');return}
+  var date=stfDate||todayStr(),ym=date.slice(0,7),days=stfDim(date),a=loadAtt(),upi=loadUpi();
+  var st={full:0,half:0,leave:0,fullAmt:0,halfAmt:0},cells=[];
+  for(var d=1;d<=days;d++){var ds=ym+'-'+(d<10?'0':'')+d,r=a[ds]&&a[ds][id],x=r&&r.s;
+    if(x==='full'){st.full++;st.fullAmt+=Number(r.amt)||0}else if(x==='half'){st.half++;st.halfAmt+=Number(r.amt)||0}else if(x==='leave')st.leave++;
+    cells.push(x==='full'||x==='half'||x==='leave'?x:'')}
+  var total=st.fullAmt+st.halfAmt,worked=st.full+st.half/2,rate=Number(s.salary)||0;
+  var mname=parseISODate(ym+'-01').toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  var meth=({cash:'Cash',online:'Online',ownmoney:'Own money'})[s.method||'cash']||'Cash';
+  var jsPDF=window.jspdf.jsPDF,doc=new jsPDF();
+  /* header */
+  doc.setFillColor(37,36,35);doc.rect(0,0,210,30,'F');doc.setFillColor(242,200,15);doc.rect(0,30,210,1.6,'F');
+  doc.setTextColor(255);doc.setFont(undefined,'bold');doc.setFontSize(17);doc.text(upi.shopName||'SP Tea Shop',14,14);
+  doc.setFont(undefined,'normal');doc.setFontSize(9);doc.setTextColor(200);doc.text('Staff salary statement',14,21);
+  doc.setFont(undefined,'bold');doc.setFontSize(20);doc.setTextColor(242,200,15);doc.text('PAY SLIP',196,15,{align:'right'});
+  doc.setFont(undefined,'normal');doc.setFontSize(10);doc.setTextColor(255);doc.text(mname,196,22,{align:'right'});
+  /* employee box */
+  doc.setTextColor(0);doc.setDrawColor(210);doc.setFillColor(248,249,251);doc.roundedRect(14,40,182,30,2,2,'FD');
+  var lab=function(t,x,y){doc.setFont(undefined,'normal');doc.setFontSize(8);doc.setTextColor(110);doc.text(t,x,y)};
+  var vl=function(t,x,y){doc.setFont(undefined,'bold');doc.setFontSize(11);doc.setTextColor(20);doc.text(String(t),x,y)};
+  lab('EMPLOYEE',20,48);vl(s.name||'',20,54);lab('PAY PERIOD',20,62);vl('01 - '+days+' '+mname,20,67.5);
+  lab('DAILY RATE (FULL DAY)',100,48);vl(rs(rate),100,54);lab('PAID BY',100,62);vl(meth,100,67.5);
+  lab('SLIP DATE',160,48);vl(parseISODate(todayStr()).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}),160,54);
+  /* earnings table */
+  var y=80;doc.setFillColor(37,36,35);doc.rect(14,y,182,8,'F');doc.setTextColor(255);doc.setFont(undefined,'bold');doc.setFontSize(9);
+  doc.text('ATTENDANCE',18,y+5.4);doc.text('DAYS',100,y+5.4,{align:'right'});doc.text('RATE',140,y+5.4,{align:'right'});doc.text('AMOUNT',192,y+5.4,{align:'right'});
+  var rows=[['Full day present',st.full,rate,st.fullAmt],['Half day present',st.half,rate/2,st.halfAmt],['Leave / absent',st.leave,0,0]];
+  doc.setFont(undefined,'normal');doc.setFontSize(10);y+=8;
+  rows.forEach(function(r,i){if(i%2===0){doc.setFillColor(248,249,251);doc.rect(14,y,182,8,'F')}
+    doc.setTextColor(30);doc.text(r[0],18,y+5.5);doc.text(String(r[1]),100,y+5.5,{align:'right'});doc.text(rs(r[2]),140,y+5.5,{align:'right'});doc.text(rs(r[3]),192,y+5.5,{align:'right'});y+=8});
+  doc.setDrawColor(37,36,35);doc.setLineWidth(.4);doc.line(14,y,196,y);doc.setFont(undefined,'bold');doc.setTextColor(0);
+  doc.text('Total worked days',18,y+6);doc.text(String(worked),100,y+6,{align:'right'});doc.text('Gross salary',140,y+6,{align:'right'});doc.text(rs(total),192,y+6,{align:'right'});
+  y+=12;
+  /* day-by-day strip */
+  doc.setFontSize(8);doc.setTextColor(110);doc.setFont(undefined,'bold');doc.text('DAY-BY-DAY ATTENDANCE',14,y+4);y+=7;
+  var cw=182/days<=6.2?182/days:6.2,cw2=182/days;cw=cw2;
+  for(var i=0;i<days;i++){var c=cells[i],x0=14+i*cw;
+    if(c==='full')doc.setFillColor(16,185,129);else if(c==='half')doc.setFillColor(245,158,11);else if(c==='leave')doc.setFillColor(225,29,72);else doc.setFillColor(226,232,240);
+    doc.rect(x0+.2,y,cw-.4,9,'F');doc.setFont(undefined,'bold');doc.setFontSize(6.5);doc.setTextColor(c?255:90);
+    doc.text(String(i+1),x0+cw/2,y+3.6,{align:'center'});doc.text(c==='full'?'P':c==='half'?'H':c==='leave'?'L':'-',x0+cw/2,y+7.2,{align:'center'})}
+  y+=13;doc.setFont(undefined,'normal');doc.setFontSize(8);doc.setTextColor(110);doc.text('P = Full day    H = Half day    L = Leave    - = Not marked',14,y);y+=8;
+  /* net pay */
+  doc.setFillColor(255,248,214);doc.setDrawColor(242,200,15);doc.setLineWidth(.6);doc.roundedRect(14,y,182,24,2,2,'FD');
+  doc.setTextColor(90);doc.setFont(undefined,'bold');doc.setFontSize(9);doc.text('NET SALARY PAYABLE',20,y+8);
+  doc.setTextColor(0);doc.setFontSize(20);doc.text(rs(total),192,y+10,{align:'right'});
+  doc.setFont(undefined,'normal');doc.setFontSize(9);doc.setTextColor(60);doc.text('Rupees '+stfWords(total)+' only',20,y+18);
+  y+=40;
+  /* signatures */
+  doc.setDrawColor(120);doc.setLineWidth(.3);doc.line(14,y+14,76,y+14);doc.line(134,y+14,196,y+14);
+  doc.setFontSize(9);doc.setTextColor(90);doc.text('Employer signature',14,y+19);doc.text('Employee signature',134,y+19);
+  doc.setFontSize(8);doc.setTextColor(140);doc.text('Computer generated pay slip. Full day = full salary, half day = half, leave = no salary.',105,285,{align:'center'});
+  doc.save('PaySlip-'+(s.name||'staff').replace(/[^a-zA-Z0-9]+/g,'_')+'-'+ym+'.pdf');
+  try{showBanner('📄 Pay slip downloaded')}catch(e){}
+}
 function renderStaffTab(){
   var el=document.getElementById('staffTab');if(!el)return;stfEnsureCss();
   var date=stfDate||(stfDate=todayStr()),td=todayStr(),staff=stfActive(),ds=stfDaySum(date),h='';
@@ -8205,7 +8269,7 @@ function renderStaffTab(){
     for(var d=1;d<=dim;d++){var ds2=date.slice(0,7)+'-'+(d<10?'0':'')+d,x=a[ds2]&&a[ds2][s.id]&&a[ds2][s.id].s;x=(x==='full'||x==='half'||x==='leave')?x:'';
       cal+='<div class="at-d '+x+(ds2===date?' sel':'')+(ds2>td&&!x?' fut':'')+'" onclick="stfPickDay(\''+ds2+'\')">'+d+'</div>'}
     cal+='</div><div class="at-leg"><span style="--c:#10b981">Full</span><span style="--c:#f59e0b">Half</span><span style="--c:#e11d48">Leave</span><span style="--c:var(--brand-light)">Not marked</span></div>';
-    h+='<div class="at-tools"><button type="button" class="ghost" onclick="stfToggle(\''+sid+'\')">'+(stfOpen[s.id]?'▲ Hide settings':'⚙️ Settings')+'</button></div>'
+    h+='<div class="at-tools"><button type="button" onclick="stfPaySlip(\''+sid+'\')" style="background:var(--brand)">📄 Pay slip PDF</button><button type="button" class="ghost" onclick="stfToggle(\''+sid+'\')">'+(stfOpen[s.id]?'▲ Hide settings':'⚙️ Settings')+'</button></div>'
      +'<div class="at-set'+(stfOpen[s.id]?' open':'')+'"><label>Fixed salary for one full day (₹)</label><input type="number" inputmode="numeric" min="0" value="'+(Number(s.salary)||0)+'" onchange="stfSalary(\''+sid+'\',this.value)">'
      +'<label>Salary paid by</label><select onchange="stfMethod(\''+sid+'\',this.value)"><option value="cash"'+((s.method||'cash')==='cash'?' selected':'')+'>Cash</option><option value="online"'+(s.method==='online'?' selected':'')+'>Online</option><option value="ownmoney"'+(s.method==='ownmoney'?' selected':'')+'>Own money</option></select>'
      +'<div style="display:flex;gap:8px"><button type="button" class="ghost" style="margin:0" onclick="stfRename(\''+sid+'\')">✏️ Rename</button><button type="button" class="ghost" style="margin:0;color:var(--owe)" onclick="stfRemove(\''+sid+'\')">🗑 Remove</button></div></div>'
